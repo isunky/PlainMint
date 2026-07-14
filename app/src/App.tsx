@@ -115,8 +115,15 @@ function findMatches(content: string, query: string, caseSensitive: boolean, who
   return matches;
 }
 
-function AppLogo() {
-  return <img className="app-logo" src="/plainmint-icon-source.png" alt="" />;
+function AppLogo({ dragRegion = false }: { dragRegion?: boolean }) {
+  return (
+    <img
+      className="app-logo"
+      src="/plainmint-icon-source.png"
+      alt=""
+      data-tauri-drag-region={dragRegion ? "" : undefined}
+    />
+  );
 }
 
 function TitleBar({ onClose }: { onClose: () => void }) {
@@ -124,7 +131,7 @@ function TitleBar({ onClose }: { onClose: () => void }) {
   return (
     <header className="titlebar" data-tauri-drag-region>
       <div className="brand" data-tauri-drag-region>
-        <AppLogo />
+        <AppLogo dragRegion />
         <span data-tauri-drag-region>{t("appName")}</span>
       </div>
       <div className="window-controls">
