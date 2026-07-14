@@ -8,13 +8,13 @@
   </p>
 
   <p>
-    <a href="https://github.com/isunky/PlainMint/releases/latest"><img src="https://img.shields.io/github/v/release/isunky/PlainMint?style=flat-square&label=release&color=18b7aa" alt="Release"></a>
+    <a href="https://github.com/isunky/PlainMint/releases"><img src="https://img.shields.io/badge/download-Windows%20%7C%20macOS-18b7aa?style=flat-square" alt="Download"></a>
     <a href="https://github.com/isunky/PlainMint/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/isunky/PlainMint/ci.yml?style=flat-square&label=build" alt="Build"></a>
     <a href="LICENSE"><img src="https://img.shields.io/github/license/isunky/PlainMint?style=flat-square&color=657076" alt="License"></a>
   </p>
 
   <p>
-    <a href="https://github.com/isunky/PlainMint/releases/latest"><strong>下载 / Download</strong></a>
+    <a href="https://github.com/isunky/PlainMint/releases"><strong>下载 / Download</strong></a>
     ·
     <a href="#zh-cn">简体中文</a>
     ·
@@ -42,7 +42,7 @@ PlainMint 是一款轻量、可靠的 Windows 与 macOS 纯文本编辑器。专
 
 ### 下载
 
-前往 [GitHub Releases](https://github.com/isunky/PlainMint/releases/latest) 下载 Windows 安装程序或 macOS DMG。
+前往 [GitHub Releases](https://github.com/isunky/PlainMint/releases) 下载 Windows 安装程序或 macOS DMG。
 
 > 文件始终保存在本机。当前构建未进行商业代码签名，首次运行时系统可能显示安全提示。
 
@@ -64,7 +64,7 @@ PlainMint is a lightweight, reliable plain-text editor for Windows and macOS. It
 
 ### Download
 
-Get the Windows installer or macOS DMG from [GitHub Releases](https://github.com/isunky/PlainMint/releases/latest).
+Get the Windows installer or macOS DMG from [GitHub Releases](https://github.com/isunky/PlainMint/releases).
 
 > Your files stay on your device. Current builds are unsigned, so your system may show a security warning on first launch.
 
