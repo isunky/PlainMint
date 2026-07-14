@@ -20,6 +20,7 @@ import {
   X,
 } from "@phosphor-icons/react";
 import i18n, { resolveLocale } from "./i18n";
+import { needsSaveConfirmation } from "./closePolicy";
 import { SettingsModal } from "./components/SettingsModal";
 import {
   findNextInPane,
@@ -562,7 +563,7 @@ export function App() {
   const requestCloseTab = useCallback((pane: PaneId, tabId: string) => {
     const tab = tabs[pane].find((item) => item.id === tabId);
     const document = tab ? documents[tab.documentId] : undefined;
-    if (document?.dirty) setModal({ type: "close-tab", pane, tabId, document });
+    if (document && needsSaveConfirmation(document)) setModal({ type: "close-tab", pane, tabId, document });
     else closeTab(pane, tabId);
   }, [closeTab, documents, tabs]);
 
@@ -614,7 +615,7 @@ export function App() {
   }, [activeTab, documents, hydrated, split, tabs]);
 
   const requestCloseWindow = useCallback(() => {
-    const dirty = Object.values(documents).filter((document) => document.dirty);
+    const dirty = Object.values(documents).filter(needsSaveConfirmation);
     if (dirty.length) setModal({ type: "exit", documents: dirty });
     else void closeWindow();
   }, [documents]);
