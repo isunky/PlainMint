@@ -183,8 +183,8 @@ select:focus-visible {
 }
 
 .titlebar {
-  height: 72px;
-  flex: 0 0 72px;
+  height: 56px;
+  flex: 0 0 56px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -196,16 +196,16 @@ select:focus-visible {
 .brand {
   display: flex;
   align-items: center;
-  gap: 17px;
-  padding-left: 30px;
-  font-size: 23px;
+  gap: 12px;
+  padding-left: 22px;
+  font-size: 19px;
   font-weight: 520;
   letter-spacing: -0.02em;
 }
 
 .app-logo {
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   object-fit: cover;
   border-radius: 8px;
 }
@@ -217,7 +217,7 @@ select:focus-visible {
 }
 
 .window-controls .icon-button {
-  width: 70px;
+  width: 56px;
   height: 100%;
   border-radius: 0;
 }
@@ -259,11 +259,11 @@ select:focus-visible {
 }
 
 .toolbar {
-  min-height: 77px;
-  flex: 0 0 77px;
+  min-height: 60px;
+  flex: 0 0 60px;
   display: flex;
   align-items: stretch;
-  padding: 0 27px;
+  padding: 0 18px;
   border-bottom: 1px solid var(--border-subtle);
   background: var(--surface-toolbar);
 }
@@ -271,29 +271,29 @@ select:focus-visible {
 .toolbar-action-wrap {
   display: flex;
   align-items: center;
-  padding: 0 5px;
+  padding: 0 3px;
 }
 
 .toolbar-action-wrap.with-divider {
-  margin-left: 14px;
-  padding-left: 22px;
+  margin-left: 10px;
+  padding-left: 15px;
   border-left: 1px solid var(--border-subtle);
 }
 
 .toolbar-action {
-  height: 50px;
-  min-width: 105px;
-  padding: 0 13px;
+  height: 42px;
+  min-width: 92px;
+  padding: 0 11px;
   display: inline-flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 16px;
+  gap: 12px;
   border: 0;
   border-radius: 10px;
   background: transparent;
   color: var(--text-primary);
   cursor: pointer;
-  font-size: 18px;
+  font-size: 16px;
 }
 
 .toolbar-action svg {
@@ -364,8 +364,8 @@ select:focus-visible {
 }
 
 .tabbar {
-  height: 67px;
-  flex: 0 0 67px;
+  height: 48px;
+  flex: 0 0 48px;
   border-bottom: 1px solid var(--border-subtle);
   background: var(--surface-toolbar);
   overflow: hidden;
@@ -385,18 +385,18 @@ select:focus-visible {
 
 .tab {
   position: relative;
-  min-width: 244px;
-  max-width: 300px;
+  min-width: 210px;
+  max-width: 270px;
   height: 100%;
-  padding: 0 24px 0 32px;
+  padding: 0 16px 0 20px;
   display: flex;
   align-items: center;
-  gap: 15px;
+  gap: 11px;
   border: 0;
   border-right: 1px solid var(--border-subtle);
   background: transparent;
   cursor: pointer;
-  font-size: 17px;
+  font-size: 15px;
   color: var(--text-secondary);
 }
 
@@ -415,7 +415,7 @@ select:focus-visible {
   left: 0;
   right: 0;
   bottom: 0;
-  height: 3px;
+  height: 2px;
   background: var(--accent-primary);
 }
 
@@ -434,17 +434,17 @@ select:focus-visible {
 }
 
 .dirty-dot {
-  width: 11px;
-  height: 11px;
+  width: 8px;
+  height: 8px;
   margin-left: auto;
-  flex: 0 0 11px;
+  flex: 0 0 8px;
   border-radius: 50%;
   background: var(--accent-primary);
 }
 
 .tab-close {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   margin-left: auto;
   display: grid;
   place-items: center;
@@ -460,9 +460,9 @@ select:focus-visible {
 }
 
 .new-tab {
-  width: 67px;
-  height: 67px;
-  flex: 0 0 67px;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
   border-radius: 0;
 }
 
@@ -480,22 +480,22 @@ select:focus-visible {
 }
 
 .statusbar {
-  min-height: 51px;
-  flex: 0 0 51px;
+  min-height: 34px;
+  flex: 0 0 34px;
   display: flex;
   align-items: center;
   gap: 0;
-  padding: 0 25px;
+  padding: 0 16px;
   border-top: 1px solid var(--border-subtle);
   background: var(--surface-toolbar);
   color: var(--text-secondary);
-  font-size: 15px;
+  font-size: 13px;
   white-space: nowrap;
   overflow: hidden;
 }
 
 .statusbar span {
-  padding: 0 25px;
+  padding: 0 16px;
   border-left: 1px solid var(--border-subtle);
 }
 
