@@ -5,7 +5,6 @@ app/.npm-cache/
 app/.vite-output.log
 app/.vite-error.log
 app/*.tsbuildinfo
-app/vite.config.mjs
 app/vite.config.d.mts
 
 # Rust / Tauri
