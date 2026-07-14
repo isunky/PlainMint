@@ -3,7 +3,7 @@
 
   <h1>PlainMint</h1>
   <p>
-    <strong>纯文本，清爽简单。</strong><br>
+    <strong>纯文本，清爽如初。</strong><br>
     <em>Plain text, freshly simple.</em>
   </p>
 
@@ -30,21 +30,21 @@
 
 ## 简体中文
 
-PlainMint 是一款轻量、可靠的 Windows 与 macOS 纯文本编辑器。专注写作与文本处理，不需要账户，也不会上传文件。
+PlainMint 是一款面向 Windows 与 macOS 的轻量纯文本编辑器。它在轻巧与实用之间，保留恰到好处的功能，让书写更专注、整理更从容、保存更安心。无需账户，文件始终留在你的设备上。
 
 ### 核心功能
 
-- **高效编辑** — 多标签、左右分屏、查找替换、撤销重做
-- **安全可靠** — 自动备份、会话恢复、外部文件变更检测
-- **格式兼容** — 保留 UTF-8 / UTF-16 编码与 LF / CRLF / CR 换行格式
-- **舒适易用** — 自动换行、行号、明暗主题、五种强调色
-- **中英双语** — 支持简体中文与 English，可跟随系统语言
+- **清爽而高效** — 多标签、左右分屏、查找替换与撤销重做，让常用操作顺手完成
+- **安心不打扰** — 自动备份、会话恢复与外部变更检测，默默守护每次编辑
+- **忠于原文件** — 保留 UTF-8 / UTF-16 编码，以及 LF / CRLF / CR 换行格式
+- **观感随心** — 自动换行、行号、明暗主题与五种强调色，舒适而克制
+- **双语自然切换** — 支持简体中文与 English，并可跟随系统语言
 
 ### 下载
 
-前往 [GitHub Releases](https://github.com/isunky/PlainMint/releases) 下载 Windows 安装程序或 macOS DMG。
+前往 [GitHub Releases](https://github.com/isunky/PlainMint/releases)，获取 Windows 安装程序或 macOS DMG。
 
-> 文件始终保存在本机。当前构建未进行商业代码签名，首次运行时系统可能显示安全提示。
+> PlainMint 只在本机读写文件。当前安装包尚未进行商业代码签名，首次运行时系统可能显示安全提示。
 
 ---
 
@@ -52,15 +52,15 @@ PlainMint 是一款轻量、可靠的 Windows 与 macOS 纯文本编辑器。专
 
 ## English
 
-PlainMint is a lightweight, reliable plain-text editor for Windows and macOS. It stays focused on writing and text work—no account required, and no files are uploaded.
+PlainMint is a lightweight plain-text editor for Windows and macOS. It keeps just the right features close at hand, so writing stays focused, organizing feels effortless, and saving remains dependable. No account is required, and your files stay on your device.
 
 ### Highlights
 
-- **Efficient editing** — Tabs, split view, find and replace, undo and redo
-- **Safe by default** — Automatic backups, session recovery, external-change detection
-- **Format friendly** — Preserves UTF-8 / UTF-16 and LF / CRLF / CR
-- **Comfortable UI** — Word wrap, line numbers, light and dark modes, five accents
-- **Bilingual** — Simplified Chinese and English with system-language detection
+- **Clean and efficient** — Tabs, split view, find and replace, undo and redo
+- **Quietly dependable** — Automatic backups, session recovery, and external-change detection
+- **Faithful to your files** — Preserves UTF-8 / UTF-16 and LF / CRLF / CR
+- **Comfortable by design** — Word wrap, line numbers, light and dark modes, and five accents
+- **Naturally bilingual** — Simplified Chinese and English with system-language detection
 
 ### Download
 
@@ -72,7 +72,7 @@ Get the Windows installer or macOS DMG from [GitHub Releases](https://github.com
 
 ## 开发 / Development
 
-需要 / Requires: Node.js 22, Rust stable, and [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/).
+**环境要求 / Requirements：** Node.js 22、Rust stable 与 [Tauri 2 前置依赖 / prerequisites](https://v2.tauri.app/start/prerequisites/)。
 
 ```bash
 git clone https://github.com/isunky/PlainMint.git
@@ -89,7 +89,7 @@ npm run tauri:build    # 构建安装包 / Build desktop installers
 <details>
 <summary><strong>发布 / Release</strong></summary>
 
-在 GitHub Actions 中手动运行 **Release**，选择 `patch`、`minor` 或 `major`。工作流会自动生成版本号并发布 Windows 与 macOS 安装包。
+在 GitHub Actions 中手动运行 **Release**，并选择 `patch`、`minor` 或 `major`。工作流会自动推算下一版本号，随后构建并发布 Windows 与 macOS 安装包。
 
 Run **Release** manually in GitHub Actions and choose `patch`, `minor`, or `major`. The workflow calculates the next version and publishes Windows and macOS installers.
 
