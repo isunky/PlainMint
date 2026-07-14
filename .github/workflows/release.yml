@@ -1,0 +1,91 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version increment
+        required: true
+        default: patch
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      prerelease:
+        description: Mark as pre-release
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      value: ${{ steps.next.outputs.value }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Calculate next version
+        id: next
+        shell: bash
+        run: |
+          latest="$(git tag --list 'v[0-9]*' --sort=-v:refname | head -n 1)"
+          current="${latest#v}"
+          if [ -z "$current" ]; then
+            current="$(node -p "require('./app/package.json').version")"
+          fi
+          IFS=. read -r major minor patch <<< "$current"
+          case "${{ inputs.bump }}" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+          esac
+          echo "value=${major}.${minor}.${patch}" >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            args: --bundles nsis
+          - os: macos-14
+            args: --bundles dmg
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+      - name: Install dependencies
+        working-directory: app
+        run: npm ci
+      - name: Apply release version
+        working-directory: app
+        run: node scripts/set-version.mjs ${{ needs.version.outputs.value }}
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: app
+          tagName: v${{ needs.version.outputs.value }}
+          releaseName: PlainMint v${{ needs.version.outputs.value }}
+          releaseBody: |
+            PlainMint v${{ needs.version.outputs.value }}
+
+            Download the installer for your platform below.
+          releaseDraft: false
+          prerelease: ${{ inputs.prerelease }}
+          args: ${{ matrix.args }}

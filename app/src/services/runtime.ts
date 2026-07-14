@@ -1,0 +1,198 @@
+import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { open, save } from "@tauri-apps/plugin-dialog";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { relaunch } from "@tauri-apps/plugin-process";
+import { check } from "@tauri-apps/plugin-updater";
+import type {
+  DocumentRecord,
+  FileFingerprint,
+  OpenedDocument,
+  RecoveryEntry,
+  SaveResult,
+  UserSettings,
+  WorkspaceSession,
+} from "../types";
+
+export const isTauri = () => Boolean(window.__TAURI_INTERNALS__);
+
+const filters = [{
+  name: "Plain text",
+  extensions: ["txt", "log", "md", "json", "xml", "csv", "ini", "conf", "yaml", "yml", "properties", "sql", "*"],
+}];
+
+function webFingerprint(content: string): FileFingerprint {
+  return { modifiedAt: Date.now(), size: new TextEncoder().encode(content).length, hash: "web-preview" };
+}
+
+export async function chooseAndOpenDocuments(): Promise<OpenedDocument[]> {
+  if (!isTauri()) return [];
+  const selected = await open({ multiple: true, directory: false, filters });
+  const paths = Array.isArray(selected) ? selected : selected ? [selected] : [];
+  return Promise.all(paths.map((path) =>
+    invoke<OpenedDocument>("open_file", { request: { path, encodingOverride: null } }),
+  ));
+}
+
+export async function openDocumentPath(path: string): Promise<OpenedDocument> {
+  if (!isTauri()) {
+    return {
+      path,
+      name: path.split(/[\\/]/).at(-1) ?? "preview.txt",
+      content: "",
+      encoding: "utf-8",
+      lineEnding: "lf",
+      readOnly: false,
+      fingerprint: webFingerprint(""),
+    };
+  }
+  return invoke<OpenedDocument>("open_file", { request: { path, encodingOverride: null } });
+}
+
+export async function saveDocument(document: DocumentRecord, forceSaveAs = false): Promise<SaveResult | null> {
+  let path = forceSaveAs ? undefined : document.filePath;
+  if (isTauri() && !path) {
+    path = await save({
+      defaultPath: document.fileName === "Untitled" ? "untitled.txt" : document.fileName,
+      filters,
+    }) ?? undefined;
+  }
+  if (!path && !isTauri()) path = document.fileName;
+  if (!path) return null;
+  if (!isTauri()) {
+    return { path, fingerprint: webFingerprint(document.content), savedAt: Date.now() };
+  }
+  return invoke<SaveResult>("save_file", {
+    request: {
+      path,
+      content: document.content,
+      encoding: document.encoding,
+      lineEnding: document.lineEnding,
+      expectedFingerprint: forceSaveAs ? null : document.fingerprint ?? null,
+    },
+  });
+}
+
+export async function inspectFile(path: string): Promise<FileFingerprint | null> {
+  if (!isTauri()) return null;
+  return invoke<FileFingerprint>("inspect_file", { path });
+}
+
+export async function chooseDirectory(): Promise<string | null> {
+  if (!isTauri()) return "C:\\Users\\Alex\\OneDrive\\Documents\\PlainMint";
+  const selected = await open({ directory: true, multiple: false });
+  return typeof selected === "string" ? selected : null;
+}
+
+export async function loadSettings(): Promise<UserSettings | null> {
+  if (!isTauri()) {
+    const raw = localStorage.getItem("plainmint.settings");
+    return raw ? JSON.parse(raw) as UserSettings : null;
+  }
+  return invoke<UserSettings | null>("load_settings");
+}
+
+export async function persistSettings(settings: UserSettings) {
+  if (!isTauri()) {
+    localStorage.setItem("plainmint.settings", JSON.stringify(settings));
+    return;
+  }
+  await invoke("save_settings", { settings });
+}
+
+export async function persistSession(payload: unknown) {
+  if (!isTauri()) {
+    localStorage.setItem("plainmint.session", JSON.stringify(payload));
+    return;
+  }
+  await invoke("save_session", { session: payload });
+}
+
+export async function loadSession(): Promise<WorkspaceSession | null> {
+  if (!isTauri()) {
+    const raw = localStorage.getItem("plainmint.session");
+    return raw ? JSON.parse(raw) as WorkspaceSession : null;
+  }
+  return invoke<WorkspaceSession | null>("load_session");
+}
+
+export async function loadRecentFiles(): Promise<string[]> {
+  if (!isTauri()) {
+    const raw = localStorage.getItem("plainmint.recent-files");
+    return raw ? JSON.parse(raw) as string[] : [];
+  }
+  return invoke<string[]>("load_recent_files");
+}
+
+export async function persistRecentFiles(paths: string[]) {
+  if (!isTauri()) {
+    localStorage.setItem("plainmint.recent-files", JSON.stringify(paths));
+    return;
+  }
+  await invoke("save_recent_files", { paths });
+}
+
+export async function writeRecovery(document: DocumentRecord, settings: UserSettings) {
+  if (!settings.autoBackupEnabled || !document.dirty) return;
+  if (!isTauri()) return;
+  await invoke("write_backup", {
+    request: {
+      documentId: document.id,
+      fileName: document.fileName,
+      originalPath: document.filePath ?? null,
+      content: document.content,
+      encoding: document.encoding,
+      lineEnding: document.lineEnding,
+      retentionDays: settings.backupRetentionDays,
+      maxVersions: settings.maxBackupVersionsPerFile,
+    },
+  });
+}
+
+export async function listRecoveries(): Promise<RecoveryEntry[]> {
+  if (!isTauri()) return [];
+  return invoke<RecoveryEntry[]>("list_recoveries");
+}
+
+export async function restoreRecovery(id: string): Promise<OpenedDocument> {
+  return invoke<OpenedDocument>("restore_recovery", { id });
+}
+
+export async function deleteRecovery(id: string) {
+  if (isTauri()) await invoke("delete_recovery", { id });
+}
+
+export async function checkForUpdates() {
+  if (!isTauri()) return { available: false as const };
+  try {
+    const update = await check();
+    if (!update) return { available: false as const };
+    return {
+      available: true as const,
+      version: update.version,
+      body: update.body,
+      install: async () => {
+        await update.downloadAndInstall();
+        await relaunch();
+      },
+    };
+  } catch {
+    return { available: false as const, notConfigured: true as const };
+  }
+}
+
+export async function showSourceCode() {
+  await openUrl("https://github.com/isunky/PlainMint");
+}
+
+export async function minimizeWindow() {
+  if (isTauri()) await getCurrentWindow().minimize();
+}
+
+export async function toggleMaximizeWindow() {
+  if (isTauri()) await getCurrentWindow().toggleMaximize();
+}
+
+export async function closeWindow() {
+  if (isTauri()) await getCurrentWindow().close();
+}

@@ -1,0 +1,31 @@
+# Frontend
+app/node_modules/
+app/dist/
+app/.npm-cache/
+app/.vite-output.log
+app/.vite-error.log
+app/*.tsbuildinfo
+app/vite.config.d.mts
+
+# Rust / Tauri
+app/src-tauri/target/
+app/src-tauri/gen/
+app/src-tauri/tauri.release.conf.json
+app/src-tauri/icons/android/
+app/src-tauri/icons/ios/
+app/src-tauri/icons/64x64.png
+app/src-tauri/icons/icon.png
+app/src-tauri/icons/Square*.png
+app/src-tauri/icons/StoreLogo.png
+
+# Editors and OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Local signing material
+*.key
+*.p12
+*.pfx
+*.cer
