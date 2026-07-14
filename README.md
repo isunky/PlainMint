@@ -1,52 +1,61 @@
 <div align="center">
-  <img src="app/public/plainmint-icon-source.png" width="96" alt="PlainMint icon">
+  <img src="app/public/plainmint-icon-source.png" width="88" alt="PlainMint">
+
   <h1>PlainMint</h1>
-  <p><strong>纯文本，清爽简单。</strong><br>Plain text, freshly simple.</p>
+  <p><strong>纯文本，清爽简单。</strong><br><sub>Plain text, freshly simple.</sub></p>
 
-[![CI](https://github.com/isunky/PlainMint/actions/workflows/ci.yml/badge.svg)](https://github.com/isunky/PlainMint/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/isunky/PlainMint?display_name=tag)](https://github.com/isunky/PlainMint/releases/latest)
-[![License](https://img.shields.io/github/license/isunky/PlainMint)](LICENSE)
+  <p>
+    <a href="https://github.com/isunky/PlainMint/releases/latest"><img src="https://img.shields.io/github/v/release/isunky/PlainMint?style=flat-square&label=Download&color=18b7aa" alt="Latest release"></a>
+    <a href="https://github.com/isunky/PlainMint/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/isunky/PlainMint/ci.yml?style=flat-square&label=CI" alt="CI status"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/github/license/isunky/PlainMint?style=flat-square" alt="License"></a>
+  </p>
 
+  <p>轻量、可靠、完全本地的 Windows / macOS 纯文本编辑器。</p>
 </div>
 
-![PlainMint editor](app/qa/editor-1586x992.png)
+<img src="app/qa/editor-1586x992.png" alt="PlainMint 编辑器界面">
 
-PlainMint 是一款面向 Windows 与 macOS 的轻量纯文本编辑器。文件只保存在本机，没有账户、云端上传或专有格式。
+## 为什么选择 PlainMint？
 
-## 功能
+| 清爽编辑           | 安全可靠           | 灵活使用             |
+| ------------------ | ------------------ | -------------------- |
+| 多标签、左右分屏   | 自动备份、会话恢复 | 浅色、深色、系统主题 |
+| 查找替换、撤销重做 | 外部文件变更检测   | 简体中文与 English   |
+| 自动换行、行号统计 | 保留编码与换行格式 | Windows 与 macOS     |
 
-- 多标签编辑与左右分屏
-- 查找替换、撤销重做、自动换行与行号
-- UTF-8 / UTF-16 和 LF / CRLF / CR 保留
-- 自动备份、会话恢复与外部文件变更检测
-- 浅色、深色、系统主题及五种强调色
-- 简体中文与 English
+文件始终保存在本机：**无需账户、不上传内容、不使用专有格式。**
 
 ## 下载
 
-前往 [GitHub Releases](https://github.com/isunky/PlainMint/releases/latest) 下载 Windows 安装程序或 macOS DMG。
+从 [GitHub Releases](https://github.com/isunky/PlainMint/releases/latest) 获取：
 
-> 当前构建未进行商业代码签名，首次运行时系统可能显示安全提示。
+- **Windows** — NSIS 安装程序
+- **macOS** — DMG 安装包
 
-## 开发
+> 当前版本未进行商业代码签名，首次运行时系统可能显示安全提示。
 
-需要 Node.js 22、Rust stable 与 [Tauri 2 系统依赖](https://v2.tauri.app/start/prerequisites/)。
+## 本地开发
+
+需要 Node.js 22、Rust stable 和 [Tauri 2 系统依赖](https://v2.tauri.app/start/prerequisites/)。
 
 ```bash
-cd app
+git clone https://github.com/isunky/PlainMint.git
+cd PlainMint/app
 npm install
 npm run tauri:dev
 ```
 
 ```bash
-npm run check
-npm run build
-npm run tauri:build
+npm run check          # 类型检查与测试
+npm run tauri:build    # 构建桌面安装包
 ```
 
-## 发布
+<details>
+<summary><strong>发布新版本</strong></summary>
 
-在 GitHub Actions 中手动运行 **Release**，选择 `patch`、`minor` 或 `major`。工作流会根据最新 `v*` 标签自动生成下一版本，并发布 Windows NSIS 与 macOS DMG。
+在 GitHub Actions 中手动运行 **Release**，选择 `patch`、`minor` 或 `major`。工作流会自动计算版本号并发布 Windows 与 macOS 安装包。
+
+</details>
 
 ## License
 
