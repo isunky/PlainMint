@@ -19,7 +19,6 @@ import type {
 export const isTauri = () => Boolean(window.__TAURI_INTERNALS__);
 
 let webStartupStatus: StartupStatus | undefined;
-let closingProgrammatically = false;
 
 const filters = [{
   name: "Plain text",
@@ -128,14 +127,6 @@ export async function beginAppSession(): Promise<StartupStatus> {
   return invoke<StartupStatus>("begin_app_session");
 }
 
-export async function completeAppSession() {
-  if (!isTauri()) {
-    localStorage.setItem("plainmint.lifecycle", JSON.stringify({ running: false, closedAt: Date.now() }));
-    return;
-  }
-  await invoke("complete_app_session");
-}
-
 export async function loadSession(): Promise<WorkspaceSession | null> {
   if (!isTauri()) {
     const raw = localStorage.getItem("plainmint.session");
@@ -233,7 +224,6 @@ export async function toggleMaximizeWindow() {
 export async function listenForWindowClose(handler: () => void): Promise<() => void> {
   if (!isTauri()) return () => undefined;
   return getCurrentWindow().onCloseRequested((event) => {
-    if (closingProgrammatically) return;
     event.preventDefault();
     handler();
   });
@@ -241,13 +231,8 @@ export async function listenForWindowClose(handler: () => void): Promise<() => v
 
 export async function closeWindow() {
   if (!isTauri()) {
-    await completeAppSession();
+    localStorage.setItem("plainmint.lifecycle", JSON.stringify({ running: false, closedAt: Date.now() }));
     return;
   }
-  try {
-    await completeAppSession();
-  } finally {
-    closingProgrammatically = true;
-    await getCurrentWindow().close();
-  }
+  await invoke("close_app_window");
 }

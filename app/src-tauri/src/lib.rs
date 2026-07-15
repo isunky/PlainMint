@@ -467,8 +467,11 @@ fn begin_app_session(app: AppHandle) -> CommandResult<StartupStatus> {
 }
 
 #[tauri::command]
-fn complete_app_session(app: AppHandle) -> CommandResult<()> {
-    complete_lifecycle(&app_data_file(&app, "lifecycle.json")?, now_millis())
+fn close_app_window(app: AppHandle, window: tauri::WebviewWindow) -> CommandResult<()> {
+    complete_lifecycle(&app_data_file(&app, "lifecycle.json")?, now_millis())?;
+    window
+        .destroy()
+        .map_err(|error| AppError::new("window_close_failed", "close", Some(error.to_string())))
 }
 
 #[tauri::command]
@@ -911,7 +914,7 @@ pub fn run() {
             load_settings,
             save_settings,
             begin_app_session,
-            complete_app_session,
+            close_app_window,
             save_session,
             load_session,
             load_recent_files,
