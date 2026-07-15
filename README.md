@@ -86,6 +86,10 @@ npm run check          # 类型检查与测试 / Type checks and tests
 npm run tauri:build    # 构建安装包 / Build desktop installers
 ```
 
+Windows 可在仓库根目录双击 `build-windows.cmd`，一次生成 MSI、EXE 安装程序与免安装绿色 ZIP；产物统一位于 `artifacts/windows`。
+
+On Windows, double-click `build-windows.cmd` in the repository root to produce MSI and EXE installers plus a portable ZIP in `artifacts/windows`.
+
 <details>
 <summary><strong>发布 / Release</strong></summary>
 

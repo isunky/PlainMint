@@ -101,6 +101,14 @@ struct SaveResult {
     saved_at: u64,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RecentlyClosedTab {
+    path: String,
+    file_name: String,
+    closed_at: u64,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DirectoryValidationResult {
@@ -737,6 +745,63 @@ fn save_recent_files(app: AppHandle, paths: Vec<String>) -> CommandResult<()> {
     atomic_write(&path, &bytes)
 }
 
+fn recent_path_key(path: &str) -> String {
+    let normalized = path.trim().replace('\\', "/");
+    if cfg!(windows) {
+        normalized.to_lowercase()
+    } else {
+        normalized
+    }
+}
+
+fn normalize_recently_closed_tabs(entries: Vec<RecentlyClosedTab>) -> Vec<RecentlyClosedTab> {
+    let mut seen = std::collections::HashSet::new();
+    entries
+        .into_iter()
+        .filter(|entry| {
+            let key = recent_path_key(&entry.path);
+            !key.is_empty() && seen.insert(key)
+        })
+        .take(10)
+        .collect()
+}
+
+#[tauri::command]
+fn load_recently_closed_tabs(app: AppHandle) -> CommandResult<Vec<RecentlyClosedTab>> {
+    let path = app_data_file(&app, "recently-closed-tabs.json")?;
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let entries = serde_json::from_slice(
+        &fs::read(path).map_err(|error| AppError::io("recently_closed_read_failed", error))?,
+    )
+    .map_err(|error| {
+        AppError::new(
+            "recently_closed_invalid",
+            "reopenClosedTab",
+            Some(error.to_string()),
+        )
+    })?;
+    Ok(normalize_recently_closed_tabs(entries))
+}
+
+#[tauri::command]
+fn persist_recently_closed_tabs(
+    app: AppHandle,
+    entries: Vec<RecentlyClosedTab>,
+) -> CommandResult<()> {
+    let path = app_data_file(&app, "recently-closed-tabs.json")?;
+    let normalized = normalize_recently_closed_tabs(entries);
+    let bytes = serde_json::to_vec_pretty(&normalized).map_err(|error| {
+        AppError::new(
+            "recently_closed_invalid",
+            "reopenClosedTab",
+            Some(error.to_string()),
+        )
+    })?;
+    atomic_write(&path, &bytes)
+}
+
 fn backup_root(app: &AppHandle) -> CommandResult<PathBuf> {
     app_data_file(app, "backups")
 }
@@ -1021,6 +1086,7 @@ fn delete_recovery(app: AppHandle, id: String) -> CommandResult<()> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -1037,6 +1103,8 @@ pub fn run() {
             load_session,
             load_recent_files,
             save_recent_files,
+            load_recently_closed_tabs,
+            persist_recently_closed_tabs,
             write_backup,
             prune_backups,
             list_recoveries,
@@ -1182,5 +1250,36 @@ mod tests {
         let completed = begin_lifecycle(&path, 400).unwrap();
         assert!(!completed.previous_exit_was_unclean);
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn normalizes_recently_closed_tabs_and_applies_limit() {
+        let mut entries = (0..12)
+            .map(|index| RecentlyClosedTab {
+                path: format!("C:\\Notes\\{index}.txt"),
+                file_name: format!("{index}.txt"),
+                closed_at: 12 - index,
+            })
+            .collect::<Vec<_>>();
+        entries.insert(
+            1,
+            RecentlyClosedTab {
+                path: "C:\\Notes\\0.txt".into(),
+                file_name: "duplicate.txt".into(),
+                closed_at: 99,
+            },
+        );
+
+        let normalized = normalize_recently_closed_tabs(entries);
+
+        assert_eq!(normalized.len(), 10);
+        assert_eq!(normalized[0].file_name, "0.txt");
+        assert_eq!(
+            normalized
+                .iter()
+                .filter(|entry| entry.path.ends_with("0.txt"))
+                .count(),
+            1
+        );
     }
 }

@@ -60,6 +60,7 @@ describe("clean exit session snapshot", () => {
     const dirty = { ...clean, id: "dirty", fileName: "draft.txt", dirty: true };
     const snapshot = createWorkspaceSession({
       split: true,
+      splitRatio: 0.64,
       documents: { clean, dirty },
       tabs: {
         left: [{ id: "tab-clean", documentId: "clean", pane: "left", order: 0 }],
@@ -72,5 +73,6 @@ describe("clean exit session snapshot", () => {
     expect(snapshot.tabs.right).toEqual([]);
     expect(snapshot.activeTab.right).toBeNull();
     expect(snapshot.split).toBe(false);
+    expect(snapshot.splitRatio).toBe(0.64);
   });
 });

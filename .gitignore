@@ -11,6 +11,7 @@ app/vite.config.d.mts
 app/src-tauri/target/
 app/src-tauri/gen/
 app/src-tauri/tauri.release.conf.json
+artifacts/
 app/src-tauri/icons/android/
 app/src-tauri/icons/ios/
 app/src-tauri/icons/64x64.png

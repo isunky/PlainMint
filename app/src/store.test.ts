@@ -1,7 +1,24 @@
 import { ChangeSet } from "@codemirror/state";
 import { describe, expect, it } from "vitest";
-import { defaultSettings, useAppStore } from "./store";
-import type { WorkspaceSession } from "./types";
+import { defaultSettings, normalizeRecentlyClosedTabs, useAppStore } from "./store";
+import type { DocumentRecord, WorkspaceSession } from "./types";
+
+function documentRecord(id: string): DocumentRecord {
+  return {
+    id,
+    fileName: `${id}.txt`,
+    filePath: `C:\\${id}.txt`,
+    content: id,
+    encoding: "utf-8",
+    lineEnding: "lf",
+    dirty: false,
+    readOnly: false,
+    missing: false,
+    externalModified: false,
+    revision: 0,
+    createdAt: 1,
+  };
+}
 
 describe("document history", () => {
   it("applies, undoes, and redoes a change through the shared controller", () => {
@@ -123,5 +140,130 @@ describe("runtime settings", () => {
     const currentRevision = useAppStore.getState().documents[id].revision;
     useAppStore.getState().markSaved(id, "C:\\notes.txt", currentRevision, { modifiedAt: 2, size: 12, hash: "current" });
     expect(useAppStore.getState().documents[id].dirty).toBe(false);
+  });
+});
+
+describe("tab and split workspace", () => {
+  it("reorders tabs within one pane and normalizes their order", () => {
+    const documents = { a: documentRecord("a"), b: documentRecord("b"), c: documentRecord("c") };
+    useAppStore.setState({
+      documents,
+      tabs: {
+        left: [
+          { id: "tab-a", documentId: "a", pane: "left", order: 0 },
+          { id: "tab-b", documentId: "b", pane: "left", order: 1 },
+          { id: "tab-c", documentId: "c", pane: "left", order: 2 },
+        ],
+        right: [],
+      },
+      activeTab: { left: "tab-b", right: null },
+      activePane: "left",
+      split: false,
+    });
+
+    useAppStore.getState().moveTab("tab-c", "left", 0);
+
+    expect(useAppStore.getState().tabs.left.map((tab) => tab.id)).toEqual(["tab-c", "tab-a", "tab-b"]);
+    expect(useAppStore.getState().tabs.left.map((tab) => tab.order)).toEqual([0, 1, 2]);
+    expect(useAppStore.getState().activeTab.left).toBe("tab-c");
+  });
+
+  it("moves a tab across panes and removes a duplicate target tab", () => {
+    const documents = { a: documentRecord("a"), b: documentRecord("b") };
+    useAppStore.setState({
+      documents,
+      tabs: {
+        left: [
+          { id: "tab-a", documentId: "a", pane: "left", order: 0 },
+          { id: "tab-b", documentId: "b", pane: "left", order: 1 },
+        ],
+        right: [{ id: "tab-a-right", documentId: "a", pane: "right", order: 0 }],
+      },
+      activeTab: { left: "tab-a", right: "tab-a-right" },
+      activePane: "left",
+      split: true,
+    });
+
+    useAppStore.getState().moveTab("tab-a", "right", 1);
+
+    const state = useAppStore.getState();
+    expect(state.tabs.left.map((tab) => tab.id)).toEqual(["tab-b"]);
+    expect(state.tabs.right.map((tab) => tab.id)).toEqual(["tab-a-right"]);
+    expect(state.activeTab.right).toBe("tab-a-right");
+    expect(state.documents.a).toBeDefined();
+  });
+
+  it("merges the right pane without duplicate documents and keeps its active document", () => {
+    const documents = { a: documentRecord("a"), b: documentRecord("b") };
+    useAppStore.setState({
+      documents,
+      tabs: {
+        left: [{ id: "tab-a", documentId: "a", pane: "left", order: 0 }],
+        right: [
+          { id: "tab-a-right", documentId: "a", pane: "right", order: 0 },
+          { id: "tab-b", documentId: "b", pane: "right", order: 1 },
+        ],
+      },
+      activeTab: { left: "tab-a", right: "tab-b" },
+      activePane: "right",
+      split: true,
+    });
+
+    useAppStore.getState().toggleSplit();
+
+    const state = useAppStore.getState();
+    expect(state.split).toBe(false);
+    expect(state.tabs.right).toEqual([]);
+    expect(state.tabs.left.map((tab) => tab.documentId)).toEqual(["a", "b"]);
+    expect(state.tabs.left.find((tab) => tab.id === state.activeTab.left)?.documentId).toBe("b");
+  });
+
+  it("restores a persisted split ratio and defaults legacy sessions to one half", () => {
+    const base: WorkspaceSession = {
+      savedAt: 1,
+      split: false,
+      activeTab: { left: null, right: null },
+      tabs: { left: [], right: [] },
+      documents: [],
+    };
+    useAppStore.getState().restoreSession({ ...base, splitRatio: 0.68 });
+    expect(useAppStore.getState().splitRatio).toBe(0.68);
+    useAppStore.getState().restoreSession(base);
+    expect(useAppStore.getState().splitRatio).toBe(0.5);
+  });
+
+  it("merges right-side tabs from legacy non-split sessions instead of hiding them", () => {
+    const a = documentRecord("a");
+    const b = documentRecord("b");
+    useAppStore.getState().restoreSession({
+      savedAt: 1,
+      split: false,
+      activeTab: { left: "tab-a", right: "tab-b" },
+      tabs: {
+        left: [{ id: "tab-a", documentId: "a", pane: "left", order: 0 }],
+        right: [{ id: "tab-b", documentId: "b", pane: "right", order: 0 }],
+      },
+      documents: [a, b],
+    });
+
+    expect(useAppStore.getState().tabs.left.map((tab) => tab.documentId)).toEqual(["a", "b"]);
+    expect(useAppStore.getState().tabs.right).toEqual([]);
+  });
+});
+
+describe("recently closed tabs", () => {
+  it("deduplicates Windows paths and keeps at most ten entries", () => {
+    const entries = Array.from({ length: 12 }, (_, index) => ({
+      path: `C:\\Notes\\${index}.txt`,
+      fileName: `${index}.txt`,
+      closedAt: 12 - index,
+    }));
+    entries.splice(1, 0, { path: "c:\\notes\\0.txt", fileName: "duplicate.txt", closedAt: 99 });
+
+    const normalized = normalizeRecentlyClosedTabs(entries);
+
+    expect(normalized).toHaveLength(10);
+    expect(normalized.filter((entry) => entry.path.toLowerCase().endsWith("0.txt"))).toHaveLength(1);
+    expect(normalized[0].fileName).toBe("0.txt");
   });
 });
