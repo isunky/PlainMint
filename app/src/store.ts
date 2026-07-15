@@ -7,6 +7,7 @@ import type {
   EditorTab,
   OpenedDocument,
   PaneId,
+  RecentlyClosedTab,
   SearchState,
   UserSettings,
   WorkspaceSession,
@@ -23,6 +24,8 @@ interface AppState {
   activeTab: Record<PaneId, string | null>;
   activePane: PaneId;
   split: boolean;
+  splitRatio: number;
+  recentlyClosedTabs: RecentlyClosedTab[];
   search: SearchState;
   cursor: Record<PaneId, CursorStats>;
   settings: UserSettings;
@@ -31,7 +34,13 @@ interface AppState {
   addOpenedDocument: (opened: OpenedDocument, pane?: PaneId) => string;
   setActiveTab: (pane: PaneId, tabId: string) => void;
   closeTab: (pane: PaneId, tabId: string) => void;
+  closeTabs: (targets: Array<{ pane: PaneId; tabId: string }>) => void;
+  moveTab: (tabId: string, targetPane: PaneId, targetIndex: number) => void;
   toggleSplit: () => void;
+  setSplitRatio: (ratio: number) => void;
+  loadRecentlyClosedTabs: (entries: RecentlyClosedTab[]) => void;
+  rememberClosedTab: (entry: RecentlyClosedTab) => void;
+  removeRecentlyClosedTab: (path: string) => void;
   setActivePane: (pane: PaneId) => void;
   applyChanges: (documentId: string, changes: ChangeSet, origin: string) => void;
   undoDocument: (documentId: string) => void;
@@ -180,6 +189,32 @@ function activeDocumentId(state: AppState, pane: PaneId) {
   return state.tabs[pane].find((tab) => tab.id === active)?.documentId;
 }
 
+function normalizeTabs(tabs: EditorTab[], pane: PaneId) {
+  return tabs.map((tab, order) => ({ ...tab, pane, order }));
+}
+
+function normalizeSplitRatio(value: unknown) {
+  const ratio = Number(value);
+  return Number.isFinite(ratio) ? Math.min(0.9, Math.max(0.1, ratio)) : 0.5;
+}
+
+function pathKey(path: string) {
+  const normalized = path.trim().replace(/\\/g, "/");
+  return /^[a-z]:\//i.test(normalized) || normalized.startsWith("//")
+    ? normalized.toLocaleLowerCase("en-US")
+    : normalized;
+}
+
+export function normalizeRecentlyClosedTabs(entries: RecentlyClosedTab[]) {
+  const seen = new Set<string>();
+  return entries.filter((entry) => {
+    const key = pathKey(entry.path);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 10);
+}
+
 const initial = createInitialState();
 const requestedState = new URLSearchParams(window.location.search).get("state");
 
@@ -187,6 +222,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   ...initial,
   activePane: "left",
   split: requestedState === "split",
+  splitRatio: 0.5,
+  recentlyClosedTabs: [],
   search: {
     open: requestedState === "find",
     replaceOpen: requestedState === "find",
@@ -223,8 +260,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       ? Object.values(get().documents).find((document) => document.filePath === opened.path)
       : undefined;
     if (existing) {
-      const existingTab = get().tabs[pane].find((tab) => tab.documentId === existing.id);
-      if (existingTab) get().setActiveTab(pane, existingTab.id);
+      const state = get();
+      const existingPane = ([pane, pane === "left" ? "right" : "left"] as PaneId[])
+        .find((candidate) => state.tabs[candidate].some((tab) => tab.documentId === existing.id));
+      const existingTab = existingPane
+        ? state.tabs[existingPane].find((tab) => tab.documentId === existing.id)
+        : undefined;
+      if (existingPane && existingTab) get().setActiveTab(existingPane, existingTab.id);
       return existing.id;
     }
     const id = uniqueId("doc");
@@ -261,34 +303,91 @@ export const useAppStore = create<AppState>((set, get) => ({
     activePane: pane,
   })),
 
-  closeTab: (pane, tabId) => set((state) => {
-    const index = state.tabs[pane].findIndex((tab) => tab.id === tabId);
-    const nextTabs = state.tabs[pane].filter((tab) => tab.id !== tabId);
-    const nextActive = state.activeTab[pane] === tabId
-      ? nextTabs[Math.min(index, Math.max(0, nextTabs.length - 1))]?.id ?? null
-      : state.activeTab[pane];
-    const openDocumentIds = new Set([
-      ...state.tabs.left.filter((tab) => tab.id !== tabId).map((tab) => tab.documentId),
-      ...state.tabs.right.filter((tab) => tab.id !== tabId).map((tab) => tab.documentId),
-    ]);
+  closeTab: (pane, tabId) => get().closeTabs([{ pane, tabId }]),
+
+  closeTabs: (targets) => set((state) => {
+    const targetIds = new Set(targets.map((target) => target.tabId));
+    const tabsFor = (pane: PaneId) => normalizeTabs(
+      state.tabs[pane].filter((tab) => !targetIds.has(tab.id)),
+      pane,
+    );
+    const nextTabs = { left: tabsFor("left"), right: tabsFor("right") };
+    const activeFor = (pane: PaneId) => {
+      const current = state.activeTab[pane];
+      if (current && nextTabs[pane].some((tab) => tab.id === current)) return current;
+      const oldIndex = Math.max(0, state.tabs[pane].findIndex((tab) => tab.id === current));
+      return nextTabs[pane][Math.min(oldIndex, Math.max(0, nextTabs[pane].length - 1))]?.id ?? null;
+    };
+    const openDocumentIds = new Set([...nextTabs.left, ...nextTabs.right].map((tab) => tab.documentId));
     const documents = { ...state.documents };
     const histories = { ...state.histories };
-    const closing = state.tabs[pane].find((tab) => tab.id === tabId);
-    if (closing && !openDocumentIds.has(closing.documentId)) {
-      delete documents[closing.documentId];
-      delete histories[closing.documentId];
-    }
+    [...state.tabs.left, ...state.tabs.right]
+      .filter((tab) => targetIds.has(tab.id) && !openDocumentIds.has(tab.documentId))
+      .forEach((tab) => {
+        delete documents[tab.documentId];
+        delete histories[tab.documentId];
+      });
+    const split = state.split && nextTabs.right.length > 0;
     return {
       documents,
       histories,
-      tabs: { ...state.tabs, [pane]: nextTabs },
-      activeTab: { ...state.activeTab, [pane]: nextActive },
-      split: pane === "right" && nextTabs.length === 0 ? false : state.split,
+      tabs: nextTabs,
+      activeTab: { left: activeFor("left"), right: activeFor("right") },
+      split,
+      activePane: !split && state.activePane === "right" ? "left" : state.activePane,
+    };
+  }),
+
+  moveTab: (tabId, targetPane, targetIndex) => set((state) => {
+    const sourcePane = (["left", "right"] as PaneId[])
+      .find((pane) => state.tabs[pane].some((tab) => tab.id === tabId));
+    if (!sourcePane) return state;
+    const sourceIndex = state.tabs[sourcePane].findIndex((tab) => tab.id === tabId);
+    const moving = state.tabs[sourcePane][sourceIndex];
+    const sourceRemaining = state.tabs[sourcePane].filter((tab) => tab.id !== tabId);
+    const targetBase = sourcePane === targetPane ? sourceRemaining : state.tabs[targetPane];
+    const duplicate = targetBase.find((tab) => tab.documentId === moving.documentId);
+    const insertAt = Math.min(Math.max(0, targetIndex), targetBase.length);
+    const targetTabs = duplicate
+      ? targetBase
+      : [...targetBase.slice(0, insertAt), { ...moving, pane: targetPane }, ...targetBase.slice(insertAt)];
+    const tabs = {
+      left: normalizeTabs(sourcePane === "left" ? sourceRemaining : targetPane === "left" ? targetTabs : state.tabs.left, "left"),
+      right: normalizeTabs(sourcePane === "right" ? sourceRemaining : targetPane === "right" ? targetTabs : state.tabs.right, "right"),
+    };
+    if (sourcePane === targetPane) tabs[targetPane] = normalizeTabs(targetTabs, targetPane);
+    const sourceActive = state.activeTab[sourcePane] === tabId
+      ? tabs[sourcePane][Math.min(sourceIndex, Math.max(0, tabs[sourcePane].length - 1))]?.id ?? null
+      : state.activeTab[sourcePane];
+    const targetActive = duplicate?.id ?? tabId;
+    const activeTab = { ...state.activeTab, [sourcePane]: sourceActive, [targetPane]: targetActive };
+    const split = (state.split || targetPane === "right") && tabs.right.length > 0;
+    return {
+      tabs,
+      activeTab,
+      activePane: split ? targetPane : "left",
+      split,
     };
   }),
 
   toggleSplit: () => set((state) => {
-    if (state.split) return { split: false, activePane: "left" };
+    if (state.split) {
+      const merged = [...state.tabs.left];
+      state.tabs.right.forEach((tab) => {
+        if (!merged.some((candidate) => candidate.documentId === tab.documentId)) merged.push({ ...tab, pane: "left" });
+      });
+      const leftTabs = normalizeTabs(merged, "left");
+      const rightActiveDocumentId = state.tabs.right.find((tab) => tab.id === state.activeTab.right)?.documentId;
+      const nextActive = state.activePane === "right" && rightActiveDocumentId
+        ? leftTabs.find((tab) => tab.documentId === rightActiveDocumentId)?.id ?? state.activeTab.left
+        : state.activeTab.left;
+      return {
+        split: false,
+        tabs: { left: leftTabs, right: [] },
+        activeTab: { left: nextActive ?? leftTabs[0]?.id ?? null, right: null },
+        activePane: "left",
+      };
+    }
     const rightTabs = state.tabs.right.length > 0 ? state.tabs.right : (() => {
       const documentId = activeDocumentId(state, "left");
       return documentId
@@ -305,6 +404,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       activePane: "left",
     };
   }),
+
+  setSplitRatio: (ratio) => set({ splitRatio: normalizeSplitRatio(ratio) }),
+
+  loadRecentlyClosedTabs: (entries) => set({ recentlyClosedTabs: normalizeRecentlyClosedTabs(entries) }),
+  rememberClosedTab: (entry) => set((state) => ({
+    recentlyClosedTabs: normalizeRecentlyClosedTabs([entry, ...state.recentlyClosedTabs]),
+  })),
+  removeRecentlyClosedTab: (path) => set((state) => ({
+    recentlyClosedTabs: state.recentlyClosedTabs.filter((entry) => pathKey(entry.path) !== pathKey(path)),
+  })),
 
   setActivePane: (pane) => set({ activePane: pane }),
 
@@ -446,8 +555,19 @@ export const useAppStore = create<AppState>((set, get) => ({
       document.id,
       { ...document, revision: document.revision ?? 0, patch: undefined },
     ]));
-    const validTabs = (pane: PaneId) => (session.tabs[pane] ?? []).filter((tab) => Boolean(documents[tab.documentId]));
+    const validTabs = (pane: PaneId) => normalizeTabs(
+      (session.tabs[pane] ?? []).filter((tab) => Boolean(documents[tab.documentId])),
+      pane,
+    );
     const tabs = { left: validTabs("left"), right: validTabs("right") };
+    if (!session.split && tabs.right.length) {
+      tabs.right.forEach((tab) => {
+        if (!tabs.left.some((candidate) => candidate.documentId === tab.documentId)) {
+          tabs.left.push({ ...tab, pane: "left", order: tabs.left.length });
+        }
+      });
+      tabs.right = [];
+    }
     const activeFor = (pane: PaneId) => tabs[pane].some((tab) => tab.id === session.activeTab[pane])
       ? session.activeTab[pane]
       : tabs[pane][0]?.id ?? null;
@@ -456,6 +576,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       tabs,
       activeTab: { left: activeFor("left"), right: activeFor("right") },
       split: Boolean(session.split && tabs.right.length),
+      splitRatio: normalizeSplitRatio(session.splitRatio),
       activePane: "left",
       histories: {},
     };

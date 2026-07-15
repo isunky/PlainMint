@@ -10,6 +10,7 @@
     "core:window:allow-start-dragging",
     "core:window:allow-toggle-maximize",
     "dialog:default",
+    "clipboard-manager:allow-write-text",
     "opener:default",
     "process:default",
     "updater:default"

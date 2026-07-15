@@ -26,6 +26,7 @@ export function decideStartupRecovery(
 export function createWorkspaceSession(
   state: {
     split: boolean;
+    splitRatio?: number;
     activeTab: Record<PaneId, string | null>;
     tabs: Record<PaneId, EditorTab[]>;
     documents: Record<string, DocumentRecord>;
@@ -40,12 +41,21 @@ export function createWorkspaceSession(
     .filter((tab) => documentIds.has(tab.documentId))
     .map((tab, order) => ({ ...tab, order }));
   const tabs = { left: tabsFor("left"), right: tabsFor("right") };
+  if (!state.split && tabs.right.length) {
+    tabs.right.forEach((tab) => {
+      if (!tabs.left.some((candidate) => candidate.documentId === tab.documentId)) {
+        tabs.left.push({ ...tab, pane: "left", order: tabs.left.length });
+      }
+    });
+    tabs.right = [];
+  }
   const activeFor = (pane: PaneId) => tabs[pane].some((tab) => tab.id === state.activeTab[pane])
     ? state.activeTab[pane]
     : tabs[pane][0]?.id ?? null;
   return {
     savedAt: Date.now(),
     split: Boolean(state.split && tabs.right.length),
+    splitRatio: state.splitRatio ?? 0.5,
     activeTab: { left: activeFor("left"), right: activeFor("right") },
     tabs,
     documents,

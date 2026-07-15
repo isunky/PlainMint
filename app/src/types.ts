@@ -42,6 +42,12 @@ export interface EditorTab {
   order: number;
 }
 
+export interface RecentlyClosedTab {
+  path: string;
+  fileName: string;
+  closedAt: number;
+}
+
 export interface CursorStats {
   line: number;
   column: number;
@@ -145,6 +151,7 @@ export interface StartupStatus {
 export interface WorkspaceSession {
   savedAt: number;
   split: boolean;
+  splitRatio?: number;
   activeTab: Record<PaneId, string | null>;
   tabs: Record<PaneId, EditorTab[]>;
   documents: DocumentRecord[];

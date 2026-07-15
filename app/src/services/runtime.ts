@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { join } from "@tauri-apps/api/path";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open, save } from "@tauri-apps/plugin-dialog";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
@@ -12,6 +13,7 @@ import type {
   FileFingerprint,
   OpenedDocument,
   RecoveryEntry,
+  RecentlyClosedTab,
   SaveResult,
   StartupStatus,
   UserSettings,
@@ -199,6 +201,30 @@ export async function persistRecentFiles(paths: string[]) {
     return;
   }
   await invoke("save_recent_files", { paths });
+}
+
+export async function loadRecentlyClosedTabs(): Promise<RecentlyClosedTab[]> {
+  if (!isTauri()) {
+    const raw = localStorage.getItem("plainmint.recently-closed-tabs");
+    return raw ? JSON.parse(raw) as RecentlyClosedTab[] : [];
+  }
+  return invoke<RecentlyClosedTab[]>("load_recently_closed_tabs");
+}
+
+export async function persistRecentlyClosedTabs(entries: RecentlyClosedTab[]) {
+  if (!isTauri()) {
+    localStorage.setItem("plainmint.recently-closed-tabs", JSON.stringify(entries));
+    return;
+  }
+  await invoke("persist_recently_closed_tabs", { entries });
+}
+
+export async function copyText(text: string) {
+  if (isTauri()) {
+    await writeText(text);
+    return;
+  }
+  await navigator.clipboard.writeText(text);
 }
 
 export async function writeRecovery(document: DocumentRecord, settings: UserSettings) {

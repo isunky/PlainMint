@@ -3,9 +3,13 @@ import { useTranslation } from "react-i18next";
 import {
   ArrowClockwise,
   ArrowCounterClockwise,
+  ArrowLeft,
+  ArrowRight,
+  ArrowsClockwise,
   CaretDown,
   CaretUp,
   Columns,
+  Copy,
   DotsThree,
   FilePlus,
   FileText,
@@ -13,10 +17,12 @@ import {
   FolderOpen,
   GearSix,
   MagnifyingGlass,
+  Lock,
   Minus,
   Plus,
   Square,
   TextAlignLeft,
+  WarningCircle,
   X,
 } from "@phosphor-icons/react";
 import i18n, { resolveLocale } from "./i18n";
@@ -37,17 +43,20 @@ import {
   chooseAndOpenDocuments,
   chooseDirectory,
   closeWindow,
+  copyText,
   deleteRecovery,
   inspectFile,
   encodedByteLength,
   listenForWindowClose,
   listRecoveries,
   loadRecentFiles,
+  loadRecentlyClosedTabs,
   loadSession,
   loadSettings,
   minimizeWindow,
   persistSession,
   persistRecentFiles,
+  persistRecentlyClosedTabs,
   persistSettings,
   pruneRecoveries,
   openDocumentPath,
@@ -59,7 +68,7 @@ import {
   writeRecovery,
 } from "./services/runtime";
 import { useAppStore } from "./store";
-import type { DirectoryValidationResult, DocumentRecord, PaneId, RecoveryEntry, UserSettings, WorkspaceSession } from "./types";
+import type { DirectoryValidationResult, DocumentRecord, PaneId, RecoveryEntry, RecentlyClosedTab, UserSettings, WorkspaceSession } from "./types";
 
 type ModalState =
   | { type: "none" }
@@ -67,7 +76,29 @@ type ModalState =
   | { type: "recovery" }
   | { type: "startup-recovery"; session: WorkspaceSession }
   | { type: "exit"; documents: DocumentRecord[] }
+  | { type: "bulk-close"; targets: TabCloseTarget[]; documents: DocumentRecord[] }
   | { type: "close-tab"; pane: PaneId; tabId: string; document: DocumentRecord };
+
+type TabCloseTarget = { pane: PaneId; tabId: string };
+
+type TabDragView = {
+  tabId: string;
+  sourcePane: PaneId;
+  x: number;
+  y: number;
+  dragging: boolean;
+  targetPane?: PaneId;
+  targetIndex?: number;
+  beforeTabId?: string;
+  rightEdge?: boolean;
+};
+
+type TabContextMenuState = {
+  pane: PaneId;
+  tabId?: string;
+  x: number;
+  y: number;
+};
 
 type DirectoryField = "defaultSaveFolder" | "cloudSyncFolder";
 type DirectoryCheck = {
@@ -268,41 +299,93 @@ function Toolbar(props: ToolbarProps) {
 function TabBar({
   pane,
   onClose,
+  onActivate,
+  onPointerDown,
+  onContextMenu,
+  drag,
 }: {
   pane: PaneId;
   onClose: (pane: PaneId, tabId: string) => void;
+  onActivate: (pane: PaneId, tabId: string) => void;
+  onPointerDown: (pane: PaneId, tabId: string, event: React.PointerEvent<HTMLElement>) => void;
+  onContextMenu: (menu: TabContextMenuState) => void;
+  drag: TabDragView | null;
 }) {
   const { t } = useTranslation();
   const tabs = useAppStore((state) => state.tabs[pane]);
   const activeTab = useAppStore((state) => state.activeTab[pane]);
   const documents = useAppStore((state) => state.documents);
-  const setActiveTab = useAppStore((state) => state.setActiveTab);
   const createDocument = useAppStore((state) => state.createDocument);
   return (
     <div className="tabbar" role="tablist" aria-label={pane === "left" ? t("leftPane") : t("rightPane")}>
-      <div className="tabs-scroll">
+      <div
+        className={"tabs-scroll " + (drag?.dragging && drag.targetPane === pane ? "drag-target" : "")}
+        data-tabbar-pane={pane}
+        onDoubleClick={(event) => {
+          if ((event.target as HTMLElement).closest(".tab, .new-tab")) return;
+          createDocument(pane);
+        }}
+        onContextMenu={(event) => {
+          if ((event.target as HTMLElement).closest(".tab")) return;
+          event.preventDefault();
+          onContextMenu({ pane, x: event.clientX, y: event.clientY });
+        }}
+      >
         {tabs.map((tab) => {
           const document = documents[tab.documentId];
           if (!document) return null;
+          const statusLabel = document.missing
+            ? t("tabFileMissing")
+            : document.externalModified
+              ? t("tabExternalModified")
+              : document.readOnly
+                ? t("tabReadOnly")
+                : undefined;
+          const StatusIcon = document.missing
+            ? WarningCircle
+            : document.externalModified
+              ? ArrowsClockwise
+              : document.readOnly
+                ? Lock
+                : FileText;
           return (
-            <button
-              type="button"
+            <div
               role="tab"
+              tabIndex={activeTab === tab.id ? 0 : -1}
               aria-selected={activeTab === tab.id}
-              className={"tab " + (activeTab === tab.id ? "active" : "")}
+              aria-label={[document.fileName === "Untitled" ? t("untitled") : document.fileName, document.dirty ? t("tabUnsaved") : "", statusLabel ?? ""].filter(Boolean).join(", ")}
+              className={"tab " + (activeTab === tab.id ? "active " : "") + (drag?.dragging && drag.tabId === tab.id ? "dragging " : "") + (drag?.dragging && drag.targetPane === pane && drag.beforeTabId === tab.id ? "drop-before" : "")}
               key={tab.id}
-              onClick={() => setActiveTab(pane, tab.id)}
-              onAuxClick={(event) => event.button === 1 && onClose(pane, tab.id)}
+              data-tab-id={tab.id}
+              data-tab-pane={pane}
+              onClick={() => onActivate(pane, tab.id)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onActivate(pane, tab.id);
+                }
+              }}
+              onPointerDown={(event) => onPointerDown(pane, tab.id, event)}
+              onAuxClick={(event) => {
+                if (event.button !== 1) return;
+                event.preventDefault();
+                onClose(pane, tab.id);
+              }}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                onContextMenu({ pane, tabId: tab.id, x: event.clientX, y: event.clientY });
+              }}
             >
-              <FileText size={19} />
+              <span className="tab-status-icon" title={statusLabel}><StatusIcon size={18} /></span>
               <span className="tab-name">{document.fileName === "Untitled" ? t("untitled") : document.fileName}</span>
-              {document.dirty && <span className="dirty-dot" aria-label="Unsaved" />}
-              <span className="tab-close" role="button" aria-label={t("close")} onClick={(event) => { event.stopPropagation(); onClose(pane, tab.id); }}>
+              {document.dirty && <span className="dirty-dot" aria-label={t("tabUnsaved")} />}
+              <button type="button" className="tab-close" aria-label={t("closeTab", { name: document.fileName })} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onClose(pane, tab.id); }}>
                 <X size={16} />
-              </span>
-            </button>
+              </button>
+            </div>
           );
         })}
+        {drag?.dragging && drag.targetPane === pane && !drag.beforeTabId && <span className="tab-drop-end" aria-hidden="true" />}
         <IconButton label={t("new")} className="new-tab" onClick={() => createDocument(pane)}><Plus size={20} /></IconButton>
       </div>
     </div>
@@ -389,7 +472,15 @@ function StatusBar({ pane, document }: { pane: PaneId; document?: DocumentRecord
   );
 }
 
-function EditorPane({ pane, onCloseTab }: { pane: PaneId; onCloseTab: (pane: PaneId, tabId: string) => void }) {
+function EditorPane({ pane, onCloseTab, onActivateTab, onTabPointerDown, onTabContextMenu, drag }: {
+  pane: PaneId;
+  onCloseTab: (pane: PaneId, tabId: string) => void;
+  onActivateTab: (pane: PaneId, tabId: string) => void;
+  onTabPointerDown: (pane: PaneId, tabId: string, event: React.PointerEvent<HTMLElement>) => void;
+  onTabContextMenu: (menu: TabContextMenuState) => void;
+  drag: TabDragView | null;
+}) {
+  const { t } = useTranslation();
   const tabs = useAppStore((state) => state.tabs[pane]);
   const activeTabId = useAppStore((state) => state.activeTab[pane]);
   const documents = useAppStore((state) => state.documents);
@@ -402,11 +493,10 @@ function EditorPane({ pane, onCloseTab }: { pane: PaneId; onCloseTab: (pane: Pan
   const redoDocument = useAppStore((state) => state.redoDocument);
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
   const document = activeTab ? documents[activeTab.documentId] : undefined;
-  if (!document) return <div className="editor-empty" />;
   return (
-    <section className="editor-pane" onPointerDown={() => setActivePane(pane)}>
-      <TabBar pane={pane} onClose={onCloseTab} />
-      <div className="editor-region">
+    <section className="editor-pane" data-pane-drop={pane} onPointerDown={() => setActivePane(pane)}>
+      <TabBar pane={pane} onClose={onCloseTab} onActivate={onActivateTab} onPointerDown={onTabPointerDown} onContextMenu={onTabContextMenu} drag={drag} />
+      {document ? <div className="editor-region">
         <TextEditor
           pane={pane}
           document={document}
@@ -418,7 +508,7 @@ function EditorPane({ pane, onCloseTab }: { pane: PaneId; onCloseTab: (pane: Pan
           onUndo={() => undoDocument(document.id)}
           onRedo={() => redoDocument(document.id)}
         />
-      </div>
+      </div> : <div className="editor-empty"><span>{t("emptyPaneHint")}</span></div>}
       <StatusBar pane={pane} document={document} />
     </section>
   );
@@ -596,6 +686,91 @@ function ExitModal({ documents, onCancel, onDiscard, onSave }: {
   );
 }
 
+function BulkCloseModal({ documents, onCancel, onDiscard, onSave }: {
+  documents: DocumentRecord[];
+  onCancel: () => void;
+  onDiscard: () => void;
+  onSave: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="modal-backdrop">
+      <section className="confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="bulk-close-title">
+        <h2 id="bulk-close-title">{t("bulkCloseTitle")}</h2>
+        <p>{t("bulkCloseBody", { count: documents.length })}</p>
+        <div className="unsaved-file-list">{documents.map((document) => <span key={document.id}><FileText size={16} />{document.fileName}</span>)}</div>
+        <div className="modal-actions">
+          <button type="button" className="button-secondary" onClick={onCancel}>{t("cancel")}</button>
+          <button type="button" className="button-danger" onClick={onDiscard}>{t("discardAllAndClose")}</button>
+          <button type="button" className="button-primary" onClick={onSave}>{t("saveAllAndClose")}</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function TabContextMenu({ menu, filePath, hasTabsToRight, hasOtherTabs, recent, showCloseSplit, onDismiss, onNew, onClose, onCloseOthers, onCloseRight, onMove, onCopyPath, onCloseSplit, onReopen }: {
+  menu: TabContextMenuState;
+  filePath?: string;
+  hasTabsToRight: boolean;
+  hasOtherTabs: boolean;
+  recent?: RecentlyClosedTab;
+  showCloseSplit: boolean;
+  onDismiss: () => void;
+  onNew: () => void;
+  onClose: () => void;
+  onCloseOthers: () => void;
+  onCloseRight: () => void;
+  onMove: () => void;
+  onCopyPath: () => void;
+  onCloseSplit: () => void;
+  onReopen: () => void;
+}) {
+  const { t } = useTranslation();
+  const menuRef = useRef<HTMLDivElement>(null);
+  const run = (action: () => void) => () => {
+    onDismiss();
+    action();
+  };
+  useEffect(() => {
+    menuRef.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+    const dismiss = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) onDismiss();
+    };
+    window.addEventListener("pointerdown", dismiss);
+    return () => window.removeEventListener("pointerdown", dismiss);
+  }, [onDismiss]);
+  const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const items = [...(menuRef.current?.querySelectorAll<HTMLButtonElement>("button:not(:disabled)") ?? [])];
+    const current = items.indexOf(document.activeElement as HTMLButtonElement);
+    if (event.key === "Escape") { event.preventDefault(); onDismiss(); return; }
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key) || items.length === 0) return;
+    event.preventDefault();
+    const next = event.key === "Home" ? 0
+      : event.key === "End" ? items.length - 1
+        : (current + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+    items[next]?.focus();
+  };
+  const left = Math.max(8, Math.min(menu.x, window.innerWidth - 284));
+  const top = Math.max(8, Math.min(menu.y, window.innerHeight - 410));
+  return (
+    <div ref={menuRef} className="tab-context-menu" role="menu" style={{ left, top }} onKeyDown={onKeyDown} onContextMenu={(event) => event.preventDefault()}>
+      {!menu.tabId && <button type="button" role="menuitem" onClick={run(onNew)}><FilePlus size={17} /><span>{t("newTab")}</span></button>}
+      {menu.tabId && <>
+        <button type="button" role="menuitem" onClick={run(onClose)}><X size={17} /><span>{t("closeCurrentTab")}</span><kbd>Ctrl+W</kbd></button>
+        <button type="button" role="menuitem" disabled={!hasOtherTabs} onClick={run(onCloseOthers)}><span className="menu-icon-text">×</span><span>{t("closeOtherTabs")}</span></button>
+        <button type="button" role="menuitem" disabled={!hasTabsToRight} onClick={run(onCloseRight)}><ArrowRight size={17} /><span>{t("closeTabsToRight")}</span></button>
+        <div className="menu-separator" role="separator" />
+        <button type="button" role="menuitem" onClick={run(onMove)}>{menu.pane === "left" ? <ArrowRight size={17} /> : <ArrowLeft size={17} />}<span>{menu.pane === "left" ? t("moveTabRight") : t("moveTabLeft")}</span></button>
+        <button type="button" role="menuitem" disabled={!filePath} onClick={run(onCopyPath)}><Copy size={17} /><span>{t("copyFilePath")}</span></button>
+      </>}
+      {showCloseSplit && <button type="button" role="menuitem" onClick={run(onCloseSplit)}><Columns size={17} /><span>{t("closeSplitPane")}</span></button>}
+      <div className="menu-separator" role="separator" />
+      <button type="button" role="menuitem" disabled={!recent} onClick={run(onReopen)}><ArrowCounterClockwise size={17} /><span className="menu-label-stack"><span>{t("reopenClosedTab")}</span>{recent && <small>{recent.fileName}</small>}</span><kbd>Ctrl+Shift+T</kbd></button>
+    </div>
+  );
+}
+
 export function App() {
   const { t } = useTranslation();
   const documents = useAppStore((state) => state.documents);
@@ -603,13 +778,21 @@ export function App() {
   const activeTab = useAppStore((state) => state.activeTab);
   const activePane = useAppStore((state) => state.activePane);
   const split = useAppStore((state) => state.split);
+  const splitRatio = useAppStore((state) => state.splitRatio);
+  const recentlyClosedTabs = useAppStore((state) => state.recentlyClosedTabs);
   const search = useAppStore((state) => state.search);
   const settings = useAppStore((state) => state.settings);
   const histories = useAppStore((state) => state.histories);
   const createDocument = useAppStore((state) => state.createDocument);
   const addOpenedDocument = useAppStore((state) => state.addOpenedDocument);
-  const closeTab = useAppStore((state) => state.closeTab);
+  const closeTabs = useAppStore((state) => state.closeTabs);
+  const moveTab = useAppStore((state) => state.moveTab);
+  const setActiveTab = useAppStore((state) => state.setActiveTab);
   const toggleSplit = useAppStore((state) => state.toggleSplit);
+  const setSplitRatio = useAppStore((state) => state.setSplitRatio);
+  const loadRecentlyClosedTabsIntoStore = useAppStore((state) => state.loadRecentlyClosedTabs);
+  const rememberClosedTab = useAppStore((state) => state.rememberClosedTab);
+  const removeRecentlyClosedTab = useAppStore((state) => state.removeRecentlyClosedTab);
   const undoDocument = useAppStore((state) => state.undoDocument);
   const redoDocument = useAppStore((state) => state.redoDocument);
   const markSaved = useAppStore((state) => state.markSaved);
@@ -626,6 +809,9 @@ export function App() {
   const [hydrated, setHydrated] = useState(false);
   const [directoryChecks, setDirectoryChecks] = useState<Record<DirectoryField, DirectoryCheck>>(emptyDirectoryChecks);
   const [settingsApplying, setSettingsApplying] = useState(false);
+  const [tabDrag, setTabDrag] = useState<TabDragView | null>(null);
+  const [tabContextMenu, setTabContextMenu] = useState<TabContextMenuState | null>(null);
+  const [resizingSplit, setResizingSplit] = useState(false);
   const [autoSaveFailures, setAutoSaveFailures] = useState<Record<string, number>>({});
   const backupTimers = useRef<Record<string, number>>({});
   const idleSaveTimers = useRef<Record<string, { revision: number; timer: number }>>({});
@@ -635,6 +821,11 @@ export function App() {
   const previousAutoSaveMode = useRef(settings.autoSaveMode);
   const directoryCheckTokens = useRef<Record<DirectoryField, number>>({ defaultSaveFolder: 0, cloudSyncFolder: 0 });
   const closingRef = useRef(false);
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const dragStartRef = useRef<{ tabId: string; sourcePane: PaneId; pointerId: number; x: number; y: number } | null>(null);
+  const dragViewRef = useRef<TabDragView | null>(null);
+  const suppressTabClickRef = useRef<{ tabId: string; until: number } | null>(null);
+  const splitResizePointerRef = useRef<number | null>(null);
 
   const activeDocumentId = tabs[activePane].find((tab) => tab.id === activeTab[activePane])?.documentId;
   const activeDocument = activeDocumentId ? documents[activeDocumentId] : undefined;
@@ -662,6 +853,18 @@ export function App() {
       return next;
     });
   }, [settings.recentFileLimit]);
+
+  const closeTargetsNow = useCallback((targets: TabCloseTarget[]) => {
+    const state = useAppStore.getState();
+    targets.forEach(({ pane, tabId }) => {
+      const tab = state.tabs[pane].find((candidate) => candidate.id === tabId);
+      const document = tab ? state.documents[tab.documentId] : undefined;
+      if (document?.filePath) {
+        rememberClosedTab({ path: document.filePath, fileName: document.fileName, closedAt: Date.now() });
+      }
+    });
+    closeTabs(targets);
+  }, [closeTabs, rememberClosedTab]);
 
   const validateSettingsDirectory = useCallback(async (field: DirectoryField, path?: string) => {
     const token = ++directoryCheckTokens.current[field];
@@ -781,6 +984,20 @@ export function App() {
     }
   }, [activePane, addOpenedDocument, flash, rememberRecent, t]);
 
+  const reopenClosedTab = useCallback(async () => {
+    const entry = useAppStore.getState().recentlyClosedTabs[0];
+    if (!entry) return;
+    try {
+      const opened = await openDocumentPath(entry.path);
+      addOpenedDocument(opened, useAppStore.getState().activePane);
+      removeRecentlyClosedTab(entry.path);
+      rememberRecent([opened.path]);
+      flash(t("tabReopened"));
+    } catch {
+      flash(t("reopenClosedFailed"));
+    }
+  }, [addOpenedDocument, flash, rememberRecent, removeRecentlyClosedTab, t]);
+
   const saveActive = useCallback((forceSaveAs = false) => (
     activeDocument ? saveDocumentById(activeDocument.id, { forceSaveAs }) : Promise.resolve(false)
   ), [activeDocument, saveDocumentById]);
@@ -811,12 +1028,45 @@ export function App() {
     }
   }, [flash, settingsApplying, t, validateSettingsDirectory]);
 
+  const requestCloseTabs = useCallback((targets: TabCloseTarget[], bulk = false) => {
+    const state = useAppStore.getState();
+    const seenTabs = new Set<string>();
+    const validTargets = targets.filter(({ pane, tabId }) => {
+      if (seenTabs.has(tabId) || !state.tabs[pane].some((tab) => tab.id === tabId)) return false;
+      seenTabs.add(tabId);
+      return true;
+    });
+    if (validTargets.length === 0) return;
+    const dirtyDocuments = validTargets.reduce<DocumentRecord[]>((result, { pane, tabId }) => {
+      const tab = state.tabs[pane].find((candidate) => candidate.id === tabId);
+      const document = tab ? state.documents[tab.documentId] : undefined;
+      if (document && needsSaveConfirmation(document) && !result.some((candidate) => candidate.id === document.id)) result.push(document);
+      return result;
+    }, []);
+    if (dirtyDocuments.length === 0) {
+      closeTargetsNow(validTargets);
+      return;
+    }
+    if (!bulk && validTargets.length === 1) {
+      const target = validTargets[0];
+      setModal({ type: "close-tab", ...target, document: dirtyDocuments[0] });
+      return;
+    }
+    setModal({ type: "bulk-close", targets: validTargets, documents: dirtyDocuments });
+  }, [closeTargetsNow]);
+
   const requestCloseTab = useCallback((pane: PaneId, tabId: string) => {
-    const tab = tabs[pane].find((item) => item.id === tabId);
-    const document = tab ? documents[tab.documentId] : undefined;
-    if (document && needsSaveConfirmation(document)) setModal({ type: "close-tab", pane, tabId, document });
-    else closeTab(pane, tabId);
-  }, [closeTab, documents, tabs]);
+    requestCloseTabs([{ pane, tabId }]);
+  }, [requestCloseTabs]);
+
+  const saveAllAndCloseTabs = useCallback(async (targets: TabCloseTarget[], dirtyDocuments: DocumentRecord[]) => {
+    for (const document of dirtyDocuments) {
+      const saved = await saveDocumentById(document.id, { notifySuccess: false });
+      if (!saved) return;
+    }
+    closeTargetsNow(targets);
+    setModal({ type: "none" });
+  }, [closeTargetsNow, saveDocumentById]);
 
   useEffect(() => {
     void Promise.all([
@@ -824,7 +1074,8 @@ export function App() {
       loadSettings().catch(() => null),
       loadSession().catch(() => null),
       loadRecentFiles().catch(() => []),
-    ]).then(([startupStatus, storedSettings, storedSession, storedRecent]) => {
+      loadRecentlyClosedTabs().catch(() => []),
+    ]).then(([startupStatus, storedSettings, storedSession, storedRecent, storedClosedTabs]) => {
       if (storedSettings) loadSettingsIntoStore(storedSettings);
       const effectiveSettings = useAppStore.getState().settings;
       const explicitPreviewState = new URLSearchParams(window.location.search).has("state");
@@ -837,10 +1088,11 @@ export function App() {
       if (decision === "restore" && storedSession) restoreSessionIntoStore(storedSession);
       if (decision === "ask" && storedSession) setModal({ type: "startup-recovery", session: storedSession });
       setRecentFiles(storedRecent);
+      loadRecentlyClosedTabsIntoStore(storedClosedTabs);
       void pruneRecoveries(effectiveSettings).catch(() => undefined);
       if (decision !== "ask") setHydrated(true);
     }).catch(() => setHydrated(true));
-  }, [loadSettingsIntoStore, restoreSessionIntoStore]);
+  }, [loadRecentlyClosedTabsIntoStore, loadSettingsIntoStore, restoreSessionIntoStore]);
 
   useEffect(() => {
     const resolved = resolveLocale(settings.locale);
@@ -959,10 +1211,16 @@ export function App() {
     if (!hydrated) return;
     const timer = window.setTimeout(() => {
       if (closingRef.current) return;
-      void persistSession(createWorkspaceSession({ split, activeTab, tabs, documents }));
+      void persistSession(createWorkspaceSession({ split, splitRatio, activeTab, tabs, documents }));
     }, 500);
     return () => window.clearTimeout(timer);
-  }, [activeTab, documents, hydrated, split, tabs]);
+  }, [activeTab, documents, hydrated, split, splitRatio, tabs]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    const timer = window.setTimeout(() => void persistRecentlyClosedTabs(recentlyClosedTabs), 200);
+    return () => window.clearTimeout(timer);
+  }, [hydrated, recentlyClosedTabs]);
 
   const finishClose = useCallback(async (discardDirty = false) => {
     closingRef.current = true;
@@ -1013,11 +1271,174 @@ export function App() {
     return () => window.clearInterval(timer);
   }, [documents, updateDocumentFlags]);
 
+  const updateTabDrag = useCallback((next: TabDragView | null) => {
+    dragViewRef.current = next;
+    setTabDrag(next);
+  }, []);
+
+  const beginTabDrag = useCallback((pane: PaneId, tabId: string, event: React.PointerEvent<HTMLElement>) => {
+    if (event.button !== 0 || (event.target as HTMLElement).closest(".tab-close")) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragStartRef.current = { tabId, sourcePane: pane, pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+    updateTabDrag({ tabId, sourcePane: pane, x: event.clientX, y: event.clientY, dragging: false });
+    setTabContextMenu(null);
+  }, [updateTabDrag]);
+
+  useEffect(() => {
+    const onPointerMove = (event: PointerEvent) => {
+      const start = dragStartRef.current;
+      if (!start || start.pointerId !== event.pointerId) return;
+      const distance = Math.hypot(event.clientX - start.x, event.clientY - start.y);
+      if (distance < 6 && !dragViewRef.current?.dragging) return;
+      event.preventDefault();
+      const state = useAppStore.getState();
+      const workspace = workspaceRef.current?.getBoundingClientRect();
+      let targetPane: PaneId | undefined;
+      let rightEdge = false;
+      if (!state.split && workspace && event.clientX >= workspace.right - Math.max(120, workspace.width * 0.18)) {
+        targetPane = "right";
+        rightEdge = true;
+      } else {
+        const element = document.elementFromPoint(event.clientX, event.clientY) as HTMLElement | null;
+        const paneElement = element?.closest<HTMLElement>("[data-pane-drop]");
+        const candidate = paneElement?.dataset.paneDrop;
+        if (candidate === "left" || candidate === "right") targetPane = candidate;
+      }
+      let targetIndex: number | undefined;
+      let beforeTabId: string | undefined;
+      if (targetPane) {
+        const candidates = state.tabs[targetPane].filter((tab) => tab.id !== start.tabId);
+        const tabbar = document.querySelector<HTMLElement>(`[data-tabbar-pane="${targetPane}"]`);
+        const overTabbar = tabbar?.getBoundingClientRect();
+        const withinTabbar = Boolean(overTabbar && event.clientY >= overTabbar.top && event.clientY <= overTabbar.bottom);
+        if (withinTabbar) {
+          const before = candidates.find((tab) => {
+            const element = document.querySelector<HTMLElement>(`[data-tab-id="${tab.id}"]`);
+            if (!element) return false;
+            const rect = element.getBoundingClientRect();
+            return event.clientX < rect.left + rect.width / 2;
+          });
+          beforeTabId = before?.id;
+          targetIndex = before ? candidates.findIndex((tab) => tab.id === before.id) : candidates.length;
+        } else {
+          targetIndex = candidates.length;
+        }
+      }
+      updateTabDrag({
+        tabId: start.tabId,
+        sourcePane: start.sourcePane,
+        x: event.clientX,
+        y: event.clientY,
+        dragging: true,
+        targetPane,
+        targetIndex,
+        beforeTabId,
+        rightEdge,
+      });
+    };
+    const finish = (event: PointerEvent) => {
+      const start = dragStartRef.current;
+      if (!start || start.pointerId !== event.pointerId) return;
+      const view = dragViewRef.current;
+      if (view?.dragging) {
+        suppressTabClickRef.current = { tabId: start.tabId, until: Date.now() + 300 };
+        if (view.targetPane && view.targetIndex !== undefined) moveTab(start.tabId, view.targetPane, view.targetIndex);
+      }
+      dragStartRef.current = null;
+      updateTabDrag(null);
+    };
+    const cancel = (event: PointerEvent | KeyboardEvent) => {
+      if (event instanceof KeyboardEvent && event.key !== "Escape") return;
+      if (event instanceof PointerEvent && dragStartRef.current?.pointerId !== event.pointerId) return;
+      dragStartRef.current = null;
+      updateTabDrag(null);
+    };
+    window.addEventListener("pointermove", onPointerMove, { passive: false });
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", cancel);
+    window.addEventListener("keydown", cancel);
+    return () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", cancel);
+      window.removeEventListener("keydown", cancel);
+    };
+  }, [moveTab, updateTabDrag]);
+
+  const activateTab = useCallback((pane: PaneId, tabId: string) => {
+    const suppressed = suppressTabClickRef.current;
+    if (suppressed?.tabId === tabId && suppressed.until > Date.now()) return;
+    setActiveTab(pane, tabId);
+  }, [setActiveTab]);
+
+  const ratioFromPointer = useCallback((clientX: number) => {
+    const rect = workspaceRef.current?.getBoundingClientRect();
+    if (!rect) return splitRatio;
+    const usable = Math.max(1, rect.width - 12);
+    const minimum = Math.min(0.5, 320 / usable);
+    return Math.min(1 - minimum, Math.max(minimum, (clientX - rect.left) / usable));
+  }, [splitRatio]);
+
+  const onSplitPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    splitResizePointerRef.current = event.pointerId;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setResizingSplit(true);
+  }, []);
+
+  useEffect(() => {
+    const move = (event: PointerEvent) => {
+      if (splitResizePointerRef.current !== event.pointerId) return;
+      event.preventDefault();
+      setSplitRatio(ratioFromPointer(event.clientX));
+    };
+    const finish = (event: PointerEvent) => {
+      if (splitResizePointerRef.current !== event.pointerId) return;
+      splitResizePointerRef.current = null;
+      setResizingSplit(false);
+    };
+    window.addEventListener("pointermove", move, { passive: false });
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", finish);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", finish);
+    };
+  }, [ratioFromPointer, setSplitRatio]);
+
+  const onSplitKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const direction = event.key === "ArrowLeft" ? -1 : 1;
+    const step = event.shiftKey ? 0.05 : 0.02;
+    const rect = workspaceRef.current?.getBoundingClientRect();
+    const usable = Math.max(1, (rect?.width ?? 652) - 12);
+    const minimum = Math.min(0.5, 320 / usable);
+    setSplitRatio(Math.min(1 - minimum, Math.max(minimum, splitRatio + direction * step)));
+  }, [setSplitRatio, splitRatio]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const mod = event.ctrlKey || event.metaKey;
-      if (!mod) return;
+      if (!mod || modal.type !== "none") return;
       const key = event.key.toLowerCase();
+      if (key === "w") {
+        const tabId = useAppStore.getState().activeTab[useAppStore.getState().activePane];
+        if (tabId) { event.preventDefault(); requestCloseTab(useAppStore.getState().activePane, tabId); }
+      }
+      if (key === "tab") {
+        const state = useAppStore.getState();
+        const paneTabs = state.tabs[state.activePane];
+        const index = paneTabs.findIndex((tab) => tab.id === state.activeTab[state.activePane]);
+        if (paneTabs.length) {
+          event.preventDefault();
+          const direction = event.shiftKey ? -1 : 1;
+          const next = paneTabs[(Math.max(0, index) + direction + paneTabs.length) % paneTabs.length];
+          setActiveTab(state.activePane, next.id);
+        }
+      }
+      if (key === "t" && event.shiftKey) { event.preventDefault(); void reopenClosedTab(); }
       if (key === "n") { event.preventDefault(); createDocument(activePane); }
       if (key === "o") { event.preventDefault(); void openFiles(); }
       if (key === "s") { event.preventDefault(); void saveActive(event.shiftKey); }
@@ -1028,7 +1449,14 @@ export function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [activePane, createDocument, openFiles, saveActive, setSearch, settings, toggleSplit]);
+  }, [activePane, createDocument, modal.type, openFiles, reopenClosedTab, requestCloseTab, saveActive, setActiveTab, setSearch, settings, toggleSplit]);
+
+  const contextTabs = tabContextMenu ? tabs[tabContextMenu.pane] : [];
+  const contextTabIndex = tabContextMenu?.tabId ? contextTabs.findIndex((tab) => tab.id === tabContextMenu.tabId) : -1;
+  const contextTab = contextTabIndex >= 0 ? contextTabs[contextTabIndex] : undefined;
+  const contextDocument = contextTab ? documents[contextTab.documentId] : undefined;
+  const dragTab = tabDrag ? tabs[tabDrag.sourcePane].find((tab) => tab.id === tabDrag.tabId) : undefined;
+  const dragDocument = dragTab ? documents[dragTab.documentId] : undefined;
 
   return (
     <main className="app-shell">
@@ -1069,8 +1497,12 @@ export function App() {
         </div>
       )}
 
-      <div className={"workspace " + (split ? "split" : "")}>
-        {tabs.left.length === 0 && tabs.right.length === 0 ? (
+      <div
+        ref={workspaceRef}
+        className={"workspace " + (split ? "split " : "") + (resizingSplit ? "resizing " : "")}
+        style={split ? { gridTemplateColumns: `minmax(320px, ${splitRatio}fr) 12px minmax(320px, ${1 - splitRatio}fr)` } : undefined}
+      >
+        {tabs.left.length === 0 && tabs.right.length === 0 && !split ? (
           <Welcome
             recentFiles={recentFiles}
             onNew={() => createDocument("left")}
@@ -1079,14 +1511,48 @@ export function App() {
             onRecovery={() => setModal({ type: "recovery" })}
             onRestoreSession={() => void loadSession().then((session) => session && restoreSessionIntoStore(session))}
           />
-        ) : <EditorPane pane="left" onCloseTab={requestCloseTab} />}
-        {split && tabs.left.length > 0 && (
+        ) : <EditorPane pane="left" onCloseTab={requestCloseTab} onActivateTab={activateTab} onTabPointerDown={beginTabDrag} onTabContextMenu={setTabContextMenu} drag={tabDrag} />}
+        {split && (
           <>
-            <div className="split-divider"><DotsThree size={20} weight="bold" /></div>
-            <EditorPane pane="right" onCloseTab={requestCloseTab} />
+            <div
+              className="split-divider"
+              role="separator"
+              aria-label={t("resizeSplit")}
+              aria-orientation="vertical"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(splitRatio * 100)}
+              tabIndex={0}
+              onPointerDown={onSplitPointerDown}
+              onKeyDown={onSplitKeyDown}
+            ><DotsThree size={20} weight="bold" /></div>
+            <EditorPane pane="right" onCloseTab={requestCloseTab} onActivateTab={activateTab} onTabPointerDown={beginTabDrag} onTabContextMenu={setTabContextMenu} drag={tabDrag} />
           </>
         )}
+        {tabDrag?.dragging && tabDrag.rightEdge && <div className="split-drop-overlay" aria-hidden="true"><Columns size={28} /><span>{t("dropToSplit")}</span></div>}
       </div>
+
+      {tabDrag?.dragging && dragDocument && <div className="tab-drag-ghost" style={{ left: tabDrag.x + 12, top: tabDrag.y + 12 }}><FileText size={16} /><span>{dragDocument.fileName === "Untitled" ? t("untitled") : dragDocument.fileName}</span></div>}
+
+      {tabContextMenu && (
+        <TabContextMenu
+          menu={tabContextMenu}
+          filePath={contextDocument?.filePath}
+          hasOtherTabs={Boolean(contextTab && contextTabs.length > 1)}
+          hasTabsToRight={contextTabIndex >= 0 && contextTabIndex < contextTabs.length - 1}
+          recent={recentlyClosedTabs[0]}
+          showCloseSplit={split && tabContextMenu.pane === "right"}
+          onDismiss={() => setTabContextMenu(null)}
+          onNew={() => createDocument(tabContextMenu.pane)}
+          onClose={() => contextTab && requestCloseTab(tabContextMenu.pane, contextTab.id)}
+          onCloseOthers={() => contextTab && requestCloseTabs(contextTabs.filter((tab) => tab.id !== contextTab.id).map((tab) => ({ pane: tabContextMenu.pane, tabId: tab.id })), true)}
+          onCloseRight={() => contextTab && requestCloseTabs(contextTabs.slice(contextTabIndex + 1).map((tab) => ({ pane: tabContextMenu.pane, tabId: tab.id })), true)}
+          onMove={() => contextTab && moveTab(contextTab.id, tabContextMenu.pane === "left" ? "right" : "left", tabs[tabContextMenu.pane === "left" ? "right" : "left"].length)}
+          onCopyPath={() => contextDocument?.filePath && void copyText(contextDocument.filePath).then(() => flash(t("filePathCopied"))).catch(() => flash(t("copyFilePathFailed")))}
+          onCloseSplit={toggleSplit}
+          onReopen={() => void reopenClosedTab()}
+        />
+      )}
 
       {toast && <div className="toast" role="status">{toast}</div>}
       {updateMessage && <div className="toast" role="status">{updateMessage}</div>}
@@ -1133,14 +1599,22 @@ export function App() {
           onSave={() => void saveAllAndExit(modal.documents)}
         />
       )}
+      {modal.type === "bulk-close" && (
+        <BulkCloseModal
+          documents={modal.documents}
+          onCancel={() => setModal({ type: "none" })}
+          onDiscard={() => { closeTargetsNow(modal.targets); setModal({ type: "none" }); }}
+          onSave={() => void saveAllAndCloseTabs(modal.targets, modal.documents)}
+        />
+      )}
       {modal.type === "close-tab" && (
         <CloseTabModal
           modal={modal}
           onCancel={() => setModal({ type: "none" })}
-          onDiscard={() => { closeTab(modal.pane, modal.tabId); setModal({ type: "none" }); }}
+          onDiscard={() => { closeTargetsNow([{ pane: modal.pane, tabId: modal.tabId }]); setModal({ type: "none" }); }}
           onSave={() => void saveDocumentById(modal.document.id, { notifySuccess: false }).then((saved) => {
             if (!saved) return;
-            closeTab(modal.pane, modal.tabId);
+            closeTargetsNow([{ pane: modal.pane, tabId: modal.tabId }]);
             setModal({ type: "none" });
           })}
         />
