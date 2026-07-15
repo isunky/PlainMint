@@ -3,6 +3,7 @@ import { create } from "zustand";
 import type {
   CursorStats,
   DocumentRecord,
+  Encoding,
   EditorTab,
   OpenedDocument,
   PaneId,
@@ -35,14 +36,14 @@ interface AppState {
   applyChanges: (documentId: string, changes: ChangeSet, origin: string) => void;
   undoDocument: (documentId: string) => void;
   redoDocument: (documentId: string) => void;
-  markSaved: (documentId: string, filePath: string, fingerprint?: DocumentRecord["fingerprint"]) => void;
+  markSaved: (documentId: string, filePath: string, savedRevision: number, fingerprint?: DocumentRecord["fingerprint"]) => void;
   updateDocumentFlags: (documentId: string, flags: Partial<Pick<DocumentRecord, "readOnly" | "missing" | "externalModified">>) => void;
   setSearch: (patch: Partial<SearchState>) => void;
   replaceCurrent: (documentId: string, from: number, to: number, value: string) => void;
   replaceAll: (documentId: string, ranges: Array<{ from: number; to: number }>, value: string) => void;
   setCursor: (pane: PaneId, cursor: CursorStats) => void;
   updateSettings: (patch: Partial<UserSettings>) => void;
-  loadSettings: (settings: UserSettings) => void;
+  loadSettings: (settings: Partial<UserSettings>) => void;
   restoreSession: (session: WorkspaceSession) => void;
 }
 
@@ -62,6 +63,7 @@ export const defaultSettings: UserSettings = {
   backupRetentionDays: 30,
   maxBackupVersionsPerFile: 20,
   autoSaveMode: "off",
+  defaultEncoding: "utf-8",
   sessionRecoveryMode: "ask",
   recentFileLimit: 20,
   autoCheckUpdates: true,
@@ -107,17 +109,32 @@ const notesContent = [
   "3. Polish split view and file handling",
 ].join("\n");
 
-function makeDocument(id: string, fileName: string, content: string, dirty = false): DocumentRecord {
+const supportedEncodings: Encoding[] = ["utf-8", "utf-8-bom", "utf-16le", "utf-16be"];
+
+export function normalizeSettings(settings: Partial<UserSettings>): UserSettings {
+  const merged = { ...defaultSettings, ...settings };
+  const requestedTabSize = Number(merged.tabSize);
+  return {
+    ...merged,
+    tabSize: Number.isFinite(requestedTabSize) ? Math.min(8, Math.max(2, Math.round(requestedTabSize))) : defaultSettings.tabSize,
+    defaultEncoding: supportedEncodings.includes(merged.defaultEncoding) ? merged.defaultEncoding : defaultSettings.defaultEncoding,
+    defaultSaveFolder: merged.defaultSaveFolder?.trim() || undefined,
+    cloudSyncFolder: merged.cloudSyncFolder?.trim() || undefined,
+  };
+}
+
+function makeDocument(id: string, fileName: string, content: string, dirty = false, encoding: Encoding = "utf-8"): DocumentRecord {
   return {
     id,
     fileName,
     content,
-    encoding: "utf-8",
+    encoding,
     lineEnding: "lf",
     dirty,
     readOnly: false,
     missing: false,
     externalModified: false,
+    revision: 0,
     createdAt: Date.now(),
   };
 }
@@ -188,7 +205,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   createDocument: (pane = get().activePane) => {
     const id = uniqueId("doc");
     const tabId = uniqueId("tab");
-    const document = makeDocument(id, "Untitled", "", true);
+    const document = makeDocument(id, "Untitled", "", true, get().settings.defaultEncoding);
     set((state) => ({
       documents: { ...state.documents, [id]: document },
       tabs: {
@@ -223,6 +240,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       readOnly: opened.readOnly,
       missing: false,
       externalModified: false,
+      revision: 0,
       fingerprint: opened.fingerprint,
       createdAt: Date.now(),
     };
@@ -303,7 +321,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         [documentId]: {
           ...document,
           content,
+          encoding: document.revision === 0 && !document.filePath && document.fileName === "Untitled" && document.content.length === 0
+            ? state.settings.defaultEncoding
+            : document.encoding,
           dirty: true,
+          revision: document.revision + 1,
           patch: { sequence: ++sequence, origin, changes },
         },
       },
@@ -331,6 +353,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           ...document,
           content,
           dirty: true,
+          revision: document.revision + 1,
           patch: { sequence: ++sequence, origin: "history", changes: entry.inverse },
         },
       },
@@ -358,6 +381,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           ...document,
           content,
           dirty: true,
+          revision: document.revision + 1,
           patch: { sequence: ++sequence, origin: "history", changes: entry.forward },
         },
       },
@@ -371,7 +395,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     };
   }),
 
-  markSaved: (documentId, filePath, fingerprint) => set((state) => {
+  markSaved: (documentId, filePath, savedRevision, fingerprint) => set((state) => {
     const document = state.documents[documentId];
     if (!document) return state;
     const fileName = filePath.split(/[\\/]/).at(-1) ?? document.fileName;
@@ -383,7 +407,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           filePath,
           fileName,
           fingerprint,
-          dirty: false,
+          dirty: document.revision !== savedRevision,
           externalModified: false,
           lastSavedAt: Date.now(),
         },
@@ -415,12 +439,12 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setCursor: (pane, cursor) => set((state) => ({ cursor: { ...state.cursor, [pane]: cursor } })),
 
-  updateSettings: (patch) => set((state) => ({ settings: { ...state.settings, ...patch } })),
-  loadSettings: (settings) => set({ settings: { ...defaultSettings, ...settings } }),
+  updateSettings: (patch) => set((state) => ({ settings: normalizeSettings({ ...state.settings, ...patch }) })),
+  loadSettings: (settings) => set({ settings: normalizeSettings(settings) }),
   restoreSession: (session) => set(() => {
     const documents = Object.fromEntries(session.documents.map(({ patch: _patch, ...document }) => [
       document.id,
-      { ...document, patch: undefined },
+      { ...document, revision: document.revision ?? 0, patch: undefined },
     ]));
     const validTabs = (pane: PaneId) => (session.tabs[pane] ?? []).filter((tab) => Boolean(documents[tab.documentId]));
     const tabs = { left: validTabs("left"), right: validTabs("right") };

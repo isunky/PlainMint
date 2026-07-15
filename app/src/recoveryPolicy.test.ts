@@ -17,6 +17,7 @@ const session: WorkspaceSession = {
     readOnly: false,
     missing: false,
     externalModified: false,
+    revision: 0,
     createdAt: 1,
   }],
 };
@@ -53,6 +54,7 @@ describe("clean exit session snapshot", () => {
       readOnly: false,
       missing: false,
       externalModified: false,
+      revision: 0,
       createdAt: 1,
     };
     const dirty = { ...clean, id: "dirty", fileName: "draft.txt", dirty: true };

@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { join } from "@tauri-apps/api/path";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -6,6 +7,7 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
 import type {
   BatchRecoveryResult,
+  DirectoryValidationResult,
   DocumentRecord,
   FileFingerprint,
   OpenedDocument,
@@ -15,6 +17,11 @@ import type {
   UserSettings,
   WorkspaceSession,
 } from "../types";
+
+export interface SaveDocumentOptions {
+  forceSaveAs?: boolean;
+  defaultSaveFolder?: string;
+}
 
 export const isTauri = () => Boolean(window.__TAURI_INTERNALS__);
 
@@ -53,11 +60,26 @@ export async function openDocumentPath(path: string): Promise<OpenedDocument> {
   return invoke<OpenedDocument>("open_file", { request: { path, encodingOverride: null } });
 }
 
-export async function saveDocument(document: DocumentRecord, forceSaveAs = false): Promise<SaveResult | null> {
+export function encodedByteLength(document: Pick<DocumentRecord, "content" | "encoding" | "lineEnding">): number {
+  const normalized = document.content.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const lineSeparator = document.lineEnding === "crlf" ? "\r\n" : document.lineEnding === "cr" ? "\r" : "\n";
+  const converted = document.lineEnding === "lf" ? normalized : normalized.replace(/\n/g, lineSeparator);
+  if (document.encoding === "utf-16le" || document.encoding === "utf-16be") return 2 + converted.length * 2;
+  return new TextEncoder().encode(converted).length + (document.encoding === "utf-8-bom" ? 3 : 0);
+}
+
+export async function saveDocument(document: DocumentRecord, options: SaveDocumentOptions = {}): Promise<SaveResult | null> {
+  const { forceSaveAs = false, defaultSaveFolder } = options;
   let path = forceSaveAs ? undefined : document.filePath;
   if (isTauri() && !path) {
+    const fileName = document.fileName === "Untitled" ? "untitled.txt" : document.fileName;
+    const defaultPath = forceSaveAs && document.filePath
+      ? document.filePath
+      : defaultSaveFolder
+        ? await join(defaultSaveFolder, fileName)
+        : fileName;
     path = await save({
-      defaultPath: document.fileName === "Untitled" ? "untitled.txt" : document.fileName,
+      defaultPath,
       filters,
     }) ?? undefined;
   }
@@ -83,17 +105,45 @@ export async function inspectFile(path: string): Promise<FileFingerprint | null>
 }
 
 export async function chooseDirectory(): Promise<string | null> {
-  if (!isTauri()) return "C:\\Users\\Alex\\OneDrive\\Documents\\PlainMint";
+  if (!isTauri()) return null;
   const selected = await open({ directory: true, multiple: false });
   return typeof selected === "string" ? selected : null;
 }
 
-export async function loadSettings(): Promise<UserSettings | null> {
+export async function validateDirectory(path: string, requiredBytes = 0): Promise<DirectoryValidationResult> {
+  if (!isTauri()) {
+    return {
+      valid: false,
+      exists: false,
+      isDirectory: false,
+      readable: false,
+      writable: false,
+      availableBytes: 0,
+      errorCode: "unavailable",
+    };
+  }
+  return invoke<DirectoryValidationResult>("validate_directory", { path, requiredBytes });
+}
+
+export function appErrorCode(error: unknown): string | undefined {
+  if (typeof error === "object" && error && "code" in error && typeof error.code === "string") return error.code;
+  if (typeof error === "string") {
+    try {
+      const parsed = JSON.parse(error) as { code?: unknown };
+      return typeof parsed.code === "string" ? parsed.code : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+export async function loadSettings(): Promise<Partial<UserSettings> | null> {
   if (!isTauri()) {
     const raw = localStorage.getItem("plainmint.settings");
-    return raw ? JSON.parse(raw) as UserSettings : null;
+    return raw ? JSON.parse(raw) as Partial<UserSettings> : null;
   }
-  return invoke<UserSettings | null>("load_settings");
+  return invoke<Partial<UserSettings> | null>("load_settings");
 }
 
 export async function persistSettings(settings: UserSettings) {

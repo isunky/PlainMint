@@ -11,19 +11,37 @@ import {
   ShieldCheck,
   X,
 } from "@phosphor-icons/react";
-import type { AccentTheme, AppLocale, AppearanceMode, UserSettings } from "../types";
+import type { AccentTheme, AppLocale, AppearanceMode, DirectoryValidationResult, Encoding, UserSettings } from "../types";
 
 type SettingsSection = "general" | "editor" | "files" | "backup" | "appearance" | "updates" | "about";
 
 interface SettingsModalProps {
   settings: UserSettings;
+  directoryChecks: Record<"defaultSaveFolder" | "cloudSyncFolder", {
+    status: "idle" | "checking" | "valid" | "invalid";
+    result?: DirectoryValidationResult;
+  }>;
+  applying: boolean;
+  canApply: boolean;
   onChange: (patch: Partial<UserSettings>) => void;
   onApply: () => void;
   onCancel: () => void;
   onChooseDirectory: (field: "defaultSaveFolder" | "cloudSyncFolder") => void;
+  onClearDirectory: (field: "defaultSaveFolder" | "cloudSyncFolder") => void;
   onOpenRecovery: () => void;
   onCheckUpdates: () => void;
   onOpenSource: () => void;
+}
+
+function formatBytes(bytes: number, locale: string) {
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = Math.max(0, bytes);
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${new Intl.NumberFormat(locale, { maximumFractionDigits: unit > 1 ? 1 : 0 }).format(value)} ${units[unit]}`;
 }
 
 const accentValues: Record<AccentTheme, string> = {
@@ -73,15 +91,19 @@ function SettingToggle({
 
 export function SettingsModal({
   settings,
+  directoryChecks,
+  applying,
+  canApply,
   onChange,
   onApply,
   onCancel,
   onChooseDirectory,
+  onClearDirectory,
   onOpenRecovery,
   onCheckUpdates,
   onOpenSource,
 }: SettingsModalProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [section, setSection] = useState<SettingsSection>("general");
   const navigation: Array<{ id: SettingsSection; label: string; icon: typeof GearSix }> = [
     { id: "general", label: t("general"), icon: GearSix },
@@ -115,7 +137,7 @@ export function SettingsModal({
         <div className="settings-content">
           <header>
             <h3>{navigation.find((item) => item.id === section)?.label}</h3>
-            <button type="button" className="icon-button close-settings" onClick={onCancel} aria-label={t("close")}>
+            <button type="button" className="icon-button close-settings" disabled={applying} onClick={onCancel} aria-label={t("close")}>
               <X size={19} />
             </button>
           </header>
@@ -215,18 +237,26 @@ export function SettingsModal({
                 <section className="settings-card settings-card-wide">
                   <h4>{t("filesFolders")}</h4>
                   {(["defaultSaveFolder", "cloudSyncFolder"] as const).map((field) => (
-                    <label className="field-label" key={field}>
+                    <div className="field-label" key={field}>
                       <span>{t(field === "defaultSaveFolder" ? "defaultFolder" : "cloudFolder")}</span>
                       <div className="path-field">
-                        <input value={settings[field] ?? ""} readOnly />
-                        <button type="button" className="button-secondary" onClick={() => onChooseDirectory(field)}>…</button>
+                        <input aria-label={t(field === "defaultSaveFolder" ? "defaultFolder" : "cloudFolder")} value={settings[field] ?? ""} readOnly />
+                        <button type="button" className="button-secondary" disabled={applying} aria-label={t("chooseFolder")} onClick={() => onChooseDirectory(field)}>…</button>
+                        {settings[field] && <button type="button" className="button-secondary clear-path" disabled={applying} onClick={() => onClearDirectory(field)}>{t("clear")}</button>}
                       </div>
-                    </label>
+                      {directoryChecks[field].status === "checking" && <small className="directory-status checking">{t("directoryChecking")}</small>}
+                      {directoryChecks[field].status === "valid" && directoryChecks[field].result && (
+                        <small className="directory-status valid">{t("directoryAvailable", { space: formatBytes(directoryChecks[field].result.availableBytes, i18n.language) })}</small>
+                      )}
+                      {directoryChecks[field].status === "invalid" && (
+                        <small className="directory-status invalid">{t(`directoryError_${directoryChecks[field].result?.errorCode ?? "unavailable"}`)}</small>
+                      )}
+                    </div>
                   ))}
                   <div className="field-grid">
                     <label className="field-label">
                       <span>{t("encoding")}</span>
-                      <select defaultValue="utf-8"><option value="utf-8">UTF-8</option><option value="utf-8-bom">UTF-8 BOM</option><option value="utf-16le">UTF-16 LE</option><option value="utf-16be">UTF-16 BE</option></select>
+                      <select value={settings.defaultEncoding} onChange={(event) => onChange({ defaultEncoding: event.target.value as Encoding })}><option value="utf-8">UTF-8</option><option value="utf-8-bom">UTF-8 BOM</option><option value="utf-16le">UTF-16 LE</option><option value="utf-16be">UTF-16 BE</option></select>
                     </label>
                     <label className="field-label">
                       <span>{t("recentFiles")}</span>
@@ -298,8 +328,8 @@ export function SettingsModal({
             )}
           </div>
           <footer>
-            <button type="button" className="button-secondary" onClick={onCancel}>{t("cancel")}</button>
-            <button type="button" className="button-primary" onClick={onApply}>{t("apply")}</button>
+            <button type="button" className="button-secondary" disabled={applying} onClick={onCancel}>{t("cancel")}</button>
+            <button type="button" className="button-primary" disabled={!canApply || applying} onClick={onApply}>{applying ? t("applying") : t("apply")}</button>
           </footer>
         </div>
       </section>

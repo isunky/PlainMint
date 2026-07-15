@@ -13,6 +13,7 @@ function documentWith(content: string, dirty = true): DocumentRecord {
     readOnly: false,
     missing: false,
     externalModified: false,
+    revision: 0,
     createdAt: 0,
   };
 }

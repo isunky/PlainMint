@@ -663,6 +663,16 @@ select:focus-visible {
   margin-left: auto;
 }
 
+.notice-bar .notice-actions {
+  margin-left: auto;
+  flex-direction: row;
+  gap: 8px;
+}
+
+.notice-bar .notice-actions button {
+  margin-left: 0;
+}
+
 .notice-bar.warning {
   background: #fff8e8;
   border-color: #efd9a1;
@@ -908,6 +918,27 @@ select:focus-visible {
 .path-field button {
   min-width: 44px;
   padding: 0;
+}
+
+.path-field .clear-path {
+  padding: 0 12px;
+}
+
+.directory-status {
+  min-height: 18px;
+  font-size: 12px;
+}
+
+.directory-status.checking {
+  color: var(--text-muted);
+}
+
+.directory-status.valid {
+  color: var(--accent-pressed);
+}
+
+.directory-status.invalid {
+  color: #b5473f;
 }
 
 .segmented {

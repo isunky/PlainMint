@@ -24,6 +24,7 @@ export interface DocumentRecord {
   readOnly: boolean;
   missing: boolean;
   externalModified: boolean;
+  revision: number;
   fingerprint?: FileFingerprint;
   createdAt: number;
   lastSavedAt?: number;
@@ -72,6 +73,7 @@ export interface UserSettings {
   backupRetentionDays: number;
   maxBackupVersionsPerFile: number;
   autoSaveMode: "off" | "idle" | "interval" | "blur" | "tab-switch";
+  defaultEncoding: Encoding;
   sessionRecoveryMode: "ask" | "auto" | "empty";
   defaultSaveFolder?: string;
   cloudSyncFolder?: string;
@@ -94,6 +96,24 @@ export interface SaveResult {
   path: string;
   fingerprint: FileFingerprint;
   savedAt: number;
+}
+
+export type DirectoryValidationErrorCode =
+  | "not-found"
+  | "not-directory"
+  | "not-readable"
+  | "not-writable"
+  | "insufficient-space"
+  | "unavailable";
+
+export interface DirectoryValidationResult {
+  valid: boolean;
+  exists: boolean;
+  isDirectory: boolean;
+  readable: boolean;
+  writable: boolean;
+  availableBytes: number;
+  errorCode?: DirectoryValidationErrorCode;
 }
 
 export interface RecoveryEntry {

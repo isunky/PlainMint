@@ -143,6 +143,7 @@ export function TextEditor({
     gutter: new Compartment(),
     theme: new Compartment(),
     readOnly: new Compartment(),
+    tabSize: new Compartment(),
   });
   const callbacks = useRef({ onChange, onCursor, onFocus, onUndo, onRedo });
   callbacks.current = { onChange, onCursor, onFocus, onUndo, onRedo };
@@ -150,7 +151,7 @@ export function TextEditor({
 
   useLayoutEffect(() => {
     if (!hostRef.current) return;
-    const { wrap, gutter, theme, readOnly } = compartments.current;
+    const { wrap, gutter, theme, readOnly, tabSize } = compartments.current;
     const state = EditorState.create({
       doc: document.content,
       extensions: [
@@ -185,6 +186,7 @@ export function TextEditor({
         gutter.of(settings.showLineNumbers ? lineNumbers() : []),
         theme.of(editorTheme(settings)),
         readOnly.of(EditorState.readOnly.of(document.readOnly)),
+        tabSize.of(EditorState.tabSize.of(settings.tabSize)),
         EditorView.updateListener.of((update) => {
           if (update.focusChanged && update.view.hasFocus) callbacks.current.onFocus();
           if (update.docChanged && !update.transactions.some((transaction) => transaction.annotation(externalSync))) {
@@ -249,13 +251,14 @@ export function TextEditor({
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
-    const { wrap, gutter, theme, readOnly } = compartments.current;
+    const { wrap, gutter, theme, readOnly, tabSize } = compartments.current;
     view.dispatch({
       effects: [
         wrap.reconfigure(settings.wordWrapByDefault ? EditorView.lineWrapping : []),
         gutter.reconfigure(settings.showLineNumbers ? lineNumbers() : []),
         theme.reconfigure(editorTheme(settings)),
         readOnly.reconfigure(EditorState.readOnly.of(document.readOnly)),
+        tabSize.reconfigure(EditorState.tabSize.of(settings.tabSize)),
       ],
     });
   }, [
@@ -264,6 +267,7 @@ export function TextEditor({
     settings.fontSize,
     settings.lineHeight,
     settings.highlightCurrentLine,
+    settings.tabSize,
     document.readOnly,
   ]);
 

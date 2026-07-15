@@ -20,6 +20,7 @@ import {
   X,
 } from "@phosphor-icons/react";
 import i18n, { resolveLocale } from "./i18n";
+import { isAutoSaveEligible, isAutoSaveRevisionSuppressed } from "./autoSavePolicy";
 import { needsSaveConfirmation } from "./closePolicy";
 import { createWorkspaceSession, decideStartupRecovery } from "./recoveryPolicy";
 import { SettingsModal } from "./components/SettingsModal";
@@ -31,12 +32,14 @@ import {
 } from "./components/TextEditor";
 import {
   beginAppSession,
+  appErrorCode,
   checkForUpdates,
   chooseAndOpenDocuments,
   chooseDirectory,
   closeWindow,
   deleteRecovery,
   inspectFile,
+  encodedByteLength,
   listenForWindowClose,
   listRecoveries,
   loadRecentFiles,
@@ -52,10 +55,11 @@ import {
   saveDocument,
   showSourceCode,
   toggleMaximizeWindow,
+  validateDirectory,
   writeRecovery,
 } from "./services/runtime";
 import { useAppStore } from "./store";
-import type { DocumentRecord, PaneId, RecoveryEntry, UserSettings, WorkspaceSession } from "./types";
+import type { DirectoryValidationResult, DocumentRecord, PaneId, RecoveryEntry, UserSettings, WorkspaceSession } from "./types";
 
 type ModalState =
   | { type: "none" }
@@ -64,6 +68,24 @@ type ModalState =
   | { type: "startup-recovery"; session: WorkspaceSession }
   | { type: "exit"; documents: DocumentRecord[] }
   | { type: "close-tab"; pane: PaneId; tabId: string; document: DocumentRecord };
+
+type DirectoryField = "defaultSaveFolder" | "cloudSyncFolder";
+type DirectoryCheck = {
+  status: "idle" | "checking" | "valid" | "invalid";
+  result?: DirectoryValidationResult;
+};
+
+const emptyDirectoryChecks: Record<DirectoryField, DirectoryCheck> = {
+  defaultSaveFolder: { status: "idle" },
+  cloudSyncFolder: { status: "idle" },
+};
+
+interface SaveIntent {
+  forceSaveAs?: boolean;
+  automatic?: boolean;
+  bypassFailure?: boolean;
+  notifySuccess?: boolean;
+}
 
 const accentMap = {
   tiffany: "#18B7AA",
@@ -602,11 +624,24 @@ export function App() {
   const [updateMessage, setUpdateMessage] = useState("");
   const [recentFiles, setRecentFiles] = useState<string[]>([]);
   const [hydrated, setHydrated] = useState(false);
+  const [directoryChecks, setDirectoryChecks] = useState<Record<DirectoryField, DirectoryCheck>>(emptyDirectoryChecks);
+  const [settingsApplying, setSettingsApplying] = useState(false);
+  const [autoSaveFailures, setAutoSaveFailures] = useState<Record<string, number>>({});
   const backupTimers = useRef<Record<string, number>>({});
+  const idleSaveTimers = useRef<Record<string, { revision: number; timer: number }>>({});
+  const saveInFlight = useRef(new Map<string, Promise<boolean>>());
+  const failedAutoSaveRevisions = useRef<Record<string, number>>({});
+  const previousActiveDocuments = useRef<Record<PaneId, string | undefined>>({ left: undefined, right: undefined });
+  const previousAutoSaveMode = useRef(settings.autoSaveMode);
+  const directoryCheckTokens = useRef<Record<DirectoryField, number>>({ defaultSaveFolder: 0, cloudSyncFolder: 0 });
   const closingRef = useRef(false);
 
   const activeDocumentId = tabs[activePane].find((tab) => tab.id === activeTab[activePane])?.documentId;
   const activeDocument = activeDocumentId ? documents[activeDocumentId] : undefined;
+  const paneActiveDocumentIds: Record<PaneId, string | undefined> = {
+    left: tabs.left.find((tab) => tab.id === activeTab.left)?.documentId,
+    right: tabs.right.find((tab) => tab.id === activeTab.right)?.documentId,
+  };
   const matches = useMemo(() => findMatches(
     activeDocument?.content ?? "",
     search.query,
@@ -627,6 +662,99 @@ export function App() {
       return next;
     });
   }, [settings.recentFileLimit]);
+
+  const validateSettingsDirectory = useCallback(async (field: DirectoryField, path?: string) => {
+    const token = ++directoryCheckTokens.current[field];
+    if (!path) {
+      setDirectoryChecks((current) => ({ ...current, [field]: { status: "idle" } }));
+      return true;
+    }
+    setDirectoryChecks((current) => ({ ...current, [field]: { status: "checking" } }));
+    let result: DirectoryValidationResult;
+    try {
+      result = await validateDirectory(path);
+    } catch {
+      result = {
+        valid: false,
+        exists: false,
+        isDirectory: false,
+        readable: false,
+        writable: false,
+        availableBytes: 0,
+        errorCode: "unavailable",
+      };
+    }
+    if (directoryCheckTokens.current[field] === token) {
+      setDirectoryChecks((current) => ({
+        ...current,
+        [field]: { status: result.valid ? "valid" : "invalid", result },
+      }));
+    }
+    return result.valid;
+  }, []);
+
+  const saveDocumentById = useCallback((documentId: string, intent: SaveIntent = {}) => {
+    const existing = saveInFlight.current.get(documentId);
+    if (existing) return existing;
+    const task = (async () => {
+      const snapshot = useAppStore.getState().documents[documentId];
+      if (!snapshot) return false;
+      if (intent.automatic) {
+        if (!isAutoSaveEligible(snapshot)) return false;
+        if (!intent.bypassFailure && isAutoSaveRevisionSuppressed(snapshot, failedAutoSaveRevisions.current[documentId])) return false;
+      }
+
+      let defaultSaveFolder: string | undefined;
+      const currentSettings = useAppStore.getState().settings;
+      if (!snapshot.filePath && currentSettings.defaultSaveFolder) {
+        try {
+          const check = await validateDirectory(currentSettings.defaultSaveFolder, encodedByteLength(snapshot));
+          if (check.valid) defaultSaveFolder = currentSettings.defaultSaveFolder;
+          else flash(t("defaultFolderFallback"));
+        } catch {
+          flash(t("defaultFolderFallback"));
+        }
+      }
+
+      try {
+        const result = await saveDocument(snapshot, {
+          forceSaveAs: intent.forceSaveAs,
+          defaultSaveFolder,
+        });
+        if (!result) return false;
+        markSaved(snapshot.id, result.path, snapshot.revision, result.fingerprint);
+        if (intent.forceSaveAs) updateDocumentFlags(snapshot.id, { readOnly: false, missing: false });
+        if (!intent.automatic || !snapshot.filePath) rememberRecent([result.path]);
+        delete failedAutoSaveRevisions.current[snapshot.id];
+        setAutoSaveFailures((current) => {
+          if (!(snapshot.id in current)) return current;
+          const next = { ...current };
+          delete next[snapshot.id];
+          return next;
+        });
+        if (intent.notifySuccess ?? !intent.automatic) flash(t("saved"));
+        return true;
+      } catch (error) {
+        if (appErrorCode(error) === "external_conflict") {
+          updateDocumentFlags(snapshot.id, { externalModified: true });
+          if (!intent.automatic) flash(t("externalChanged"));
+          return false;
+        }
+        if (intent.automatic) {
+          failedAutoSaveRevisions.current[snapshot.id] = snapshot.revision;
+          setAutoSaveFailures((current) => ({ ...current, [snapshot.id]: snapshot.revision }));
+        } else {
+          flash(t("saveFailed"));
+        }
+        return false;
+      }
+    })();
+    saveInFlight.current.set(documentId, task);
+    void task.finally(() => {
+      if (saveInFlight.current.get(documentId) === task) saveInFlight.current.delete(documentId);
+    });
+    return task;
+  }, [flash, markSaved, rememberRecent, t, updateDocumentFlags]);
 
   const openFiles = useCallback(async () => {
     try {
@@ -653,20 +781,35 @@ export function App() {
     }
   }, [activePane, addOpenedDocument, flash, rememberRecent, t]);
 
-  const saveActive = useCallback(async (forceSaveAs = false) => {
-    if (!activeDocument) return false;
+  const saveActive = useCallback((forceSaveAs = false) => (
+    activeDocument ? saveDocumentById(activeDocument.id, { forceSaveAs }) : Promise.resolve(false)
+  ), [activeDocument, saveDocumentById]);
+
+  useEffect(() => {
+    if (modal.type !== "settings") return;
+    void validateSettingsDirectory("defaultSaveFolder", settings.defaultSaveFolder);
+    void validateSettingsDirectory("cloudSyncFolder", settings.cloudSyncFolder);
+  }, [modal.type, settings.defaultSaveFolder, settings.cloudSyncFolder, validateSettingsDirectory]);
+
+  const applySettings = useCallback(async () => {
+    if (settingsApplying) return;
+    setSettingsApplying(true);
+    const nextSettings = useAppStore.getState().settings;
     try {
-      const result = await saveDocument(activeDocument, forceSaveAs);
-      if (!result) return false;
-      markSaved(activeDocument.id, result.path, result.fingerprint);
-      rememberRecent([result.path]);
-      flash(t("saved"));
-      return true;
+      const [defaultValid, cloudValid] = await Promise.all([
+        validateSettingsDirectory("defaultSaveFolder", nextSettings.defaultSaveFolder),
+        validateSettingsDirectory("cloudSyncFolder", nextSettings.cloudSyncFolder),
+      ]);
+      if (!defaultValid || !cloudValid) return;
+      await Promise.all([persistSettings(nextSettings), pruneRecoveries(nextSettings)]);
+      setModal({ type: "none" });
+      flash(t("settingsSaved"));
     } catch {
-      flash(t("saveFailed"));
-      return false;
+      flash(t("settingsSaveFailed"));
+    } finally {
+      setSettingsApplying(false);
     }
-  }, [activeDocument, flash, markSaved, rememberRecent, t]);
+  }, [flash, settingsApplying, t, validateSettingsDirectory]);
 
   const requestCloseTab = useCallback((pane: PaneId, tabId: string) => {
     const tab = tabs[pane].find((item) => item.id === tabId);
@@ -723,6 +866,96 @@ export function App() {
   }, [documents, settings]);
 
   useEffect(() => {
+    if (previousAutoSaveMode.current === settings.autoSaveMode) return;
+    previousAutoSaveMode.current = settings.autoSaveMode;
+    Object.values(idleSaveTimers.current).forEach(({ timer }) => window.clearTimeout(timer));
+    idleSaveTimers.current = {};
+    failedAutoSaveRevisions.current = {};
+    setAutoSaveFailures({});
+  }, [settings.autoSaveMode]);
+
+  useEffect(() => {
+    const timers = idleSaveTimers.current;
+    const liveIds = new Set(Object.keys(documents));
+    Object.keys(timers).forEach((documentId) => {
+      if (!liveIds.has(documentId) || settings.autoSaveMode !== "idle") {
+        window.clearTimeout(timers[documentId].timer);
+        delete timers[documentId];
+      }
+    });
+    if (!hydrated || settings.autoSaveMode !== "idle") return;
+    Object.values(documents).forEach((document) => {
+      const existing = timers[document.id];
+      const eligible = isAutoSaveEligible(document)
+        && !isAutoSaveRevisionSuppressed(document, failedAutoSaveRevisions.current[document.id]);
+      if (!eligible) {
+        if (existing) window.clearTimeout(existing.timer);
+        delete timers[document.id];
+        return;
+      }
+      if (existing?.revision === document.revision) return;
+      if (existing) window.clearTimeout(existing.timer);
+      timers[document.id] = {
+        revision: document.revision,
+        timer: window.setTimeout(() => {
+          delete idleSaveTimers.current[document.id];
+          void saveDocumentById(document.id, { automatic: true });
+        }, 10_000),
+      };
+    });
+  }, [documents, hydrated, saveDocumentById, settings.autoSaveMode]);
+
+  useEffect(() => {
+    if (!hydrated || settings.autoSaveMode !== "interval") return;
+    const timer = window.setInterval(() => {
+      Object.values(useAppStore.getState().documents).forEach((document) => {
+        if (isAutoSaveEligible(document)) void saveDocumentById(document.id, { automatic: true });
+      });
+    }, 30_000);
+    return () => window.clearInterval(timer);
+  }, [hydrated, saveDocumentById, settings.autoSaveMode]);
+
+  useEffect(() => {
+    if (!hydrated || settings.autoSaveMode !== "blur") return;
+    const onBlur = () => {
+      Object.values(useAppStore.getState().documents).forEach((document) => {
+        if (isAutoSaveEligible(document)) void saveDocumentById(document.id, { automatic: true });
+      });
+    };
+    window.addEventListener("blur", onBlur);
+    return () => window.removeEventListener("blur", onBlur);
+  }, [hydrated, saveDocumentById, settings.autoSaveMode]);
+
+  useEffect(() => {
+    const previous = previousActiveDocuments.current;
+    if (hydrated && settings.autoSaveMode === "tab-switch") {
+      (["left", "right"] as PaneId[]).forEach((pane) => {
+        const previousId = previous[pane];
+        const currentId = paneActiveDocumentIds[pane];
+        if (previousId && previousId !== currentId && useAppStore.getState().documents[previousId]) {
+          void saveDocumentById(previousId, { automatic: true });
+        }
+      });
+    }
+    previousActiveDocuments.current = paneActiveDocumentIds;
+  }, [hydrated, paneActiveDocumentIds.left, paneActiveDocumentIds.right, saveDocumentById, settings.autoSaveMode]);
+
+  useEffect(() => {
+    const documentIds = new Set(Object.keys(documents));
+    setAutoSaveFailures((current) => {
+      const next = Object.fromEntries(Object.entries(current).filter(([documentId]) => documentIds.has(documentId)));
+      return Object.keys(next).length === Object.keys(current).length ? current : next;
+    });
+    Object.keys(failedAutoSaveRevisions.current).forEach((documentId) => {
+      if (!documentIds.has(documentId)) delete failedAutoSaveRevisions.current[documentId];
+    });
+  }, [documents]);
+
+  useEffect(() => () => {
+    Object.values(idleSaveTimers.current).forEach(({ timer }) => window.clearTimeout(timer));
+  }, []);
+
+  useEffect(() => {
     if (!hydrated) return;
     const timer = window.setTimeout(() => {
       if (closingRef.current) return;
@@ -746,18 +979,11 @@ export function App() {
 
   const saveAllAndExit = useCallback(async (dirtyDocuments: DocumentRecord[]) => {
     for (const document of dirtyDocuments) {
-      try {
-        const result = await saveDocument(document);
-        if (!result) return;
-        markSaved(document.id, result.path, result.fingerprint);
-        rememberRecent([result.path]);
-      } catch {
-        flash(t("saveFailed"));
-        return;
-      }
+      const saved = await saveDocumentById(document.id, { notifySuccess: false });
+      if (!saved) return;
     }
     await finishClose();
-  }, [finishClose, flash, markSaved, rememberRecent, t]);
+  }, [finishClose, saveDocumentById]);
 
   useEffect(() => {
     let cancelled = false;
@@ -775,7 +1001,7 @@ export function App() {
   useEffect(() => {
     const timer = window.setInterval(() => {
       Object.values(documents).forEach((document) => {
-        if (!document.filePath || !document.fingerprint) return;
+        if (!document.filePath || !document.fingerprint || saveInFlight.current.has(document.id)) return;
         void inspectFile(document.filePath).then((fingerprint) => {
           if (!fingerprint) return;
           if (fingerprint.hash !== document.fingerprint?.hash) {
@@ -833,6 +1059,15 @@ export function App() {
       )}
       {activeDocument?.missing && <div className="notice-bar warning"><span>{t("missingFile")}</span><button type="button" className="button-secondary" onClick={() => void saveActive(true)}>{t("saveAs")}</button></div>}
       {activeDocument?.readOnly && <div className="notice-bar"><span>{t("readonlyNotice")}</span><button type="button" className="button-secondary" onClick={() => void saveActive(true)}>{t("saveAs")}</button></div>}
+      {activeDocument && autoSaveFailures[activeDocument.id] !== undefined && (
+        <div className="notice-bar warning" role="alert">
+          <div><strong>{t("autoSaveFailed")}</strong><span>{t("autoSaveFailedBody")}</span></div>
+          <div className="notice-actions">
+            <button type="button" className="button-secondary" onClick={() => void saveDocumentById(activeDocument.id, { automatic: true, bypassFailure: true })}>{t("retry")}</button>
+            <button type="button" className="button-secondary" onClick={() => void saveDocumentById(activeDocument.id, { forceSaveAs: true })}>{t("saveAs")}</button>
+          </div>
+        </div>
+      )}
 
       <div className={"workspace " + (split ? "split" : "")}>
         {tabs.left.length === 0 && tabs.right.length === 0 ? (
@@ -859,14 +1094,20 @@ export function App() {
       {modal.type === "settings" && (
         <SettingsModal
           settings={settings}
+          directoryChecks={directoryChecks}
+          applying={settingsApplying}
+          canApply={(["defaultSaveFolder", "cloudSyncFolder"] as DirectoryField[]).every((field) => (
+            !settings[field] || directoryChecks[field].status === "valid"
+          ))}
           onChange={updateSettings}
-          onApply={() => {
-            void Promise.all([persistSettings(settings), pruneRecoveries(settings)]);
-            setModal({ type: "none" });
-            flash(t("settingsSaved"));
-          }}
+          onApply={() => void applySettings()}
           onCancel={() => { loadSettingsIntoStore(modal.snapshot); setModal({ type: "none" }); }}
-          onChooseDirectory={(field) => void chooseDirectory().then((path) => path && updateSettings({ [field]: path }))}
+          onChooseDirectory={(field) => void chooseDirectory().then((path) => {
+            if (!path) return;
+            setDirectoryChecks((current) => ({ ...current, [field]: { status: "checking" } }));
+            updateSettings({ [field]: path });
+          })}
+          onClearDirectory={(field) => updateSettings({ [field]: undefined })}
           onOpenRecovery={() => setModal({ type: "recovery" })}
           onCheckUpdates={() => void checkForUpdates().then((result) => setUpdateMessage(result.available ? "PlainMint " + result.version : t("latestVersion")))}
           onOpenSource={() => void showSourceCode()}
@@ -897,9 +1138,8 @@ export function App() {
           modal={modal}
           onCancel={() => setModal({ type: "none" })}
           onDiscard={() => { closeTab(modal.pane, modal.tabId); setModal({ type: "none" }); }}
-          onSave={() => void saveDocument(modal.document).then((result) => {
-            if (!result) return;
-            markSaved(modal.document.id, result.path, result.fingerprint);
+          onSave={() => void saveDocumentById(modal.document.id, { notifySuccess: false }).then((saved) => {
+            if (!saved) return;
             closeTab(modal.pane, modal.tabId);
             setModal({ type: "none" });
           })}

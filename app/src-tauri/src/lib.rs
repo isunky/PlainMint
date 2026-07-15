@@ -11,6 +11,8 @@ use std::{
 use tauri::{AppHandle, Manager};
 use uuid::Uuid;
 
+const DIRECTORY_SPACE_RESERVE: u64 = 1024 * 1024;
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AppError {
@@ -97,6 +99,40 @@ struct SaveResult {
     path: String,
     fingerprint: FileFingerprint,
     saved_at: u64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DirectoryValidationResult {
+    valid: bool,
+    exists: bool,
+    is_directory: bool,
+    readable: bool,
+    writable: bool,
+    available_bytes: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error_code: Option<String>,
+}
+
+impl DirectoryValidationResult {
+    fn invalid(
+        error_code: &str,
+        exists: bool,
+        is_directory: bool,
+        readable: bool,
+        writable: bool,
+        available_bytes: u64,
+    ) -> Self {
+        Self {
+            valid: false,
+            exists,
+            is_directory,
+            readable,
+            writable,
+            available_bytes,
+            error_code: Some(error_code.to_string()),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -346,6 +382,82 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> CommandResult<()> {
     })
 }
 
+fn validate_directory_path(path: &Path, required_bytes: u64) -> DirectoryValidationResult {
+    let metadata = match fs::metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) => {
+            let code = if error.kind() == std::io::ErrorKind::NotFound {
+                "not-found"
+            } else if error.kind() == std::io::ErrorKind::PermissionDenied {
+                "not-readable"
+            } else {
+                "unavailable"
+            };
+            return DirectoryValidationResult::invalid(
+                code,
+                error.kind() != std::io::ErrorKind::NotFound,
+                false,
+                false,
+                false,
+                0,
+            );
+        }
+    };
+    if !metadata.is_dir() {
+        return DirectoryValidationResult::invalid("not-directory", true, false, false, false, 0);
+    }
+
+    let readable = fs::read_dir(path)
+        .and_then(|mut entries| entries.next().transpose().map(|_| ()))
+        .is_ok();
+    if !readable {
+        return DirectoryValidationResult::invalid("not-readable", true, true, false, false, 0);
+    }
+
+    let probe = path.join(format!(".plainmint-write-test-{}", Uuid::new_v4()));
+    let writable = match OpenOptions::new().write(true).create_new(true).open(&probe) {
+        Ok(file) => {
+            drop(file);
+            fs::remove_file(&probe).is_ok()
+        }
+        Err(_) => {
+            let _ = fs::remove_file(&probe);
+            false
+        }
+    };
+    if !writable {
+        return DirectoryValidationResult::invalid("not-writable", true, true, true, false, 0);
+    }
+
+    let available_bytes = match fs4::available_space(path) {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            return DirectoryValidationResult::invalid("unavailable", true, true, true, true, 0)
+        }
+    };
+    let minimum = required_bytes.saturating_add(DIRECTORY_SPACE_RESERVE);
+    if available_bytes < minimum {
+        return DirectoryValidationResult::invalid(
+            "insufficient-space",
+            true,
+            true,
+            true,
+            true,
+            available_bytes,
+        );
+    }
+
+    DirectoryValidationResult {
+        valid: true,
+        exists: true,
+        is_directory: true,
+        readable: true,
+        writable: true,
+        available_bytes,
+        error_code: None,
+    }
+}
+
 #[cfg(not(windows))]
 fn replace_file(source: &Path, target: &Path) -> std::io::Result<()> {
     fs::rename(source, target)
@@ -477,6 +589,11 @@ fn close_app_window(app: AppHandle, window: tauri::WebviewWindow) -> CommandResu
 #[tauri::command]
 fn inspect_file(path: String) -> CommandResult<FileFingerprint> {
     fingerprint(Path::new(&path))
+}
+
+#[tauri::command]
+fn validate_directory(path: String, required_bytes: u64) -> DirectoryValidationResult {
+    validate_directory_path(Path::new(&path), required_bytes)
 }
 
 #[tauri::command]
@@ -909,6 +1026,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             inspect_file,
+            validate_directory,
             open_file,
             save_file,
             load_settings,
@@ -965,6 +1083,40 @@ mod tests {
         assert!(matches!(encoding, Encoding::Utf8Bom));
         assert_eq!(detect_line_ending(&decoded), LineEnding::Crlf);
         assert_eq!(normalize_line_endings(decoded), input);
+    }
+
+    #[test]
+    fn validates_directory_access_and_cleans_probe_file() {
+        let directory = test_directory("directory-validation");
+
+        let result = validate_directory_path(&directory, 0);
+
+        assert!(result.valid);
+        assert!(result.readable);
+        assert!(result.writable);
+        assert!(result.available_bytes >= DIRECTORY_SPACE_RESERVE);
+        assert_eq!(fs::read_dir(&directory).unwrap().count(), 0);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn rejects_missing_files_and_insufficient_space() {
+        let directory = test_directory("directory-errors");
+        let file = directory.join("plainmint.txt");
+        fs::write(&file, b"text").unwrap();
+
+        let missing = validate_directory_path(&directory.join("missing"), 0);
+        assert_eq!(missing.error_code.as_deref(), Some("not-found"));
+
+        let not_directory = validate_directory_path(&file, 0);
+        assert_eq!(not_directory.error_code.as_deref(), Some("not-directory"));
+
+        let insufficient = validate_directory_path(&directory, u64::MAX);
+        assert_eq!(
+            insufficient.error_code.as_deref(),
+            Some("insufficient-space")
+        );
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
