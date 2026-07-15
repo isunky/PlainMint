@@ -86,7 +86,8 @@ export interface OpenedDocument {
   encoding: Encoding;
   lineEnding: LineEnding;
   readOnly: boolean;
-  fingerprint: FileFingerprint;
+  fingerprint?: FileFingerprint;
+  recovered?: boolean;
 }
 
 export interface SaveResult {
@@ -104,6 +105,21 @@ export interface RecoveryEntry {
   size: number;
   encoding: Encoding;
   lineEnding: LineEnding;
+  status: "ready" | "corrupted";
+}
+
+export interface BatchRecoveryResult {
+  documents: OpenedDocument[];
+  failures: Array<{
+    id: string;
+    code: string;
+    messageKey: string;
+  }>;
+}
+
+export interface StartupStatus {
+  previousExitWasUnclean: boolean;
+  previousStartedAt?: number;
 }
 
 export interface WorkspaceSession {

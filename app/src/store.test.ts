@@ -51,3 +51,24 @@ describe("workspace session", () => {
     expect(state.split).toBe(false);
   });
 });
+
+describe("recovered documents", () => {
+  it("opens recovered content as an unsaved document without deduplicating unnamed copies", () => {
+    const opened = {
+      path: "",
+      name: "recovered.txt",
+      content: "recovered content",
+      encoding: "utf-8" as const,
+      lineEnding: "lf" as const,
+      readOnly: false,
+      recovered: true,
+    };
+
+    const firstId = useAppStore.getState().addOpenedDocument(opened, "left");
+    const secondId = useAppStore.getState().addOpenedDocument(opened, "left");
+
+    expect(secondId).not.toBe(firstId);
+    expect(useAppStore.getState().documents[firstId].dirty).toBe(true);
+    expect(useAppStore.getState().documents[firstId].filePath).toBeUndefined();
+  });
+});

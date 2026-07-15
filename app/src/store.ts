@@ -202,7 +202,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   addOpenedDocument: (opened, pane = get().activePane) => {
-    const existing = Object.values(get().documents).find((document) => document.filePath === opened.path);
+    const existing = opened.path && !opened.recovered
+      ? Object.values(get().documents).find((document) => document.filePath === opened.path)
+      : undefined;
     if (existing) {
       const existingTab = get().tabs[pane].find((tab) => tab.documentId === existing.id);
       if (existingTab) get().setActiveTab(pane, existingTab.id);
@@ -212,12 +214,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     const tabId = uniqueId("tab");
     const document: DocumentRecord = {
       id,
-      filePath: opened.path,
+      filePath: opened.path || undefined,
       fileName: opened.name,
       content: opened.content,
       encoding: opened.encoding,
       lineEnding: opened.lineEnding,
-      dirty: false,
+      dirty: Boolean(opened.recovered),
       readOnly: opened.readOnly,
       missing: false,
       externalModified: false,
