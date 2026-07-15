@@ -5,6 +5,7 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{Read, Write},
     path::{Path, PathBuf},
+    sync::{Mutex, OnceLock},
     time::{SystemTime, UNIX_EPOCH},
 };
 use tauri::{AppHandle, Manager};
@@ -75,7 +76,9 @@ struct OpenedDocument {
     encoding: Encoding,
     line_ending: LineEnding,
     read_only: bool,
-    fingerprint: FileFingerprint,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fingerprint: Option<FileFingerprint>,
+    recovered: bool,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -133,7 +136,48 @@ struct RecoveryEntry {
     size: usize,
     encoding: Encoding,
     line_ending: LineEnding,
+    status: RecoveryStatus,
 }
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum RecoveryStatus {
+    Ready,
+    Corrupted,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RecoveryFailure {
+    id: String,
+    code: String,
+    message_key: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BatchRecoveryResult {
+    documents: Vec<OpenedDocument>,
+    failures: Vec<RecoveryFailure>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LifecycleMarker {
+    running: bool,
+    started_at: u64,
+    closed_at: Option<u64>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StartupStatus {
+    previous_exit_was_unclean: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    previous_started_at: Option<u64>,
+}
+
+static STARTUP_STATUS: OnceLock<Mutex<Option<StartupStatus>>> = OnceLock::new();
 
 fn now_millis() -> u64 {
     SystemTime::now()
@@ -350,6 +394,86 @@ fn app_data_file(app: &AppHandle, name: &str) -> CommandResult<PathBuf> {
         })
 }
 
+fn begin_lifecycle(path: &Path, now: u64) -> CommandResult<StartupStatus> {
+    let previous = if path.exists() {
+        match fs::read(path) {
+            Ok(bytes) => serde_json::from_slice::<LifecycleMarker>(&bytes).ok(),
+            Err(error) => return Err(AppError::io("lifecycle_read_failed", error)),
+        }
+    } else {
+        None
+    };
+    let status = StartupStatus {
+        previous_exit_was_unclean: path.exists()
+            && previous
+                .as_ref()
+                .map(|marker| marker.running)
+                .unwrap_or(true),
+        previous_started_at: previous.as_ref().map(|marker| marker.started_at),
+    };
+    let marker = LifecycleMarker {
+        running: true,
+        started_at: now,
+        closed_at: None,
+    };
+    let bytes = serde_json::to_vec_pretty(&marker).map_err(|error| {
+        AppError::new(
+            "lifecycle_invalid",
+            "sessionRecovery",
+            Some(error.to_string()),
+        )
+    })?;
+    atomic_write(path, &bytes)?;
+    Ok(status)
+}
+
+fn complete_lifecycle(path: &Path, now: u64) -> CommandResult<()> {
+    let started_at = fs::read(path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<LifecycleMarker>(&bytes).ok())
+        .map(|marker| marker.started_at)
+        .unwrap_or(now);
+    let marker = LifecycleMarker {
+        running: false,
+        started_at,
+        closed_at: Some(now),
+    };
+    let bytes = serde_json::to_vec_pretty(&marker).map_err(|error| {
+        AppError::new(
+            "lifecycle_invalid",
+            "sessionRecovery",
+            Some(error.to_string()),
+        )
+    })?;
+    atomic_write(path, &bytes)
+}
+
+#[tauri::command]
+fn begin_app_session(app: AppHandle) -> CommandResult<StartupStatus> {
+    let slot = STARTUP_STATUS.get_or_init(|| Mutex::new(None));
+    let mut stored = slot.lock().map_err(|error| {
+        AppError::new(
+            "lifecycle_lock_failed",
+            "sessionRecovery",
+            Some(error.to_string()),
+        )
+    })?;
+    if let Some(status) = stored.as_ref() {
+        return Ok(status.clone());
+    }
+    let status = begin_lifecycle(&app_data_file(&app, "lifecycle.json")?, now_millis())?;
+    *stored = Some(status.clone());
+    Ok(status)
+}
+
+#[tauri::command]
+fn close_app_window(app: AppHandle, window: tauri::WebviewWindow) -> CommandResult<()> {
+    complete_lifecycle(&app_data_file(&app, "lifecycle.json")?, now_millis())?;
+    window
+        .destroy()
+        .map_err(|error| AppError::new("window_close_failed", "close", Some(error.to_string())))
+}
+
 #[tauri::command]
 fn inspect_file(path: String) -> CommandResult<FileFingerprint> {
     fingerprint(Path::new(&path))
@@ -383,7 +507,8 @@ fn open_file(request: OpenFileRequest) -> CommandResult<OpenedDocument> {
         encoding,
         line_ending,
         read_only,
-        fingerprint: fingerprint(&path)?,
+        fingerprint: Some(fingerprint(&path)?),
+        recovered: false,
     })
 }
 
@@ -496,7 +621,92 @@ fn save_recent_files(app: AppHandle, paths: Vec<String>) -> CommandResult<()> {
 }
 
 fn backup_root(app: &AppHandle) -> CommandResult<PathBuf> {
-    Ok(app_data_file(app, "backups")?)
+    app_data_file(app, "backups")
+}
+
+fn backup_timestamp(path: &Path) -> Option<u64> {
+    read_backup(path)
+        .ok()
+        .map(|backup| backup.created_at)
+        .or_else(|| {
+            path.file_stem()
+                .and_then(|value| value.to_str())
+                .and_then(|value| value.split('-').next())
+                .and_then(|value| value.parse::<u64>().ok())
+        })
+        .or_else(|| {
+            fs::metadata(path)
+                .ok()
+                .and_then(|metadata| metadata.modified().ok())
+                .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+                .map(|value| value.as_millis() as u64)
+        })
+}
+
+fn remove_backup_file(path: &Path) -> CommandResult<()> {
+    fs::remove_file(path).map_err(|error| AppError::io("backup_delete_failed", error))
+}
+
+fn prune_backup_directory(
+    directory: &Path,
+    retention_days: u64,
+    max_versions: usize,
+    now: u64,
+) -> CommandResult<()> {
+    if !directory.exists() {
+        return Ok(());
+    }
+    let retention_millis = retention_days.max(1).saturating_mul(86_400_000);
+    let cutoff = now.saturating_sub(retention_millis);
+    let mut remaining = Vec::new();
+    for entry in fs::read_dir(directory)
+        .map_err(|error| AppError::io("backup_list_failed", error))?
+        .flatten()
+    {
+        let path = entry.path();
+        if path.extension().and_then(|value| value.to_str()) != Some("json") {
+            continue;
+        }
+        if backup_timestamp(&path)
+            .map(|created_at| created_at < cutoff)
+            .unwrap_or(false)
+        {
+            remove_backup_file(&path)?;
+        } else {
+            remaining.push(path);
+        }
+    }
+    remaining.sort_by_key(|path| backup_timestamp(path).unwrap_or_default());
+    let remove_count = remaining.len().saturating_sub(max_versions.max(1));
+    for path in remaining.into_iter().take(remove_count) {
+        remove_backup_file(&path)?;
+    }
+    Ok(())
+}
+
+fn prune_all_backups(
+    app: &AppHandle,
+    retention_days: u64,
+    max_versions: usize,
+) -> CommandResult<()> {
+    let root = backup_root(app)?;
+    if !root.exists() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(&root)
+        .map_err(|error| AppError::io("backup_list_failed", error))?
+        .flatten()
+    {
+        if entry.path().is_dir() {
+            prune_backup_directory(&entry.path(), retention_days, max_versions, now_millis())?;
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn prune_backups(app: AppHandle, retention_days: u64, max_versions: usize) -> CommandResult<()> {
+    prune_all_backups(&app, retention_days, max_versions)
 }
 
 #[tauri::command]
@@ -519,19 +729,12 @@ fn write_backup(app: AppHandle, request: BackupRequest) -> CommandResult<()> {
         AppError::new("backup_invalid", "backupRecovery", Some(error.to_string()))
     })?;
     atomic_write(&path, &bytes)?;
-
-    let mut files = fs::read_dir(&directory)
-        .map_err(|error| AppError::io("backup_list_failed", error))?
-        .flatten()
-        .filter(|entry| entry.path().extension().and_then(|value| value.to_str()) == Some("json"))
-        .collect::<Vec<_>>();
-    files.sort_by_key(|entry| entry.file_name());
-    let max_versions = request.max_versions.max(1);
-    let remove_count = files.len().saturating_sub(max_versions);
-    for entry in files.into_iter().take(remove_count) {
-        let _ = fs::remove_file(entry.path());
-    }
-    Ok(())
+    prune_backup_directory(
+        &directory,
+        request.retention_days,
+        request.max_versions,
+        now_millis(),
+    )
 }
 
 fn all_backup_files(app: &AppHandle) -> CommandResult<Vec<PathBuf>> {
@@ -566,12 +769,16 @@ fn read_backup(path: &Path) -> CommandResult<BackupFile> {
     .map_err(|error| AppError::new("backup_invalid", "backupRecovery", Some(error.to_string())))
 }
 
-#[tauri::command]
-fn list_recoveries(app: AppHandle) -> CommandResult<Vec<RecoveryEntry>> {
-    let mut entries = all_backup_files(&app)?
-        .into_iter()
-        .filter_map(|path| read_backup(&path).ok())
-        .map(|backup| RecoveryEntry {
+fn recovery_storage_id(path: &Path) -> String {
+    path.file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or("damaged-backup")
+        .to_string()
+}
+
+fn recovery_entry_from_path(path: &Path) -> RecoveryEntry {
+    match read_backup(path) {
+        Ok(backup) => RecoveryEntry {
             id: backup.id,
             document_id: backup.document_id,
             file_name: backup.file_name,
@@ -580,18 +787,51 @@ fn list_recoveries(app: AppHandle) -> CommandResult<Vec<RecoveryEntry>> {
             size: backup.content.len(),
             encoding: backup.encoding,
             line_ending: backup.line_ending,
-        })
+            status: RecoveryStatus::Ready,
+        },
+        Err(_) => RecoveryEntry {
+            id: recovery_storage_id(path),
+            document_id: path
+                .parent()
+                .and_then(|value| value.file_name())
+                .and_then(|value| value.to_str())
+                .unwrap_or("unknown-document")
+                .to_string(),
+            file_name: path
+                .file_name()
+                .and_then(|value| value.to_str())
+                .unwrap_or("damaged-backup.json")
+                .to_string(),
+            original_path: None,
+            created_at: backup_timestamp(path).unwrap_or_default(),
+            size: fs::metadata(path)
+                .map(|value| value.len() as usize)
+                .unwrap_or_default(),
+            encoding: Encoding::Utf8,
+            line_ending: LineEnding::Lf,
+            status: RecoveryStatus::Corrupted,
+        },
+    }
+}
+
+#[tauri::command]
+fn list_recoveries(app: AppHandle) -> CommandResult<Vec<RecoveryEntry>> {
+    let mut entries = all_backup_files(&app)?
+        .into_iter()
+        .map(|path| recovery_entry_from_path(&path))
         .collect::<Vec<_>>();
-    entries.sort_by(|left, right| right.created_at.cmp(&left.created_at));
+    entries.sort_by_key(|entry| std::cmp::Reverse(entry.created_at));
     Ok(entries)
 }
 
-fn find_backup(app: &AppHandle, id: &str) -> CommandResult<(PathBuf, BackupFile)> {
+fn find_recovery_path(app: &AppHandle, id: &str) -> CommandResult<PathBuf> {
     for path in all_backup_files(app)? {
-        if let Ok(backup) = read_backup(&path) {
-            if backup.id == id {
-                return Ok((path, backup));
-            }
+        let matches_backup = read_backup(&path)
+            .ok()
+            .map(|backup| backup.id == id)
+            .unwrap_or(false);
+        if matches_backup || recovery_storage_id(&path) == id {
+            return Ok(path);
         }
     }
     Err(AppError::new(
@@ -601,28 +841,62 @@ fn find_backup(app: &AppHandle, id: &str) -> CommandResult<(PathBuf, BackupFile)
     ))
 }
 
-#[tauri::command]
-fn restore_recovery(app: AppHandle, id: String) -> CommandResult<OpenedDocument> {
-    let (_, backup) = find_backup(&app, &id)?;
-    let bytes = encode_content(&backup.content, &backup.encoding, &backup.line_ending);
+fn restore_recovery_document(app: &AppHandle, id: &str) -> CommandResult<OpenedDocument> {
+    let path = find_recovery_path(app, id)?;
+    let backup = read_backup(&path)?;
+    let original_path = backup.original_path.unwrap_or_default();
+    let original_exists = !original_path.is_empty() && Path::new(&original_path).exists();
+    let current_fingerprint = original_exists
+        .then(|| fingerprint(Path::new(&original_path)).ok())
+        .flatten();
+    let read_only = original_exists
+        && (current_fingerprint.is_none()
+            || fs::metadata(&original_path)
+                .map(|metadata| metadata.permissions().readonly())
+                .unwrap_or(true));
     Ok(OpenedDocument {
-        path: backup.original_path.unwrap_or_default(),
+        path: if original_exists {
+            original_path
+        } else {
+            String::new()
+        },
         name: backup.file_name,
         content: backup.content,
         encoding: backup.encoding,
         line_ending: backup.line_ending,
-        read_only: false,
-        fingerprint: FileFingerprint {
-            modified_at: backup.created_at,
-            size: bytes.len() as u64,
-            hash: hash_bytes(&bytes),
-        },
+        read_only,
+        fingerprint: current_fingerprint,
+        recovered: true,
     })
 }
 
 #[tauri::command]
+fn restore_recovery(app: AppHandle, id: String) -> CommandResult<OpenedDocument> {
+    restore_recovery_document(&app, &id)
+}
+
+#[tauri::command]
+fn restore_recoveries(app: AppHandle, ids: Vec<String>) -> BatchRecoveryResult {
+    let mut result = BatchRecoveryResult {
+        documents: Vec::new(),
+        failures: Vec::new(),
+    };
+    for id in ids {
+        match restore_recovery_document(&app, &id) {
+            Ok(document) => result.documents.push(document),
+            Err(error) => result.failures.push(RecoveryFailure {
+                id,
+                code: error.code,
+                message_key: error.message_key,
+            }),
+        }
+    }
+    result
+}
+
+#[tauri::command]
 fn delete_recovery(app: AppHandle, id: String) -> CommandResult<()> {
-    let (path, _) = find_backup(&app, &id)?;
+    let path = find_recovery_path(&app, &id)?;
     fs::remove_file(path).map_err(|error| AppError::io("backup_delete_failed", error))
 }
 
@@ -639,13 +913,17 @@ pub fn run() {
             save_file,
             load_settings,
             save_settings,
+            begin_app_session,
+            close_app_window,
             save_session,
             load_session,
             load_recent_files,
             save_recent_files,
             write_backup,
+            prune_backups,
             list_recoveries,
             restore_recovery,
+            restore_recoveries,
             delete_recovery,
         ])
         .run(tauri::generate_context!())
@@ -655,6 +933,28 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn test_directory(label: &str) -> PathBuf {
+        let path = std::env::temp_dir().join(format!("plainmint-{label}-{}", Uuid::new_v4()));
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    fn write_test_backup(directory: &Path, created_at: u64, id: &str) -> PathBuf {
+        let backup = BackupFile {
+            id: id.to_string(),
+            document_id: "doc-test".into(),
+            file_name: "notes.txt".into(),
+            original_path: None,
+            created_at,
+            content: format!("content-{id}"),
+            encoding: Encoding::Utf8,
+            line_ending: LineEnding::Lf,
+        };
+        let path = directory.join(format!("{created_at}-{id}.json"));
+        fs::write(&path, serde_json::to_vec(&backup).unwrap()).unwrap();
+        path
+    }
 
     #[test]
     fn preserves_utf8_bom_and_crlf() {
@@ -675,5 +975,60 @@ mod tests {
             let (decoded, _) = decode_bytes(&bytes, None).unwrap();
             assert_eq!(decoded, input);
         }
+    }
+
+    #[test]
+    fn prunes_expired_backups_before_applying_version_limit() {
+        const DAY: u64 = 86_400_000;
+        let directory = test_directory("retention");
+        write_test_backup(&directory, 60 * DAY, "expired");
+        write_test_backup(&directory, 80 * DAY, "oldest-kept-period");
+        write_test_backup(&directory, 90 * DAY, "newer");
+        write_test_backup(&directory, 95 * DAY, "newest");
+
+        prune_backup_directory(&directory, 30, 2, 100 * DAY).unwrap();
+
+        let mut remaining = fs::read_dir(&directory)
+            .unwrap()
+            .flatten()
+            .map(|entry| entry.file_name().to_string_lossy().to_string())
+            .collect::<Vec<_>>();
+        remaining.sort();
+        assert_eq!(
+            remaining,
+            vec!["7776000000-newer.json", "8208000000-newest.json"]
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn exposes_corrupted_backups_instead_of_hiding_them() {
+        let directory = test_directory("corrupted");
+        let path = directory.join("123-damaged.json");
+        fs::write(&path, b"{not-valid-json").unwrap();
+
+        let entry = recovery_entry_from_path(&path);
+
+        assert!(matches!(entry.status, RecoveryStatus::Corrupted));
+        assert_eq!(entry.id, "123-damaged");
+        assert_eq!(entry.created_at, 123);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn distinguishes_unclean_and_completed_lifecycles() {
+        let directory = test_directory("lifecycle");
+        let path = directory.join("lifecycle.json");
+
+        let first = begin_lifecycle(&path, 100).unwrap();
+        assert!(!first.previous_exit_was_unclean);
+        let interrupted = begin_lifecycle(&path, 200).unwrap();
+        assert!(interrupted.previous_exit_was_unclean);
+        assert_eq!(interrupted.previous_started_at, Some(100));
+
+        complete_lifecycle(&path, 300).unwrap();
+        let completed = begin_lifecycle(&path, 400).unwrap();
+        assert!(!completed.previous_exit_was_unclean);
+        fs::remove_dir_all(directory).unwrap();
     }
 }

@@ -1050,6 +1050,31 @@ select:focus-visible {
   font-size: 20px;
 }
 
+.recovery-toolbar {
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 22px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-muted);
+}
+
+.recovery-toolbar span {
+  flex: 1;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.recovery-message {
+  margin: 0;
+  padding: 10px 22px;
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 10%, var(--surface-elevated));
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 13px;
+}
+
 .recovery-list {
   max-height: 500px;
   overflow: auto;
@@ -1062,6 +1087,16 @@ select:focus-visible {
   gap: 15px;
   padding: 12px 22px;
   border-bottom: 1px solid var(--border-subtle);
+}
+
+.recovery-list article.corrupted {
+  background: color-mix(in srgb, var(--warning) 8%, transparent);
+}
+
+.recovery-list article > input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent-primary);
 }
 
 .recovery-list article > div {
@@ -1089,6 +1124,11 @@ select:focus-visible {
 
 .confirm-modal p {
   color: var(--text-secondary);
+}
+
+.startup-recovery-modal .unsaved-file-list {
+  max-height: 170px;
+  overflow: auto;
 }
 
 .welcome {

@@ -21,6 +21,7 @@ import {
 } from "@phosphor-icons/react";
 import i18n, { resolveLocale } from "./i18n";
 import { needsSaveConfirmation } from "./closePolicy";
+import { createWorkspaceSession, decideStartupRecovery } from "./recoveryPolicy";
 import { SettingsModal } from "./components/SettingsModal";
 import {
   findNextInPane,
@@ -29,12 +30,14 @@ import {
   TextEditor,
 } from "./components/TextEditor";
 import {
+  beginAppSession,
   checkForUpdates,
   chooseAndOpenDocuments,
   chooseDirectory,
   closeWindow,
   deleteRecovery,
   inspectFile,
+  listenForWindowClose,
   listRecoveries,
   loadRecentFiles,
   loadSession,
@@ -43,8 +46,9 @@ import {
   persistSession,
   persistRecentFiles,
   persistSettings,
+  pruneRecoveries,
   openDocumentPath,
-  restoreRecovery,
+  restoreRecoveries,
   saveDocument,
   showSourceCode,
   toggleMaximizeWindow,
@@ -57,6 +61,7 @@ type ModalState =
   | { type: "none" }
   | { type: "settings"; snapshot: UserSettings }
   | { type: "recovery" }
+  | { type: "startup-recovery"; session: WorkspaceSession }
   | { type: "exit"; documents: DocumentRecord[] }
   | { type: "close-tab"; pane: PaneId; tabId: string; document: DocumentRecord };
 
@@ -401,21 +406,123 @@ function RecoveryModal({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation();
   const addOpenedDocument = useAppStore((state) => state.addOpenedDocument);
   const [entries, setEntries] = useState<RecoveryEntry[]>([]);
-  useEffect(() => { void listRecoveries().then(setEntries); }, []);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    void listRecoveries()
+      .then(setEntries)
+      .catch(() => setMessage(t("recoveryLoadFailed")));
+  }, [t]);
+
+  const toggleSelected = (entry: RecoveryEntry) => {
+    setSelected((current) => {
+      const next = new Set(current);
+      const wasSelected = next.has(entry.id);
+      entries
+        .filter((candidate) => candidate.documentId === entry.documentId)
+        .forEach((candidate) => next.delete(candidate.id));
+      if (!wasSelected) next.add(entry.id);
+      return next;
+    });
+  };
+
+  const selectLatestForEveryDocument = () => {
+    const documentIds = new Set<string>();
+    const next = new Set<string>();
+    entries.forEach((entry) => {
+      if (entry.status === "ready" && !documentIds.has(entry.documentId)) {
+        documentIds.add(entry.documentId);
+        next.add(entry.id);
+      }
+    });
+    setSelected(next);
+  };
+
+  const recover = async (ids: string[]) => {
+    if (!ids.length || busy) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      const result = await restoreRecoveries(ids);
+      result.documents.forEach((document) => addOpenedDocument(document));
+      if (result.failures.length) {
+        setMessage(t("recoveryPartial", { restored: result.documents.length, failed: result.failures.length }));
+        setSelected(new Set(result.failures.map((failure) => failure.id)));
+      } else if (result.documents.length) {
+        onClose();
+      }
+    } catch {
+      setMessage(t("recoveryLoadFailed"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const recoverableCount = new Set(entries.filter((entry) => entry.status === "ready").map((entry) => entry.documentId)).size;
   return (
     <div className="modal-backdrop">
       <section className="recovery-modal" role="dialog" aria-modal="true" aria-label={t("recoveryTitle")}>
         <header><h2>{t("recoveryTitle")}</h2><IconButton label={t("close")} onClick={onClose}><X size={19} /></IconButton></header>
+        <div className="recovery-toolbar">
+          <button type="button" className="button-secondary" disabled={!recoverableCount || busy} onClick={selectLatestForEveryDocument}>{t("selectLatestBackups")}</button>
+          <span>{t("selectedBackups", { count: selected.size })}</span>
+          <button type="button" className="button-primary" disabled={!selected.size || busy} onClick={() => void recover([...selected])}>{t("recoverSelected")}</button>
+        </div>
+        {message && <p className="recovery-message" role="status">{message}</p>}
         <div className="recovery-list">
           {entries.length === 0 && <p className="empty-copy">{t("recoveryEmpty")}</p>}
           {entries.map((entry) => (
-            <article key={entry.id}>
+            <article key={entry.id} className={entry.status === "corrupted" ? "corrupted" : ""}>
+              <input
+                type="checkbox"
+                checked={selected.has(entry.id)}
+                disabled={entry.status === "corrupted" || busy}
+                aria-label={t("selectBackup", { name: entry.fileName })}
+                onChange={() => toggleSelected(entry)}
+              />
               <FileText size={22} />
-              <div><strong>{entry.fileName}</strong><span>{new Date(entry.createdAt).toLocaleString()} · {Math.max(1, Math.round(entry.size / 1024))} KB</span></div>
-              <button type="button" className="button-secondary" onClick={() => void restoreRecovery(entry.id).then((document) => { addOpenedDocument(document); onClose(); })}>{t("recover")}</button>
-              <button type="button" className="icon-button" aria-label={t("delete")} onClick={() => void deleteRecovery(entry.id).then(() => setEntries((current) => current.filter((item) => item.id !== entry.id)))}><X size={17} /></button>
+              <div>
+                <strong>{entry.status === "corrupted" ? t("damagedBackup") : entry.fileName}</strong>
+                <span>{entry.status === "corrupted" ? t("damagedBackupDescription") : `${new Date(entry.createdAt).toLocaleString()} · ${Math.max(1, Math.round(entry.size / 1024))} KB`}</span>
+              </div>
+              {entry.status === "ready" && <button type="button" className="button-secondary" disabled={busy} onClick={() => void recover([entry.id])}>{t("recover")}</button>}
+              <button type="button" className="icon-button" disabled={busy} aria-label={t("delete")} onClick={() => {
+                if (!window.confirm(t("deleteBackupConfirm"))) return;
+                void deleteRecovery(entry.id).then(() => {
+                  setEntries((current) => current.filter((item) => item.id !== entry.id));
+                  setSelected((current) => { const next = new Set(current); next.delete(entry.id); return next; });
+                });
+              }}><X size={17} /></button>
             </article>
           ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function StartupRecoveryModal({ session, onRestore, onStartFresh }: {
+  session: WorkspaceSession;
+  onRestore: () => void;
+  onStartFresh: () => void;
+}) {
+  const { t } = useTranslation();
+  const dirtyDocuments = session.documents.filter((document) => document.dirty);
+  return (
+    <div className="modal-backdrop">
+      <section className="confirm-modal startup-recovery-modal" role="alertdialog" aria-modal="true">
+        <h2>{t("unexpectedExitTitle")}</h2>
+        <p>{t("unexpectedExitBody", { count: session.documents.length, dirty: dirtyDocuments.length })}</p>
+        {dirtyDocuments.length > 0 && (
+          <div className="unsaved-file-list">
+            {dirtyDocuments.slice(0, 6).map((document) => <span key={document.id}><FileText size={16} />{document.fileName}</span>)}
+          </div>
+        )}
+        <div className="modal-actions">
+          <button type="button" className="button-secondary" onClick={onStartFresh}>{t("startFresh")}</button>
+          <button type="button" className="button-primary" autoFocus onClick={onRestore}>{t("restoreWorkspace")}</button>
         </div>
       </section>
     </div>
@@ -496,6 +603,7 @@ export function App() {
   const [recentFiles, setRecentFiles] = useState<string[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const backupTimers = useRef<Record<string, number>>({});
+  const closingRef = useRef(false);
 
   const activeDocumentId = tabs[activePane].find((tab) => tab.id === activeTab[activePane])?.documentId;
   const activeDocument = activeDocumentId ? documents[activeDocumentId] : undefined;
@@ -568,12 +676,26 @@ export function App() {
   }, [closeTab, documents, tabs]);
 
   useEffect(() => {
-    void Promise.all([loadSettings(), loadSession(), loadRecentFiles()]).then(([storedSettings, storedSession, storedRecent]) => {
+    void Promise.all([
+      beginAppSession(),
+      loadSettings().catch(() => null),
+      loadSession().catch(() => null),
+      loadRecentFiles().catch(() => []),
+    ]).then(([startupStatus, storedSettings, storedSession, storedRecent]) => {
       if (storedSettings) loadSettingsIntoStore(storedSettings);
+      const effectiveSettings = useAppStore.getState().settings;
       const explicitPreviewState = new URLSearchParams(window.location.search).has("state");
-      if (!explicitPreviewState && storedSession && storedSettings?.sessionRecoveryMode !== "empty") restoreSessionIntoStore(storedSession);
+      const decision = decideStartupRecovery(
+        effectiveSettings.sessionRecoveryMode,
+        startupStatus,
+        storedSession,
+        explicitPreviewState,
+      );
+      if (decision === "restore" && storedSession) restoreSessionIntoStore(storedSession);
+      if (decision === "ask" && storedSession) setModal({ type: "startup-recovery", session: storedSession });
       setRecentFiles(storedRecent);
-      setHydrated(true);
+      void pruneRecoveries(effectiveSettings).catch(() => undefined);
+      if (decision !== "ask") setHydrated(true);
     }).catch(() => setHydrated(true));
   }, [loadSettingsIntoStore, restoreSessionIntoStore]);
 
@@ -603,22 +725,24 @@ export function App() {
   useEffect(() => {
     if (!hydrated) return;
     const timer = window.setTimeout(() => {
-      void persistSession({
-        savedAt: Date.now(),
-        split,
-        activeTab,
-        tabs,
-        documents: Object.values(documents).map(({ patch, ...document }) => document),
-      });
+      if (closingRef.current) return;
+      void persistSession(createWorkspaceSession({ split, activeTab, tabs, documents }));
     }, 500);
     return () => window.clearTimeout(timer);
   }, [activeTab, documents, hydrated, split, tabs]);
 
+  const finishClose = useCallback(async (discardDirty = false) => {
+    closingRef.current = true;
+    const state = useAppStore.getState();
+    await persistSession(createWorkspaceSession(state, discardDirty)).catch(() => undefined);
+    await closeWindow();
+  }, []);
+
   const requestCloseWindow = useCallback(() => {
     const dirty = Object.values(documents).filter(needsSaveConfirmation);
     if (dirty.length) setModal({ type: "exit", documents: dirty });
-    else void closeWindow();
-  }, [documents]);
+    else void finishClose();
+  }, [documents, finishClose]);
 
   const saveAllAndExit = useCallback(async (dirtyDocuments: DocumentRecord[]) => {
     for (const document of dirtyDocuments) {
@@ -632,8 +756,21 @@ export function App() {
         return;
       }
     }
-    await closeWindow();
-  }, [flash, markSaved, rememberRecent, t]);
+    await finishClose();
+  }, [finishClose, flash, markSaved, rememberRecent, t]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: () => void = () => undefined;
+    void listenForWindowClose(requestCloseWindow).then((dispose) => {
+      if (cancelled) dispose();
+      else unlisten = dispose;
+    });
+    return () => {
+      cancelled = true;
+      unlisten();
+    };
+  }, [requestCloseWindow]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -723,7 +860,11 @@ export function App() {
         <SettingsModal
           settings={settings}
           onChange={updateSettings}
-          onApply={() => { void persistSettings(settings); setModal({ type: "none" }); flash(t("settingsSaved")); }}
+          onApply={() => {
+            void Promise.all([persistSettings(settings), pruneRecoveries(settings)]);
+            setModal({ type: "none" });
+            flash(t("settingsSaved"));
+          }}
           onCancel={() => { loadSettingsIntoStore(modal.snapshot); setModal({ type: "none" }); }}
           onChooseDirectory={(field) => void chooseDirectory().then((path) => path && updateSettings({ [field]: path }))}
           onOpenRecovery={() => setModal({ type: "recovery" })}
@@ -732,11 +873,22 @@ export function App() {
         />
       )}
       {modal.type === "recovery" && <RecoveryModal onClose={() => setModal({ type: "none" })} />}
+      {modal.type === "startup-recovery" && (
+        <StartupRecoveryModal
+          session={modal.session}
+          onStartFresh={() => { setModal({ type: "none" }); setHydrated(true); }}
+          onRestore={() => {
+            restoreSessionIntoStore(modal.session);
+            setModal({ type: "none" });
+            setHydrated(true);
+          }}
+        />
+      )}
       {modal.type === "exit" && (
         <ExitModal
           documents={modal.documents}
           onCancel={() => setModal({ type: "none" })}
-          onDiscard={() => void closeWindow()}
+          onDiscard={() => void finishClose(true)}
           onSave={() => void saveAllAndExit(modal.documents)}
         />
       )}

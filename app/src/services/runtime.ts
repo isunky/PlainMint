@@ -5,16 +5,20 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
 import type {
+  BatchRecoveryResult,
   DocumentRecord,
   FileFingerprint,
   OpenedDocument,
   RecoveryEntry,
   SaveResult,
+  StartupStatus,
   UserSettings,
   WorkspaceSession,
 } from "../types";
 
 export const isTauri = () => Boolean(window.__TAURI_INTERNALS__);
+
+let webStartupStatus: StartupStatus | undefined;
 
 const filters = [{
   name: "Plain text",
@@ -108,6 +112,21 @@ export async function persistSession(payload: unknown) {
   await invoke("save_session", { session: payload });
 }
 
+export async function beginAppSession(): Promise<StartupStatus> {
+  if (!isTauri()) {
+    if (webStartupStatus) return webStartupStatus;
+    const raw = localStorage.getItem("plainmint.lifecycle");
+    const previous = raw ? JSON.parse(raw) as { running?: boolean; startedAt?: number } : null;
+    webStartupStatus = {
+      previousExitWasUnclean: Boolean(previous?.running),
+      previousStartedAt: previous?.startedAt,
+    };
+    localStorage.setItem("plainmint.lifecycle", JSON.stringify({ running: true, startedAt: Date.now() }));
+    return webStartupStatus;
+  }
+  return invoke<StartupStatus>("begin_app_session");
+}
+
 export async function loadSession(): Promise<WorkspaceSession | null> {
   if (!isTauri()) {
     const raw = localStorage.getItem("plainmint.session");
@@ -149,13 +168,22 @@ export async function writeRecovery(document: DocumentRecord, settings: UserSett
   });
 }
 
+export async function pruneRecoveries(settings: UserSettings) {
+  if (!isTauri()) return;
+  await invoke("prune_backups", {
+    retentionDays: settings.backupRetentionDays,
+    maxVersions: settings.maxBackupVersionsPerFile,
+  });
+}
+
 export async function listRecoveries(): Promise<RecoveryEntry[]> {
   if (!isTauri()) return [];
   return invoke<RecoveryEntry[]>("list_recoveries");
 }
 
-export async function restoreRecovery(id: string): Promise<OpenedDocument> {
-  return invoke<OpenedDocument>("restore_recovery", { id });
+export async function restoreRecoveries(ids: string[]): Promise<BatchRecoveryResult> {
+  if (!isTauri()) return { documents: [], failures: [] };
+  return invoke<BatchRecoveryResult>("restore_recoveries", { ids });
 }
 
 export async function deleteRecovery(id: string) {
@@ -193,6 +221,18 @@ export async function toggleMaximizeWindow() {
   if (isTauri()) await getCurrentWindow().toggleMaximize();
 }
 
+export async function listenForWindowClose(handler: () => void): Promise<() => void> {
+  if (!isTauri()) return () => undefined;
+  return getCurrentWindow().onCloseRequested((event) => {
+    event.preventDefault();
+    handler();
+  });
+}
+
 export async function closeWindow() {
-  if (isTauri()) await getCurrentWindow().close();
+  if (!isTauri()) {
+    localStorage.setItem("plainmint.lifecycle", JSON.stringify({ running: false, closedAt: Date.now() }));
+    return;
+  }
+  await invoke("close_app_window");
 }
