@@ -27,7 +27,7 @@ jobs:
     outputs:
       value: ${{ steps.next.outputs.value }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Calculate next version
@@ -59,8 +59,8 @@ jobs:
             args: --bundles dmg
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -91,10 +91,9 @@ jobs:
           releaseDraft: false
           prerelease: ${{ inputs.prerelease }}
           args: ${{ matrix.args }}
-          uploadUpdaterJson: true
-          uploadUpdaterSignatures: true
+          includeUpdaterJson: true
           updaterJsonPreferNsis: true
-          releaseAssetNamePattern: PlainMint_[version]_[platform]_[arch][_setup].[ext]
+          assetNamePattern: PlainMint_[version]_[platform]_[arch][_setup].[ext]
       - name: Package Windows portable edition
         if: runner.os == 'Windows'
         shell: pwsh
