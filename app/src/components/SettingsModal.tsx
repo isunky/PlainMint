@@ -23,6 +23,8 @@ interface SettingsModalProps {
   }>;
   applying: boolean;
   canApply: boolean;
+  currentVersion?: string;
+  checkingForUpdates?: boolean;
   onChange: (patch: Partial<UserSettings>) => void;
   onApply: () => void;
   onCancel: () => void;
@@ -94,6 +96,8 @@ export function SettingsModal({
   directoryChecks,
   applying,
   canApply,
+  currentVersion = "0.1.0",
+  checkingForUpdates = false,
   onChange,
   onApply,
   onCancel,
@@ -308,8 +312,10 @@ export function SettingsModal({
               <div className="settings-grid">
                 <section className="settings-card settings-card-wide update-card">
                   <ArrowsClockwise size={36} color="var(--accent-primary)" />
-                  <div><h4>{t("currentVersion")} 0.1.0</h4><p>{t("updateUnavailable")}</p></div>
-                  <button type="button" className="button-secondary" onClick={onCheckUpdates}>{t("checkUpdates")}</button>
+                  <div><h4>{t("currentVersion")} {currentVersion}</h4><p>{t("updateReadyDescription")}</p></div>
+                  <button type="button" className="button-secondary" disabled={checkingForUpdates} onClick={onCheckUpdates}>
+                    {checkingForUpdates ? t("checkingUpdates") : t("checkUpdates")}
+                  </button>
                 </section>
               </div>
             )}

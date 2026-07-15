@@ -47,6 +47,7 @@ import {
   deleteRecovery,
   inspectFile,
   encodedByteLength,
+  getAppVersion,
   listenForWindowClose,
   listRecoveries,
   loadRecentFiles,
@@ -67,6 +68,7 @@ import {
   validateDirectory,
   writeRecovery,
 } from "./services/runtime";
+import type { UpdateCheckResult, UpdateInstallProgress } from "./services/runtime";
 import { useAppStore } from "./store";
 import type { DirectoryValidationResult, DocumentRecord, PaneId, RecoveryEntry, RecentlyClosedTab, UserSettings, WorkspaceSession } from "./types";
 
@@ -104,6 +106,13 @@ type DirectoryField = "defaultSaveFolder" | "cloudSyncFolder";
 type DirectoryCheck = {
   status: "idle" | "checking" | "valid" | "invalid";
   result?: DirectoryValidationResult;
+};
+
+type AvailableUpdate = Extract<UpdateCheckResult, { available: true }>;
+type UpdateDialogState = {
+  update: AvailableUpdate;
+  status: "ready" | "downloading" | "installing" | "error";
+  progress: number;
 };
 
 const emptyDirectoryChecks: Record<DirectoryField, DirectoryCheck> = {
@@ -709,6 +718,52 @@ function BulkCloseModal({ documents, onCancel, onDiscard, onSave }: {
   );
 }
 
+function UpdateModal({ state, onClose, onInstall }: {
+  state: UpdateDialogState;
+  onClose: () => void;
+  onInstall: () => void;
+}) {
+  const { t } = useTranslation();
+  const busy = state.status === "downloading" || state.status === "installing";
+  const statusText = state.status === "downloading"
+    ? t("updateDownloading", { progress: state.progress })
+    : state.status === "installing"
+      ? t("updateInstalling")
+      : state.status === "error"
+        ? t("updateInstallFailed")
+        : undefined;
+  return (
+    <div className="modal-backdrop update-modal-backdrop">
+      <section className="confirm-modal update-modal" role="dialog" aria-modal="true" aria-labelledby="update-title">
+        <div className="update-modal-heading">
+          <span className="update-modal-icon"><ArrowsClockwise size={26} weight="bold" /></span>
+          <div>
+            <h2 id="update-title">{t("updateAvailableTitle", { version: state.update.version })}</h2>
+            <p>{t("updateAvailableBody")}</p>
+          </div>
+        </div>
+        <div className="update-release-notes">
+          <strong>{t("updateNotes")}</strong>
+          <p>{state.update.body?.trim() || t("updateNotesEmpty")}</p>
+        </div>
+        {busy && (
+          <div className="update-progress" aria-live="polite">
+            <div><span style={{ width: `${state.status === "installing" ? 100 : state.progress}%` }} /></div>
+            <p>{statusText}</p>
+          </div>
+        )}
+        {state.status === "error" && <p className="update-error" role="alert">{statusText}</p>}
+        <div className="modal-actions">
+          <button type="button" className="button-secondary" disabled={busy} onClick={onClose}>{t("updateLater")}</button>
+          <button type="button" className="button-primary" disabled={busy} onClick={onInstall}>
+            {state.status === "error" ? t("tryAgain") : t("updateDownload")}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function TabContextMenu({ menu, filePath, hasTabsToRight, hasOtherTabs, recent, showCloseSplit, onDismiss, onNew, onClose, onCloseOthers, onCloseRight, onMove, onCopyPath, onCloseSplit, onReopen }: {
   menu: TabContextMenuState;
   filePath?: string;
@@ -804,7 +859,9 @@ export function App() {
   const [modal, setModal] = useState<ModalState>(() => new URLSearchParams(window.location.search).get("state") === "settings" ? { type: "settings", snapshot: settings } : { type: "none" });
   const [toast, setToast] = useState("");
   const [matchIndex, setMatchIndex] = useState(0);
-  const [updateMessage, setUpdateMessage] = useState("");
+  const [appVersion, setAppVersion] = useState("0.1.0");
+  const [checkingForUpdates, setCheckingForUpdates] = useState(false);
+  const [updateDialog, setUpdateDialog] = useState<UpdateDialogState | null>(null);
   const [recentFiles, setRecentFiles] = useState<string[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const [directoryChecks, setDirectoryChecks] = useState<Record<DirectoryField, DirectoryCheck>>(emptyDirectoryChecks);
@@ -826,6 +883,8 @@ export function App() {
   const dragViewRef = useRef<TabDragView | null>(null);
   const suppressTabClickRef = useRef<{ tabId: string; until: number } | null>(null);
   const splitResizePointerRef = useRef<number | null>(null);
+  const updateCheckInFlight = useRef(false);
+  const automaticUpdateCheckStarted = useRef(false);
 
   const activeDocumentId = tabs[activePane].find((tab) => tab.id === activeTab[activePane])?.documentId;
   const activeDocument = activeDocumentId ? documents[activeDocumentId] : undefined;
@@ -845,6 +904,47 @@ export function App() {
     setToast(message);
     window.setTimeout(() => setToast(""), 2200);
   }, []);
+
+  const requestUpdateCheck = useCallback(async (automatic = false) => {
+    if (updateCheckInFlight.current) return;
+    updateCheckInFlight.current = true;
+    setCheckingForUpdates(true);
+    try {
+      const result = await checkForUpdates();
+      if (result.available) {
+        setUpdateDialog({ update: result, status: "ready", progress: 0 });
+      } else if (!automatic) {
+        flash(result.error ? t("updateCheckFailed") : t("latestVersion"));
+      }
+    } finally {
+      updateCheckInFlight.current = false;
+      setCheckingForUpdates(false);
+    }
+  }, [flash, t]);
+
+  const installAvailableUpdate = useCallback(async () => {
+    if (!updateDialog || updateDialog.status === "downloading" || updateDialog.status === "installing") return;
+    if (Object.values(documents).some((document) => document.dirty)) {
+      flash(t("updateSaveFirst"));
+      return;
+    }
+    const update = updateDialog.update;
+    setUpdateDialog({ update, status: "downloading", progress: 0 });
+    try {
+      await update.install((progress: UpdateInstallProgress) => {
+        if (progress.phase === "installing") {
+          setUpdateDialog({ update, status: "installing", progress: 100 });
+          return;
+        }
+        const percent = progress.total
+          ? Math.min(99, Math.round((progress.downloaded / progress.total) * 100))
+          : 0;
+        setUpdateDialog({ update, status: "downloading", progress: percent });
+      });
+    } catch {
+      setUpdateDialog({ update, status: "error", progress: 0 });
+    }
+  }, [documents, flash, t, updateDialog]);
 
   const rememberRecent = useCallback((paths: string[]) => {
     setRecentFiles((current) => {
@@ -1093,6 +1193,17 @@ export function App() {
       if (decision !== "ask") setHydrated(true);
     }).catch(() => setHydrated(true));
   }, [loadRecentlyClosedTabsIntoStore, loadSettingsIntoStore, restoreSessionIntoStore]);
+
+  useEffect(() => {
+    void getAppVersion().then(setAppVersion).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated || !settings.autoCheckUpdates || automaticUpdateCheckStarted.current) return;
+    automaticUpdateCheckStarted.current = true;
+    const timer = window.setTimeout(() => void requestUpdateCheck(true), 1_500);
+    return () => window.clearTimeout(timer);
+  }, [hydrated, requestUpdateCheck, settings.autoCheckUpdates]);
 
   useEffect(() => {
     const resolved = resolveLocale(settings.locale);
@@ -1555,13 +1666,14 @@ export function App() {
       )}
 
       {toast && <div className="toast" role="status">{toast}</div>}
-      {updateMessage && <div className="toast" role="status">{updateMessage}</div>}
 
       {modal.type === "settings" && (
         <SettingsModal
           settings={settings}
           directoryChecks={directoryChecks}
           applying={settingsApplying}
+          currentVersion={appVersion}
+          checkingForUpdates={checkingForUpdates}
           canApply={(["defaultSaveFolder", "cloudSyncFolder"] as DirectoryField[]).every((field) => (
             !settings[field] || directoryChecks[field].status === "valid"
           ))}
@@ -1575,7 +1687,7 @@ export function App() {
           })}
           onClearDirectory={(field) => updateSettings({ [field]: undefined })}
           onOpenRecovery={() => setModal({ type: "recovery" })}
-          onCheckUpdates={() => void checkForUpdates().then((result) => setUpdateMessage(result.available ? "PlainMint " + result.version : t("latestVersion")))}
+          onCheckUpdates={() => void requestUpdateCheck(false)}
           onOpenSource={() => void showSourceCode()}
         />
       )}
@@ -1617,6 +1729,13 @@ export function App() {
             closeTargetsNow([{ pane: modal.pane, tabId: modal.tabId }]);
             setModal({ type: "none" });
           })}
+        />
+      )}
+      {updateDialog && (
+        <UpdateModal
+          state={updateDialog}
+          onClose={() => setUpdateDialog(null)}
+          onInstall={() => void installAvailableUpdate()}
         />
       )}
     </main>

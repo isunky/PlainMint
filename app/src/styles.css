@@ -1342,6 +1342,77 @@ select:focus-visible {
   color: var(--text-secondary);
 }
 
+.update-modal-backdrop {
+  z-index: 40;
+}
+
+.update-modal {
+  width: min(560px, calc(100vw - 80px));
+}
+
+.update-modal-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.update-modal-heading p {
+  margin-bottom: 0;
+  line-height: 1.55;
+}
+
+.update-modal-icon {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  color: var(--accent-primary);
+  background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
+}
+
+.update-release-notes {
+  margin: 22px 0 18px;
+  padding: 15px 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--surface-muted);
+}
+
+.update-release-notes p {
+  max-height: 132px;
+  margin: 8px 0 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  line-height: 1.55;
+}
+
+.update-progress > div {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--border-strong);
+}
+
+.update-progress > div > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent-primary);
+  transition: width 160ms ease;
+}
+
+.update-progress p {
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+
+.update-error {
+  margin: 14px 0 0;
+  color: var(--danger) !important;
+}
+
 .startup-recovery-modal .unsaved-file-list {
   max-height: 170px;
   overflow: auto;

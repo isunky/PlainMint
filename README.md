@@ -39,6 +39,7 @@ PlainMint 是一款面向 Windows 与 macOS 的轻量纯文本编辑器。它在
 - **忠于原文件** — 保留 UTF-8 / UTF-16 编码，以及 LF / CRLF / CR 换行格式
 - **观感随心** — 自动换行、行号、明暗主题与五种强调色，舒适而克制
 - **双语自然切换** — 支持简体中文与 English，并可跟随系统语言
+- **更新可信可控** — 正式版自动检查 GitHub Release，并在安装前验证更新签名
 
 ### 下载
 
@@ -61,6 +62,7 @@ PlainMint is a lightweight plain-text editor for Windows and macOS. It keeps jus
 - **Faithful to your files** — Preserves UTF-8 / UTF-16 and LF / CRLF / CR
 - **Comfortable by design** — Word wrap, line numbers, light and dark modes, and five accents
 - **Naturally bilingual** — Simplified Chinese and English with system-language detection
+- **Trusted updates** — Release builds check GitHub and verify every update before installation
 
 ### Download
 

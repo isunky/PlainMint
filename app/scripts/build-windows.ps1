@@ -25,6 +25,24 @@ $Architecture = switch ($env:PROCESSOR_ARCHITECTURE) {
     default { "x64" }
 }
 $BaseName = "PlainMint_${Version}_windows_${Architecture}"
+$LoadedLocalSigningKey = $false
+$BuildArguments = @("run", "tauri", "--", "build", "--bundles", "msi,nsis")
+
+if (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
+    $LocalKey = Join-Path $HOME ".tauri\plainmint-updater.key"
+    $LocalPassword = Join-Path $HOME ".tauri\plainmint-updater-password.dpapi"
+    if ((Test-Path -LiteralPath $LocalKey) -and (Test-Path -LiteralPath $LocalPassword)) {
+        $EncryptedPassword = (Get-Content -Raw -LiteralPath $LocalPassword).Trim()
+        $SecurePassword = ConvertTo-SecureString $EncryptedPassword
+        $Credential = [System.Management.Automation.PSCredential]::new("plainmint-updater", $SecurePassword)
+        $env:TAURI_SIGNING_PRIVATE_KEY = $LocalKey
+        $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = $Credential.GetNetworkCredential().Password
+        $LoadedLocalSigningKey = $true
+    } else {
+        $BuildArguments += @("--config", "src-tauri/tauri.local.conf.json")
+        Write-Host "Updater signing key not found; building installable packages without updater signatures." -ForegroundColor Yellow
+    }
+}
 
 function Invoke-NativeCommand {
     param(
@@ -66,7 +84,7 @@ try {
 
     if (-not $PackageOnly) {
         Write-Host "[2/4] Building MSI and NSIS installers..." -ForegroundColor Cyan
-        Invoke-NativeCommand -Command "npm.cmd" -Arguments @("run", "tauri", "--", "build", "--bundles", "msi,nsis")
+        Invoke-NativeCommand -Command "npm.cmd" -Arguments $BuildArguments
     } else {
         Write-Host "[2/4] Existing MSI and NSIS installers selected." -ForegroundColor DarkCyan
     }
@@ -123,4 +141,8 @@ Settings and recovery data are still stored in the current Windows user's applic
 }
 finally {
     Pop-Location
+    if ($LoadedLocalSigningKey) {
+        Remove-Item Env:TAURI_SIGNING_PRIVATE_KEY -ErrorAction SilentlyContinue
+        Remove-Item Env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD -ErrorAction SilentlyContinue
+    }
 }

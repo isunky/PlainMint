@@ -75,9 +75,11 @@ jobs:
       - name: Apply release version
         working-directory: app
         run: node scripts/set-version.mjs ${{ needs.version.outputs.value }}
-      - uses: tauri-apps/tauri-action@v0
+      - uses: tauri-apps/tauri-action@v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: app
           tagName: v${{ needs.version.outputs.value }}
@@ -89,6 +91,10 @@ jobs:
           releaseDraft: false
           prerelease: ${{ inputs.prerelease }}
           args: ${{ matrix.args }}
+          uploadUpdaterJson: true
+          uploadUpdaterSignatures: true
+          updaterJsonPreferNsis: true
+          releaseAssetNamePattern: PlainMint_[version]_[platform]_[arch][_setup].[ext]
       - name: Package Windows portable edition
         if: runner.os == 'Windows'
         shell: pwsh
@@ -100,9 +106,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $tag = "v${{ needs.version.outputs.value }}"
-          $originalMsi = (Get-ChildItem ./app/src-tauri/target/release/bundle/msi/*.msi -File).Name
-          $originalExe = (Get-ChildItem ./app/src-tauri/target/release/bundle/nsis/*.exe -File).Name
-          gh release delete-asset $tag $originalMsi --yes
-          gh release delete-asset $tag $originalExe --yes
-          $assets = (Get-ChildItem ./artifacts/windows -File).FullName
+          $assets = Get-ChildItem ./artifacts/windows -File | Where-Object {
+            $_.Name -eq 'SHA256SUMS.txt' -or $_.Name -like '*_portable.zip'
+          } | Select-Object -ExpandProperty FullName
           gh release upload $tag @assets --clobber
