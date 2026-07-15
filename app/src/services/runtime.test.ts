@@ -6,13 +6,19 @@ const mocks = vi.hoisted(() => ({
   join: vi.fn(),
   open: vi.fn(),
   save: vi.fn(),
+  check: vi.fn(),
+  relaunch: vi.fn(),
+  getVersion: vi.fn(),
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
+vi.mock("@tauri-apps/api/app", () => ({ getVersion: mocks.getVersion }));
 vi.mock("@tauri-apps/api/path", () => ({ join: mocks.join }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: mocks.open, save: mocks.save }));
+vi.mock("@tauri-apps/plugin-process", () => ({ relaunch: mocks.relaunch }));
+vi.mock("@tauri-apps/plugin-updater", () => ({ check: mocks.check }));
 
-import { encodedByteLength, saveDocument } from "./runtime";
+import { checkForUpdates, encodedByteLength, getAppVersion, saveDocument } from "./runtime";
 
 function document(patch: Partial<DocumentRecord> = {}): DocumentRecord {
   return {
@@ -36,6 +42,7 @@ beforeEach(() => {
   Object.defineProperty(window, "__TAURI_INTERNALS__", { configurable: true, value: {} });
   mocks.join.mockResolvedValue("C:\\Default\\untitled.txt");
   mocks.save.mockResolvedValue("C:\\Default\\untitled.txt");
+  mocks.getVersion.mockResolvedValue("1.2.3");
   mocks.invoke.mockResolvedValue({
     path: "C:\\Default\\untitled.txt",
     fingerprint: { modifiedAt: 1, size: 9, hash: "hash" },
@@ -66,5 +73,44 @@ describe("encoded file size", () => {
   it("accounts for BOMs, UTF-16 units, and converted line endings", () => {
     expect(encodedByteLength(document({ content: "a\nb", encoding: "utf-8-bom", lineEnding: "crlf" }))).toBe(7);
     expect(encodedByteLength(document({ content: "a😀", encoding: "utf-16le" }))).toBe(8);
+  });
+});
+
+describe("signed application updates", () => {
+  it("exposes the installed version and reports when no update exists", async () => {
+    mocks.check.mockResolvedValue(null);
+
+    await expect(getAppVersion()).resolves.toBe("1.2.3");
+    await expect(checkForUpdates()).resolves.toEqual({ available: false });
+  });
+
+  it("reports download progress, installs, and relaunches", async () => {
+    mocks.check.mockResolvedValue({
+      version: "1.3.0",
+      body: "A safer update.",
+      downloadAndInstall: vi.fn(async (onEvent: (event: unknown) => void) => {
+        onEvent({ event: "Started", data: { contentLength: 100 } });
+        onEvent({ event: "Progress", data: { chunkLength: 40 } });
+        onEvent({ event: "Finished", data: {} });
+      }),
+    });
+
+    const result = await checkForUpdates();
+    expect(result.available).toBe(true);
+    if (!result.available) return;
+    const progress = vi.fn();
+    await result.install(progress);
+
+    expect(progress).toHaveBeenNthCalledWith(1, { phase: "downloading", downloaded: 0, total: 100 });
+    expect(progress).toHaveBeenNthCalledWith(2, { phase: "downloading", downloaded: 40, total: 100 });
+    expect(progress).toHaveBeenNthCalledWith(3, { phase: "installing", downloaded: 40, total: 100 });
+    expect(mocks.relaunch).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the current version usable when checking fails", async () => {
+    mocks.check.mockRejectedValue(new Error("offline"));
+
+    await expect(checkForUpdates()).resolves.toEqual({ available: false, error: true });
+    expect(mocks.relaunch).not.toHaveBeenCalled();
   });
 });

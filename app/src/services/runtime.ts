@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { getVersion } from "@tauri-apps/api/app";
 import { join } from "@tauri-apps/api/path";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open, save } from "@tauri-apps/plugin-dialog";
@@ -24,6 +25,22 @@ export interface SaveDocumentOptions {
   forceSaveAs?: boolean;
   defaultSaveFolder?: string;
 }
+
+export interface UpdateInstallProgress {
+  phase: "downloading" | "installing";
+  downloaded: number;
+  total?: number;
+}
+
+export type UpdateCheckResult = {
+  available: false;
+  error?: true;
+} | {
+  available: true;
+  version: string;
+  body?: string;
+  install: (onProgress?: (progress: UpdateInstallProgress) => void) => Promise<void>;
+};
 
 export const isTauri = () => Boolean(window.__TAURI_INTERNALS__);
 
@@ -266,7 +283,11 @@ export async function deleteRecovery(id: string) {
   if (isTauri()) await invoke("delete_recovery", { id });
 }
 
-export async function checkForUpdates() {
+export async function getAppVersion() {
+  return isTauri() ? getVersion() : "0.1.0";
+}
+
+export async function checkForUpdates(): Promise<UpdateCheckResult> {
   if (!isTauri()) return { available: false as const };
   try {
     const update = await check();
@@ -275,13 +296,25 @@ export async function checkForUpdates() {
       available: true as const,
       version: update.version,
       body: update.body,
-      install: async () => {
-        await update.downloadAndInstall();
+      install: async (onProgress?: (progress: UpdateInstallProgress) => void) => {
+        let downloaded = 0;
+        let total: number | undefined;
+        await update.downloadAndInstall((event) => {
+          if (event.event === "Started") {
+            total = event.data.contentLength;
+            onProgress?.({ phase: "downloading", downloaded: 0, total });
+          } else if (event.event === "Progress") {
+            downloaded += event.data.chunkLength;
+            onProgress?.({ phase: "downloading", downloaded, total });
+          } else if (event.event === "Finished") {
+            onProgress?.({ phase: "installing", downloaded, total });
+          }
+        });
         await relaunch();
       },
     };
   } catch {
-    return { available: false as const, notConfigured: true as const };
+    return { available: false as const, error: true as const };
   }
 }
 
