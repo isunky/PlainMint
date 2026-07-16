@@ -53,11 +53,14 @@ impl AppError {
 type CommandResult<T> = Result<T, AppError>;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case")]
 enum Encoding {
+    #[serde(rename = "utf-8", alias = "utf8")]
     Utf8,
+    #[serde(rename = "utf-8-bom", alias = "utf8-bom")]
     Utf8Bom,
+    #[serde(rename = "utf-16le", alias = "utf16le")]
     Utf16le,
+    #[serde(rename = "utf-16be", alias = "utf16be")]
     Utf16be,
 }
 
@@ -1560,6 +1563,51 @@ mod tests {
         assert!(matches!(encoding, Encoding::Utf8Bom));
         assert_eq!(detect_line_ending(&decoded), LineEnding::Crlf);
         assert_eq!(normalize_line_endings(decoded), input);
+    }
+
+    #[test]
+    fn encoding_values_match_the_frontend_contract_and_accept_legacy_data() {
+        let expected = [
+            (Encoding::Utf8, "utf-8", "utf8"),
+            (Encoding::Utf8Bom, "utf-8-bom", "utf8-bom"),
+            (Encoding::Utf16le, "utf-16le", "utf16le"),
+            (Encoding::Utf16be, "utf-16be", "utf16be"),
+        ];
+
+        for (encoding, current, legacy) in expected {
+            assert_eq!(
+                serde_json::to_string(&encoding).unwrap(),
+                format!("\"{current}\"")
+            );
+            assert!(matches!(
+                serde_json::from_str::<Encoding>(&format!("\"{current}\"")),
+                Ok(decoded) if std::mem::discriminant(&decoded) == std::mem::discriminant(&encoding)
+            ));
+            assert!(serde_json::from_str::<Encoding>(&format!("\"{legacy}\"")).is_ok());
+        }
+    }
+
+    #[test]
+    fn saves_a_frontend_utf8_request_end_to_end() {
+        let directory = test_directory("frontend-utf8-save");
+        let target = directory.join("notes.txt");
+        let request = serde_json::from_value::<SaveFileRequest>(serde_json::json!({
+            "path": target,
+            "fallbackFileName": "notes.txt",
+            "content": "PlainMint save probe",
+            "encoding": "utf-8",
+            "lineEnding": "lf",
+            "expectedFingerprint": null
+        }))
+        .unwrap();
+
+        let result = save_file(request).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(&result.path).unwrap(),
+            "PlainMint save probe"
+        );
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[cfg(target_os = "windows")]
