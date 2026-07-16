@@ -248,6 +248,7 @@ export function SettingsModal({
                         <button type="button" className="button-secondary" disabled={applying} aria-label={t("chooseFolder")} onClick={() => onChooseDirectory(field)}>…</button>
                         {settings[field] && <button type="button" className="button-secondary clear-path" disabled={applying} onClick={() => onClearDirectory(field)}>{t("clear")}</button>}
                       </div>
+                      <small className="directory-hint">{t(field === "defaultSaveFolder" ? "defaultFolderHint" : "cloudFolderHint")}</small>
                       {directoryChecks[field].status === "checking" && <small className="directory-status checking">{t("directoryChecking")}</small>}
                       {directoryChecks[field].status === "valid" && directoryChecks[field].result && (
                         <small className="directory-status valid">{t("directoryAvailable", { space: formatBytes(directoryChecks[field].result.availableBytes, i18n.language) })}</small>

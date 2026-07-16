@@ -58,4 +58,18 @@ describe("settings runtime controls", () => {
     expect(screen.getByText("This folder no longer exists.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Apply" })).toBeDisabled();
   });
+
+  it("explains that the cloud-synced folder is preferred for new files", () => {
+    render(<SettingsModal
+      settings={{ ...defaultSettings }}
+      directoryChecks={{ defaultSaveFolder: { status: "idle" }, cloudSyncFolder: { status: "idle" } }}
+      applying={false}
+      canApply
+      {...handlers}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Files & folders" }));
+    expect(screen.getByText("Preferred location for the first save of new files.")).toBeInTheDocument();
+    expect(screen.getByText("Used when no available cloud-synced folder is configured.")).toBeInTheDocument();
+  });
 });

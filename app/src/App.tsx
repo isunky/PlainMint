@@ -29,6 +29,7 @@ import i18n, { resolveLocale } from "./i18n";
 import { isAutoSaveEligible, isAutoSaveRevisionSuppressed } from "./autoSavePolicy";
 import { needsSaveConfirmation } from "./closePolicy";
 import { createWorkspaceSession, decideStartupRecovery } from "./recoveryPolicy";
+import { resolveInitialSaveFolder } from "./saveFolderPolicy";
 import { SettingsModal } from "./components/SettingsModal";
 import {
   findNextInPane,
@@ -1009,13 +1010,15 @@ export function App() {
 
       let defaultSaveFolder: string | undefined;
       const currentSettings = useAppStore.getState().settings;
-      if (!snapshot.filePath && currentSettings.defaultSaveFolder) {
-        try {
-          const check = await validateDirectory(currentSettings.defaultSaveFolder, encodedByteLength(snapshot));
-          if (check.valid) defaultSaveFolder = currentSettings.defaultSaveFolder;
-          else flash(t("defaultFolderFallback"));
-        } catch {
-          flash(t("defaultFolderFallback"));
+      if (!snapshot.filePath) {
+        const resolution = await resolveInitialSaveFolder(
+          currentSettings,
+          encodedByteLength(snapshot),
+          validateDirectory,
+        );
+        defaultSaveFolder = resolution.path;
+        if (resolution.fallbackFrom) {
+          flash(t(resolution.fallbackFrom === "cloud" ? "cloudFolderFallback" : "defaultFolderFallback"));
         }
       }
 

@@ -1109,6 +1109,11 @@ select:focus-visible {
   padding: 0 12px;
 }
 
+.directory-hint {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 .directory-status {
   min-height: 18px;
   font-size: 12px;
