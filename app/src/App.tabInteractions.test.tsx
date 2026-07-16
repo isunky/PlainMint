@@ -17,12 +17,14 @@ vi.mock("./services/runtime", async (importOriginal) => {
     persistRecentFiles: vi.fn().mockResolvedValue(undefined),
     persistRecentlyClosedTabs: vi.fn().mockResolvedValue(undefined),
     pruneRecoveries: vi.fn().mockResolvedValue(undefined),
+    revealFileInDirectory: vi.fn().mockResolvedValue(undefined),
     writeRecovery: vi.fn().mockResolvedValue(undefined),
     listenForWindowClose: vi.fn().mockResolvedValue(() => undefined),
   };
 });
 
 import { App } from "./App";
+import { loadRecentFiles, persistRecentFiles, revealFileInDirectory } from "./services/runtime";
 
 function doc(id: string): DocumentRecord {
   return {
@@ -65,9 +67,12 @@ beforeEach(async () => {
     split: false,
     splitRatio: 0.5,
     recentlyClosedTabs: [],
+    search: { open: false, replaceOpen: false, query: "", replacement: "", caseSensitive: false, wholeWord: false },
     histories: {},
     settings: { ...defaultSettings, autoBackupEnabled: false },
   });
+  vi.mocked(loadRecentFiles).mockResolvedValue([]);
+  vi.mocked(revealFileInDirectory).mockResolvedValue(undefined);
 });
 
 afterEach(cleanup);
@@ -127,5 +132,48 @@ describe("tab and split interactions", () => {
     const separator = screen.getByRole("separator", { name: "Resize editor panes" });
     fireEvent.keyDown(separator, { key: "ArrowRight" });
     expect(useAppStore.getState().splitRatio).toBeGreaterThan(0.5);
+  });
+
+  it("reveals saved files from the tab context menu", async () => {
+    render(<App />);
+    await settle();
+
+    fireEvent.contextMenu(screen.getByRole("tab", { name: /a\.txt/i }), { clientX: 24, clientY: 24 });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Show in File Explorer" }));
+
+    expect(revealFileInDirectory).toHaveBeenCalledWith("C:\\a.txt");
+  });
+
+  it("shows search options in find mode and applies them to matches", async () => {
+    useAppStore.setState({ documents: { a: { ...doc("a"), content: "Cat cat catalog" }, b: doc("b") } });
+    render(<App />);
+    await settle();
+
+    fireEvent.keyDown(window, { key: "f", ctrlKey: true });
+    fireEvent.change(screen.getByPlaceholderText("Find"), { target: { value: "cat" } });
+    expect(screen.getByText("1 of 3")).toBeVisible();
+
+    fireEvent.click(screen.getByLabelText("Whole word"));
+    expect(screen.getByText("1 of 2")).toBeVisible();
+    fireEvent.click(screen.getByLabelText("Case sensitive"));
+    expect(screen.getByText("1 of 1")).toBeVisible();
+  });
+
+  it("removes and clears recent files without opening them", async () => {
+    useAppStore.setState({
+      documents: {},
+      tabs: { left: [], right: [] },
+      activeTab: { left: null, right: null },
+    });
+    vi.mocked(loadRecentFiles).mockResolvedValue(["C:\\a.txt", "C:\\b.txt"]);
+    render(<App />);
+    await settle();
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove a.txt from recent files" }));
+    expect(persistRecentFiles).toHaveBeenLastCalledWith(["C:\\b.txt"]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear recent files" }));
+    expect(persistRecentFiles).toHaveBeenLastCalledWith([]);
+    expect(screen.getByText("Recent files will appear here.")).toBeVisible();
   });
 });

@@ -1585,7 +1585,7 @@ select:focus-visible {
 }
 
 .welcome-action,
-.recent-list button {
+.recent-open {
   border: 1px solid var(--border-soft);
   background: var(--surface-raised);
   color: var(--text-primary);
@@ -1603,7 +1603,7 @@ select:focus-visible {
 }
 
 .welcome-action:hover,
-.recent-list button:hover {
+.recent-open:hover {
   border-color: var(--accent-primary);
   background: var(--surface-hover);
 }
@@ -1644,18 +1644,51 @@ select:focus-visible {
   font-size: 16px;
 }
 
+.recent-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.recent-clear {
+  padding: 0;
+  border: 0;
+  color: var(--accent-primary);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+}
+
+.recent-clear:hover,
+.recent-clear:focus-visible {
+  text-decoration: underline;
+}
+
 .recent-list {
   margin-top: 14px;
   display: grid;
   gap: 7px;
 }
 
-.recent-list button {
-  width: 100%;
+.recent-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.recent-open {
+  min-width: 0;
+  flex: 1 1 auto;
   padding: 10px 11px;
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.recent-remove {
+  flex: 0 0 auto;
 }
 
 .unsaved-file-list {

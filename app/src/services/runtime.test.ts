@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   save: vi.fn(),
   check: vi.fn(),
   relaunch: vi.fn(),
+  revealItemInDir: vi.fn(),
   getVersion: vi.fn(),
   listen: vi.fn(),
   unlisten: vi.fn(),
@@ -19,10 +20,11 @@ vi.mock("@tauri-apps/api/app", () => ({ getVersion: mocks.getVersion }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen }));
 vi.mock("@tauri-apps/api/path", () => ({ join: mocks.join }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: mocks.open, save: mocks.save }));
+vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn(), revealItemInDir: mocks.revealItemInDir }));
 vi.mock("@tauri-apps/plugin-process", () => ({ relaunch: mocks.relaunch }));
 vi.mock("@tauri-apps/plugin-updater", () => ({ check: mocks.check }));
 
-import { checkForUpdates, encodedByteLength, getAppVersion, inspectFileMetadata, listenForFileWatchChanges, saveDocument, syncFileWatches, writeSafetyRecovery } from "./runtime";
+import { checkForUpdates, encodedByteLength, getAppVersion, inspectFileMetadata, listenForFileWatchChanges, revealFileInDirectory, saveDocument, syncFileWatches, writeSafetyRecovery } from "./runtime";
 
 function document(patch: Partial<DocumentRecord> = {}): DocumentRecord {
   return {
@@ -79,6 +81,14 @@ describe("file watch runtime bridge", () => {
     expect(mocks.listen).toHaveBeenCalledWith("plainmint-file-watch-change", expect.any(Function));
     expect(handler).toHaveBeenCalledWith(["C:\\Notes\\alpha.txt"]);
     expect(mocks.unlisten).toHaveBeenCalledOnce();
+  });
+});
+
+describe("file location runtime bridge", () => {
+  it("reveals a saved file in its containing folder", async () => {
+    await revealFileInDirectory("C:\\Notes\\alpha.txt");
+
+    expect(mocks.revealItemInDir).toHaveBeenCalledWith("C:\\Notes\\alpha.txt");
   });
 });
 

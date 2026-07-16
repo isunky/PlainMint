@@ -5,7 +5,7 @@ import { join } from "@tauri-apps/api/path";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
 import type {
@@ -96,6 +96,11 @@ export async function openDocumentPath(path: string): Promise<OpenedDocument> {
     };
   }
   return invoke<OpenedDocument>("open_file", { request: { path, encodingOverride: null } });
+}
+
+export async function revealFileInDirectory(path: string) {
+  if (!isTauri()) throw new Error("File location is only available in the desktop app.");
+  await revealItemInDir(path);
 }
 
 export function encodedByteLength(document: Pick<DocumentRecord, "content" | "encoding" | "lineEnding">): number {

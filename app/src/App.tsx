@@ -64,6 +64,7 @@ import {
   persistSettings,
   pruneRecoveries,
   openDocumentPath,
+  revealFileInDirectory,
   restoreRecoveries,
   saveDocument,
   syncFileWatches,
@@ -249,6 +250,8 @@ function Welcome({
   onNew,
   onOpen,
   onOpenRecent,
+  onRemoveRecent,
+  onClearRecent,
   onRecovery,
   onRestoreSession,
 }: {
@@ -256,6 +259,8 @@ function Welcome({
   onNew: () => void;
   onOpen: () => void;
   onOpenRecent: (path: string) => void;
+  onRemoveRecent: (path: string) => void;
+  onClearRecent: () => void;
   onRecovery: () => void;
   onRestoreSession: () => void;
 }) {
@@ -276,14 +281,20 @@ function Welcome({
         <button type="button" className="welcome-action" onClick={onRecovery}><FloppyDisk size={24} /><span><strong>{t("openRecovery")}</strong><small>{t("backupRecovery")}</small></span></button>
       </div>
       <div className="recent-panel">
-        <h2>{t("recentFiles")}</h2>
+        <div className="recent-panel-header">
+          <h2>{t("recentFiles")}</h2>
+          {recentFiles.length > 0 && <button type="button" className="recent-clear" onClick={onClearRecent}>{t("clearRecentFiles")}</button>}
+        </div>
         {recentFiles.length === 0 ? <p>{t("recentEmpty")}</p> : (
           <div className="recent-list">
             {recentFiles.slice(0, 8).map((path) => (
-              <button type="button" key={path} onClick={() => onOpenRecent(path)}>
-                <FileText size={19} />
-                <span><strong>{path.split(/[\\/]/).at(-1)}</strong><small>{path}</small></span>
-              </button>
+              <div className="recent-item" key={path}>
+                <button type="button" className="recent-open" onClick={() => onOpenRecent(path)}>
+                  <FileText size={19} />
+                  <span><strong>{path.split(/[\\/]/).at(-1)}</strong><small>{path}</small></span>
+                </button>
+                <IconButton label={t("removeRecentFile", { name: path.split(/[\\/]/).at(-1) })} className="recent-remove" onClick={() => onRemoveRecent(path)}><X size={17} /></IconButton>
+              </div>
             ))}
           </div>
         )}
@@ -476,11 +487,11 @@ function SearchBar({
       <IconButton label={t("previousMatch")} onClick={() => go(-1)} disabled={!matches.length}><CaretUp size={18} /></IconButton>
       <IconButton label={t("nextMatch")} onClick={() => go(1)} disabled={!matches.length}><CaretDown size={18} /></IconButton>
       <span className="match-count">{matches.length ? t("matchCount", { current: Math.min(matchIndex + 1, matches.length), total: matches.length }) : t("noMatches")}</span>
+      <label className="check-control"><input type="checkbox" checked={search.caseSensitive} onChange={(event) => setSearch({ caseSensitive: event.target.checked })} /><span>{t("caseSensitive")}</span></label>
+      <label className="check-control"><input type="checkbox" checked={search.wholeWord} onChange={(event) => setSearch({ wholeWord: event.target.checked })} /><span>{t("wholeWord")}</span></label>
       {search.replaceOpen && (
         <>
           <input className="replace-input" value={search.replacement} placeholder={t("replaceWith")} onChange={(event) => setSearch({ replacement: event.target.value })} />
-          <label className="check-control"><input type="checkbox" checked={search.caseSensitive} onChange={(event) => setSearch({ caseSensitive: event.target.checked })} /><span>{t("caseSensitive")}</span></label>
-          <label className="check-control"><input type="checkbox" checked={search.wholeWord} onChange={(event) => setSearch({ wholeWord: event.target.checked })} /><span>{t("wholeWord")}</span></label>
           <button type="button" className="button-secondary search-action" disabled={!document || !matches.length} onClick={() => {
             if (!document) return;
             const match = matches[Math.min(matchIndex, matches.length - 1)];
@@ -862,7 +873,7 @@ function ConflictModal({
   );
 }
 
-function TabContextMenu({ menu, filePath, hasTabsToRight, hasOtherTabs, recent, showCloseSplit, onDismiss, onNew, onClose, onCloseOthers, onCloseRight, onMove, onCopyPath, onCloseSplit, onReopen }: {
+function TabContextMenu({ menu, filePath, hasTabsToRight, hasOtherTabs, recent, showCloseSplit, onDismiss, onNew, onClose, onCloseOthers, onCloseRight, onMove, onCopyPath, onRevealInFolder, onCloseSplit, onReopen }: {
   menu: TabContextMenuState;
   filePath?: string;
   hasTabsToRight: boolean;
@@ -876,6 +887,7 @@ function TabContextMenu({ menu, filePath, hasTabsToRight, hasOtherTabs, recent, 
   onCloseRight: () => void;
   onMove: () => void;
   onCopyPath: () => void;
+  onRevealInFolder: () => void;
   onCloseSplit: () => void;
   onReopen: () => void;
 }) {
@@ -916,6 +928,7 @@ function TabContextMenu({ menu, filePath, hasTabsToRight, hasOtherTabs, recent, 
         <div className="menu-separator" role="separator" />
         <button type="button" role="menuitem" onClick={run(onMove)}>{menu.pane === "left" ? <ArrowRight size={17} /> : <ArrowLeft size={17} />}<span>{menu.pane === "left" ? t("moveTabRight") : t("moveTabLeft")}</span></button>
         <button type="button" role="menuitem" disabled={!filePath} onClick={run(onCopyPath)}><Copy size={17} /><span>{t("copyFilePath")}</span></button>
+        <button type="button" role="menuitem" disabled={!filePath} onClick={run(onRevealInFolder)}><FolderOpen size={17} /><span>{t("revealInFolder")}</span></button>
       </>}
       {showCloseSplit && <button type="button" role="menuitem" onClick={run(onCloseSplit)}><Columns size={17} /><span>{t("closeSplitPane")}</span></button>}
       <div className="menu-separator" role="separator" />
@@ -1067,6 +1080,23 @@ export function App() {
       return next;
     });
   }, [settings.recentFileLimit]);
+
+  const removeRecent = useCallback((path: string) => {
+    setRecentFiles((current) => {
+      const next = current.filter((item) => item !== path);
+      void persistRecentFiles(next);
+      return next;
+    });
+  }, []);
+
+  const clearRecent = useCallback(() => {
+    setRecentFiles((current) => {
+      if (current.length === 0) return current;
+      void persistRecentFiles([]);
+      return [];
+    });
+    flash(t("recentFilesCleared"));
+  }, [flash, t]);
 
   const closeTargetsNow = useCallback((targets: TabCloseTarget[]) => {
     const state = useAppStore.getState();
@@ -1937,6 +1967,8 @@ export function App() {
             onNew={() => createDocument("left")}
             onOpen={() => void openFiles()}
             onOpenRecent={(path) => void openRecent(path)}
+            onRemoveRecent={removeRecent}
+            onClearRecent={clearRecent}
             onRecovery={() => setModal({ type: "recovery" })}
             onRestoreSession={() => void loadSession().then((session) => session && restoreSessionIntoStore(session))}
           />
@@ -1978,6 +2010,7 @@ export function App() {
           onCloseRight={() => contextTab && requestCloseTabs(contextTabs.slice(contextTabIndex + 1).map((tab) => ({ pane: tabContextMenu.pane, tabId: tab.id })), true)}
           onMove={() => contextTab && moveTab(contextTab.id, tabContextMenu.pane === "left" ? "right" : "left", tabs[tabContextMenu.pane === "left" ? "right" : "left"].length)}
           onCopyPath={() => contextDocument?.filePath && void copyText(contextDocument.filePath).then(() => flash(t("filePathCopied"))).catch(() => flash(t("copyFilePathFailed")))}
+          onRevealInFolder={() => contextDocument?.filePath && void revealFileInDirectory(contextDocument.filePath).catch(() => flash(t("revealInFolderFailed")))}
           onCloseSplit={toggleSplit}
           onReopen={() => void reopenClosedTab()}
         />
