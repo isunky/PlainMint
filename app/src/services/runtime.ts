@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { listen } from "@tauri-apps/api/event";
-import { join } from "@tauri-apps/api/path";
+import { documentDir, join } from "@tauri-apps/api/path";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
@@ -116,10 +116,11 @@ export async function saveDocument(document: DocumentRecord, options: SaveDocume
   let path = forceSaveAs ? undefined : document.filePath;
   if (isTauri() && !path) {
     const fileName = document.fileName === "Untitled" ? "untitled.txt" : document.fileName;
+    const initialSaveFolder = defaultSaveFolder ?? await documentDir().catch(() => undefined);
     const defaultPath = forceSaveAs && document.filePath
       ? document.filePath
-      : defaultSaveFolder
-        ? await join(defaultSaveFolder, fileName)
+      : initialSaveFolder
+        ? await join(initialSaveFolder, fileName)
         : fileName;
     path = await save({
       defaultPath,

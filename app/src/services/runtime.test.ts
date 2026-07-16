@@ -4,6 +4,7 @@ import type { DocumentRecord } from "../types";
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
+  documentDir: vi.fn(),
   join: vi.fn(),
   open: vi.fn(),
   save: vi.fn(),
@@ -18,7 +19,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("@tauri-apps/api/app", () => ({ getVersion: mocks.getVersion }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen }));
-vi.mock("@tauri-apps/api/path", () => ({ join: mocks.join }));
+vi.mock("@tauri-apps/api/path", () => ({ documentDir: mocks.documentDir, join: mocks.join }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: mocks.open, save: mocks.save }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn(), revealItemInDir: mocks.revealItemInDir }));
 vi.mock("@tauri-apps/plugin-process", () => ({ relaunch: mocks.relaunch }));
@@ -46,6 +47,7 @@ function document(patch: Partial<DocumentRecord> = {}): DocumentRecord {
 beforeEach(() => {
   vi.clearAllMocks();
   Object.defineProperty(window, "__TAURI_INTERNALS__", { configurable: true, value: {} });
+  mocks.documentDir.mockResolvedValue("C:\\Users\\PlainMint\\Documents");
   mocks.join.mockResolvedValue("C:\\Default\\untitled.txt");
   mocks.save.mockResolvedValue("C:\\Default\\untitled.txt");
   mocks.getVersion.mockResolvedValue("1.2.3");
@@ -98,6 +100,16 @@ describe("save dialog defaults", () => {
 
     expect(mocks.join).toHaveBeenCalledWith("C:\\Default", "untitled.txt");
     expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ defaultPath: "C:\\Default\\untitled.txt" }));
+  });
+
+  it("uses the user's Documents folder when no save folder is configured", async () => {
+    mocks.join.mockResolvedValue("C:\\Users\\PlainMint\\Documents\\untitled.txt");
+
+    await saveDocument(document());
+
+    expect(mocks.documentDir).toHaveBeenCalledOnce();
+    expect(mocks.join).toHaveBeenCalledWith("C:\\Users\\PlainMint\\Documents", "untitled.txt");
+    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ defaultPath: "C:\\Users\\PlainMint\\Documents\\untitled.txt" }));
   });
 
   it("keeps an existing file path as the Save As starting point", async () => {
