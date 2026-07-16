@@ -218,6 +218,12 @@ export function SettingsModal({
                     checked={settings.highlightCurrentLine}
                     onChange={(value) => onChange({ highlightCurrentLine: value })}
                   />
+                  <SettingToggle
+                    title={t("spellCheck")}
+                    description={t("spellCheckDescription")}
+                    checked={settings.spellCheckEnabled}
+                    onChange={(value) => onChange({ spellCheckEnabled: value })}
+                  />
                 </section>
               </div>
             )}
@@ -335,6 +341,18 @@ export function SettingsModal({
                   <button type="button" className="button-secondary" onClick={onOpenSource}>{t("sourceCode")}</button>
                   <span>{t("license")}</span>
                 </div>
+                <section className="shortcut-card" aria-labelledby="shortcut-title">
+                  <h4 id="shortcut-title">{t("keyboardShortcuts")}</h4>
+                  <div className="shortcut-list">
+                    {[
+                      [t("new"), "Ctrl / ⌘ + N"], [t("open"), "Ctrl / ⌘ + O"], [t("save"), "Ctrl / ⌘ + S"], [t("saveAs"), "Ctrl / ⌘ + Shift + S"],
+                      [t("undo"), "Ctrl / ⌘ + Z"], [t("redo"), "Ctrl / ⌘ + Y"], [t("find"), "Ctrl / ⌘ + F"], [t("replace"), "Ctrl / ⌘ + H"],
+                      [t("goToLine"), "Ctrl / ⌘ + G"], [t("selectNextOccurrence"), "Ctrl / ⌘ + D"], [t("closeCurrentTab"), "Ctrl / ⌘ + W"], [t("reopenClosedTab"), "Ctrl / ⌘ + Shift + T"],
+                      [t("split"), "Ctrl / ⌘ + \\"], [t("settings"), "Ctrl / ⌘ + ,"], [t("moveLine"), "Alt / Option + ↑ / ↓"], [t("copyLine"), "Shift + Alt / Option + ↑ / ↓"],
+                      [t("deleteLine"), "Ctrl / ⌘ + Shift + K"], [t("indentSelection"), "Tab / Shift + Tab"],
+                    ].map(([label, keys]) => <div className="shortcut-row" key={String(label)}><span>{label}</span><kbd>{keys}</kbd></div>)}
+                  </div>
+                </section>
               </div>
             )}
           </div>

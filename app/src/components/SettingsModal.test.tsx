@@ -74,6 +74,36 @@ describe("settings runtime controls", () => {
     expect(handlers.onChange).toHaveBeenCalledWith({ defaultLineEnding: "cr" });
   });
 
+  it("keeps spell check disabled by default and exposes the toggle in editor settings", () => {
+    render(<SettingsModal
+      settings={{ ...defaultSettings }}
+      directoryChecks={{ defaultSaveFolder: { status: "idle" }, cloudSyncFolder: { status: "idle" } }}
+      applying={false}
+      canApply
+      {...handlers}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Editor" }));
+    const spellCheck = screen.getByRole("switch", { name: "Spell check" });
+    expect(spellCheck).toHaveAttribute("aria-checked", "false");
+    fireEvent.click(spellCheck);
+    expect(handlers.onChange).toHaveBeenCalledWith({ spellCheckEnabled: true });
+  });
+
+  it("lists editing shortcuts in the about section", () => {
+    render(<SettingsModal
+      settings={{ ...defaultSettings }}
+      directoryChecks={{ defaultSaveFolder: { status: "idle" }, cloudSyncFolder: { status: "idle" } }}
+      applying={false}
+      canApply
+      {...handlers}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "About" }));
+    expect(screen.getByRole("heading", { name: "Keyboard shortcuts" })).toBeInTheDocument();
+    expect(screen.getByText("Go to line")).toBeInTheDocument();
+  });
+
   it("shows a directory error and prevents applying invalid settings", () => {
     render(<SettingsModal
       settings={{ ...defaultSettings, defaultSaveFolder: "C:\\missing" }}

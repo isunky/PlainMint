@@ -24,6 +24,7 @@ vi.mock("./services/runtime", async (importOriginal) => {
 });
 
 import { App } from "./App";
+import { selectNextOccurrenceInPane } from "./components/TextEditor";
 import { loadRecentFiles, persistRecentFiles, revealFileInDirectory } from "./services/runtime";
 
 function doc(id: string): DocumentRecord {
@@ -67,7 +68,7 @@ beforeEach(async () => {
     split: false,
     splitRatio: 0.5,
     recentlyClosedTabs: [],
-    search: { open: false, replaceOpen: false, query: "", replacement: "", caseSensitive: false, wholeWord: false },
+    search: { open: false, replaceOpen: false, query: "", replacement: "", caseSensitive: false, wholeWord: false, regexp: false },
     histories: {},
     settings: { ...defaultSettings, autoBackupEnabled: false },
   });
@@ -185,5 +186,28 @@ describe("tab and split interactions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Clear recent files" }));
     expect(persistRecentFiles).toHaveBeenLastCalledWith([]);
     expect(screen.getByText("Recent files will appear here.")).toBeVisible();
+  });
+
+  it("supports regular-expression replacement with capture groups", async () => {
+    useAppStore.setState({ documents: { ...useAppStore.getState().documents, a: { ...doc("a"), content: "port=80\nhost=localhost" } } });
+    render(<App />);
+    await settle();
+
+    fireEvent.keyDown(window, { key: "h", ctrlKey: true });
+    fireEvent.change(screen.getByPlaceholderText("Find"), { target: { value: "([a-z]+)=(.+)" } });
+    fireEvent.change(screen.getByPlaceholderText("Replace with"), { target: { value: "$1: $2" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Regular expression" }));
+    fireEvent.click(screen.getByRole("button", { name: "Replace all" }));
+
+    expect(useAppStore.getState().documents.a.content).toBe("port: 80\nhost: localhost");
+  });
+
+  it("adds selections for the next matching occurrence", async () => {
+    useAppStore.setState({ documents: { ...useAppStore.getState().documents, a: { ...doc("a"), content: "alpha alpha" } } });
+    render(<App />);
+    await settle();
+
+    expect(selectNextOccurrenceInPane("left")).toBe(1);
+    expect(selectNextOccurrenceInPane("left")).toBe(2);
   });
 });

@@ -71,6 +71,7 @@ export const defaultSettings: UserSettings = {
   showLineNumbers: true,
   wordWrapByDefault: true,
   highlightCurrentLine: true,
+  spellCheckEnabled: false,
   autoBackupEnabled: true,
   backupDebounceSeconds: 3,
   backupRetentionDays: 30,
@@ -238,6 +239,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     replacement: "",
     caseSensitive: false,
     wholeWord: false,
+    regexp: false,
   },
   cursor: {
     left: { line: 1, column: 1, selected: 0 },

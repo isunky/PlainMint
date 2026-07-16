@@ -75,6 +75,7 @@ export interface SearchState {
   replacement: string;
   caseSensitive: boolean;
   wholeWord: boolean;
+  regexp: boolean;
 }
 
 export interface UserSettings {
@@ -88,6 +89,7 @@ export interface UserSettings {
   showLineNumbers: boolean;
   wordWrapByDefault: boolean;
   highlightCurrentLine: boolean;
+  spellCheckEnabled: boolean;
   autoBackupEnabled: boolean;
   backupDebounceSeconds: number;
   backupRetentionDays: number;

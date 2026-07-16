@@ -155,6 +155,7 @@ describe("runtime settings", () => {
     useAppStore.getState().loadSettings({ tabSize: 4 });
     expect(useAppStore.getState().settings.defaultEncoding).toBe("utf-8");
     expect(useAppStore.getState().settings.defaultLineEnding).toBe("lf");
+    expect(useAppStore.getState().settings.spellCheckEnabled).toBe(false);
   });
 
   it("uses configured defaults only for newly created documents", () => {

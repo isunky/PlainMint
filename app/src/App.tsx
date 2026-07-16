@@ -30,12 +30,16 @@ import { isAutoSaveEligible, isAutoSaveRevisionSuppressed } from "./autoSavePoli
 import { needsSaveConfirmation } from "./closePolicy";
 import { createWorkspaceSession, decideStartupRecovery } from "./recoveryPolicy";
 import { resolveInitialSaveFolder } from "./saveFolderPolicy";
+import { findSearchMatches } from "./searchPolicy";
 import { ConflictCompareView } from "./components/ConflictCompareView";
 import { SettingsModal } from "./components/SettingsModal";
 import {
   findNextInPane,
   findPreviousInPane,
   focusEditor,
+  goToLineInPane,
+  replaceAllSearchMatchesInPane,
+  replaceCurrentSearchMatchInPane,
   TextEditor,
 } from "./components/TextEditor";
 import {
@@ -196,25 +200,6 @@ function IconButton({
       {children}
     </button>
   );
-}
-
-function findMatches(content: string, query: string, caseSensitive: boolean, wholeWord: boolean) {
-  if (!query) return [] as Array<{ from: number; to: number }>;
-  const haystack = caseSensitive ? content : content.toLocaleLowerCase();
-  const needle = caseSensitive ? query : query.toLocaleLowerCase();
-  const matches: Array<{ from: number; to: number }> = [];
-  let from = 0;
-  while (from <= haystack.length - needle.length) {
-    const index = haystack.indexOf(needle, from);
-    if (index < 0) break;
-    const before = index > 0 ? haystack[index - 1] : "";
-    const after = haystack[index + needle.length] ?? "";
-    const wordCharacter = /[\p{L}\p{N}_]/u;
-    const isWhole = !wholeWord || (!wordCharacter.test(before) && !wordCharacter.test(after));
-    if (isWhole) matches.push({ from: index, to: index + needle.length });
-    from = index + Math.max(needle.length, 1);
-  }
-  return matches;
 }
 
 function AppLogo({ dragRegion = false }: { dragRegion?: boolean }) {
@@ -448,33 +433,29 @@ function TabBar({
 function SearchBar({
   pane,
   matches,
+  searchValid,
   matchIndex,
   onMatchIndex,
 }: {
   pane: PaneId;
   matches: Array<{ from: number; to: number }>;
+  searchValid: boolean;
   matchIndex: number;
   onMatchIndex: (index: number) => void;
 }) {
   const { t } = useTranslation();
   const search = useAppStore((state) => state.search);
   const setSearch = useAppStore((state) => state.setSearch);
-  const documents = useAppStore((state) => state.documents);
-  const tabs = useAppStore((state) => state.tabs);
-  const activeTab = useAppStore((state) => state.activeTab);
-  const replaceCurrent = useAppStore((state) => state.replaceCurrent);
-  const replaceAll = useAppStore((state) => state.replaceAll);
-  const documentId = tabs[pane].find((tab) => tab.id === activeTab[pane])?.documentId;
-  const document = documentId ? documents[documentId] : undefined;
+  const hasMatches = searchValid && matches.length > 0;
   const go = (direction: -1 | 1) => {
-    if (matches.length === 0) return;
+    if (!hasMatches) return;
     const next = (matchIndex + direction + matches.length) % matches.length;
     onMatchIndex(next);
     direction > 0 ? findNextInPane(pane) : findPreviousInPane(pane);
   };
   return (
     <div className="searchbar" role="search">
-      <div className={"search-input-wrap " + (search.query && matches.length === 0 ? "no-match" : "")}>
+      <div className={"search-input-wrap " + (search.query && !searchValid ? "invalid-query" : search.query && !hasMatches ? "no-match" : "")}>
         <MagnifyingGlass size={21} />
         <input
           autoFocus
@@ -484,20 +465,20 @@ function SearchBar({
           onKeyDown={(event) => { if (event.key === "Enter") go(event.shiftKey ? -1 : 1); if (event.key === "Escape") setSearch({ open: false }); }}
         />
       </div>
-      <IconButton label={t("previousMatch")} onClick={() => go(-1)} disabled={!matches.length}><CaretUp size={18} /></IconButton>
-      <IconButton label={t("nextMatch")} onClick={() => go(1)} disabled={!matches.length}><CaretDown size={18} /></IconButton>
-      <span className="match-count">{matches.length ? t("matchCount", { current: Math.min(matchIndex + 1, matches.length), total: matches.length }) : t("noMatches")}</span>
+      <IconButton label={t("previousMatch")} onClick={() => go(-1)} disabled={!hasMatches}><CaretUp size={18} /></IconButton>
+      <IconButton label={t("nextMatch")} onClick={() => go(1)} disabled={!hasMatches}><CaretDown size={18} /></IconButton>
+      <span className="match-count">{search.query && !searchValid ? t("invalidRegularExpression") : hasMatches ? t("matchCount", { current: Math.min(matchIndex + 1, matches.length), total: matches.length }) : t("noMatches")}</span>
       <label className="check-control"><input type="checkbox" checked={search.caseSensitive} onChange={(event) => setSearch({ caseSensitive: event.target.checked })} /><span>{t("caseSensitive")}</span></label>
       <label className="check-control"><input type="checkbox" checked={search.wholeWord} onChange={(event) => setSearch({ wholeWord: event.target.checked })} /><span>{t("wholeWord")}</span></label>
+      <label className="check-control"><input type="checkbox" checked={search.regexp} onChange={(event) => setSearch({ regexp: event.target.checked })} /><span>{t("regularExpression")}</span></label>
       {search.replaceOpen && (
         <>
           <input className="replace-input" value={search.replacement} placeholder={t("replaceWith")} onChange={(event) => setSearch({ replacement: event.target.value })} />
-          <button type="button" className="button-secondary search-action" disabled={!document || !matches.length} onClick={() => {
-            if (!document) return;
+          <button type="button" className="button-secondary search-action" disabled={!hasMatches} onClick={() => {
             const match = matches[Math.min(matchIndex, matches.length - 1)];
-            replaceCurrent(document.id, match.from, match.to, search.replacement);
+            if (replaceCurrentSearchMatchInPane(pane, match)) onMatchIndex(0);
           }}>{t("replace")}</button>
-          <button type="button" className="button-primary search-action" disabled={!document || !matches.length} onClick={() => document && replaceAll(document.id, matches, search.replacement)}>{t("replaceAll")}</button>
+          <button type="button" className="button-primary search-action" disabled={!hasMatches} onClick={() => { if (replaceAllSearchMatchesInPane(pane)) onMatchIndex(0); }}>{t("replaceAll")}</button>
         </>
       )}
       <IconButton label={t("closeSearch")} onClick={() => setSearch({ open: false })}><X size={19} /></IconButton>
@@ -1021,12 +1002,11 @@ export function App() {
     left: tabs.left.find((tab) => tab.id === activeTab.left)?.documentId,
     right: tabs.right.find((tab) => tab.id === activeTab.right)?.documentId,
   };
-  const matches = useMemo(() => findMatches(
-    activeDocument?.content ?? "",
-    search.query,
-    search.caseSensitive,
-    search.wholeWord,
-  ), [activeDocument?.content, search.query, search.caseSensitive, search.wholeWord]);
+  const searchResult = useMemo(
+    () => findSearchMatches(activeDocument?.content ?? "", search),
+    [activeDocument?.content, search.query, search.replacement, search.caseSensitive, search.wholeWord, search.regexp],
+  );
+  const matches = searchResult.matches;
   const history = activeDocument ? histories[activeDocument.id] : undefined;
   const watchedFilePaths = useMemo(() => {
     const unique = new Map<string, string>();
@@ -1913,6 +1893,7 @@ export function App() {
       if (key === "s") { event.preventDefault(); void saveActive(event.shiftKey); }
       if (key === "f") { event.preventDefault(); setSearch({ open: true, replaceOpen: false }); }
       if (key === "h") { event.preventDefault(); setSearch({ open: true, replaceOpen: true }); }
+      if (key === "g" && !(event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement)) { event.preventDefault(); goToLineInPane(activePane); }
       if (key === "\\") { event.preventDefault(); toggleSplit(); }
       if (key === ",") { event.preventDefault(); setModal({ type: "settings", snapshot: settings }); }
     };
@@ -1946,7 +1927,7 @@ export function App() {
         onSettings={() => setModal({ type: "settings", snapshot: settings })}
       />
 
-      {search.open && <SearchBar pane={activePane} matches={matches} matchIndex={matchIndex} onMatchIndex={setMatchIndex} />}
+      {search.open && <SearchBar pane={activePane} matches={matches} searchValid={searchResult.valid} matchIndex={matchIndex} onMatchIndex={setMatchIndex} />}
 
       {activeDocument?.externalModified && (
         <div className="notice-bar">

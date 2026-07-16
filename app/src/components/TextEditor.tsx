@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Annotation,
   Compartment,
@@ -21,11 +22,16 @@ import { defaultKeymap, indentWithTab } from "@codemirror/commands";
 import {
   findNext,
   findPrevious,
-  SearchQuery,
+  gotoLine,
+  highlightSelectionMatches,
+  replaceAll as replaceAllSearch,
+  replaceNext as replaceNextSearch,
   search,
+  selectNextOccurrence,
   setSearchQuery,
 } from "@codemirror/search";
 import type { DocumentRecord, PaneId, SearchState, UserSettings } from "../types";
+import { createSearchQuery } from "../searchPolicy";
 
 const externalSync = Annotation.define<boolean>();
 const editors: Partial<Record<PaneId, EditorView>> = {};
@@ -44,6 +50,30 @@ export function findPreviousInPane(pane: PaneId) {
 
 export function focusEditor(pane: PaneId) {
   editors[pane]?.focus();
+}
+
+export function goToLineInPane(pane: PaneId) {
+  const view = editors[pane];
+  return view ? gotoLine(view) : false;
+}
+
+export function replaceCurrentSearchMatchInPane(pane: PaneId, match: { from: number; to: number }) {
+  const view = editors[pane];
+  if (!view) return false;
+  view.dispatch({ selection: { anchor: match.from, head: match.to } });
+  return replaceNextSearch(view);
+}
+
+export function replaceAllSearchMatchesInPane(pane: PaneId) {
+  const view = editors[pane];
+  return view ? replaceAllSearch(view) : false;
+}
+
+export function selectNextOccurrenceInPane(pane: PaneId) {
+  const view = editors[pane];
+  if (!view) return 0;
+  selectNextOccurrence(view);
+  return view.state.selection.ranges.length;
 }
 
 interface TextEditorProps {
@@ -135,6 +165,7 @@ export function TextEditor({
   onUndo,
   onRedo,
 }: TextEditorProps) {
+  const { t } = useTranslation();
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const lastPatchRef = useRef(0);
@@ -144,6 +175,8 @@ export function TextEditor({
     theme: new Compartment(),
     readOnly: new Compartment(),
     tabSize: new Compartment(),
+    spellcheck: new Compartment(),
+    phrases: new Compartment(),
   });
   const callbacks = useRef({ onChange, onCursor, onFocus, onUndo, onRedo });
   callbacks.current = { onChange, onCursor, onFocus, onUndo, onRedo };
@@ -151,7 +184,7 @@ export function TextEditor({
 
   useLayoutEffect(() => {
     if (!hostRef.current) return;
-    const { wrap, gutter, theme, readOnly, tabSize } = compartments.current;
+    const { wrap, gutter, theme, readOnly, tabSize, spellcheck, phrases } = compartments.current;
     const state = EditorState.create({
       doc: document.content,
       extensions: [
@@ -160,10 +193,13 @@ export function TextEditor({
         dropCursor(),
         rectangularSelection(),
         crosshairCursor(),
+        EditorState.allowMultipleSelections.of(true),
         highlightActiveLine(),
         highlightActiveLineGutter(),
+        highlightSelectionMatches({ highlightWordAroundCursor: true, wholeWords: true }),
         search({ top: true }),
         keymap.of([
+          { key: "Mod-d", run: selectNextOccurrence },
           {
             key: "Mod-z",
             run: () => {
@@ -187,6 +223,8 @@ export function TextEditor({
         theme.of(editorTheme(settings)),
         readOnly.of(EditorState.readOnly.of(document.readOnly)),
         tabSize.of(EditorState.tabSize.of(settings.tabSize)),
+        spellcheck.of(EditorView.contentAttributes.of({ spellcheck: settings.spellCheckEnabled ? "true" : "false" })),
+        phrases.of(EditorState.phrases.of({ "Go to line": t("goToLine"), go: t("go") })),
         EditorView.updateListener.of((update) => {
           if (update.focusChanged && update.view.hasFocus) callbacks.current.onFocus();
           if (update.docChanged && !update.transactions.some((transaction) => transaction.annotation(externalSync))) {
@@ -239,19 +277,14 @@ export function TextEditor({
     const view = viewRef.current;
     if (!view) return;
     view.dispatch({
-      effects: setSearchQuery.of(new SearchQuery({
-        search: searchState.query,
-        caseSensitive: searchState.caseSensitive,
-        literal: true,
-        wholeWord: searchState.wholeWord,
-      })),
+      effects: setSearchQuery.of(createSearchQuery(searchState)),
     });
-  }, [searchState.query, searchState.caseSensitive, searchState.wholeWord]);
+  }, [searchState.query, searchState.replacement, searchState.caseSensitive, searchState.wholeWord, searchState.regexp]);
 
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
-    const { wrap, gutter, theme, readOnly, tabSize } = compartments.current;
+    const { wrap, gutter, theme, readOnly, tabSize, spellcheck, phrases } = compartments.current;
     view.dispatch({
       effects: [
         wrap.reconfigure(settings.wordWrapByDefault ? EditorView.lineWrapping : []),
@@ -259,6 +292,8 @@ export function TextEditor({
         theme.reconfigure(editorTheme(settings)),
         readOnly.reconfigure(EditorState.readOnly.of(document.readOnly)),
         tabSize.reconfigure(EditorState.tabSize.of(settings.tabSize)),
+        spellcheck.reconfigure(EditorView.contentAttributes.of({ spellcheck: settings.spellCheckEnabled ? "true" : "false" })),
+        phrases.reconfigure(EditorState.phrases.of({ "Go to line": t("goToLine"), go: t("go") })),
       ],
     });
   }, [
@@ -268,7 +303,9 @@ export function TextEditor({
     settings.lineHeight,
     settings.highlightCurrentLine,
     settings.tabSize,
+    settings.spellCheckEnabled,
     document.readOnly,
+    t,
   ]);
 
   return <div className="editor-host" ref={hostRef} aria-label={pane === "left" ? "Left editor" : "Right editor"} />;
