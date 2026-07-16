@@ -47,7 +47,6 @@ import {
   beginAppSession,
   appErrorCode,
   checkForUpdates,
-  chooseComparisonDocument,
   chooseAndOpenDocuments,
   chooseDirectory,
   closeWindow,
@@ -92,7 +91,7 @@ type ModalState =
   | { type: "exit"; documents: DocumentRecord[] }
   | { type: "bulk-close"; targets: TabCloseTarget[]; documents: DocumentRecord[] }
   | { type: "close-tab"; pane: PaneId; tabId: string; document: DocumentRecord }
-  | { type: "compare"; source: ComparisonDocument; target: OpenedDocument }
+  | { type: "compare"; left: ComparisonDocument; right: ComparisonDocument }
   | {
     type: "conflict";
     documentId: string;
@@ -150,21 +149,24 @@ interface SaveIntent {
   notifySuccess?: boolean;
 }
 
-function comparisonSide(document: {
-  filePath?: string;
-  fileName?: string;
-  path?: string;
-  name?: string;
-  encoding: Encoding;
-  lineEnding: LineEnding;
-}, unsavedLabel: string): ComparisonSide {
+function comparisonSnapshot(document: DocumentRecord): ComparisonDocument {
+  return {
+    filePath: document.filePath,
+    fileName: document.fileName,
+    content: document.content,
+    encoding: document.encoding,
+    lineEnding: document.lineEnding,
+  };
+}
+
+function comparisonSide(document: ComparisonDocument, unsavedLabel: string): ComparisonSide {
   const encoding = document.encoding === "utf-8-bom" ? "UTF-8 BOM"
     : document.encoding === "utf-16le" ? "UTF-16 LE"
       : document.encoding === "utf-16be" ? "UTF-16 BE"
         : "UTF-8";
   return {
-    label: document.fileName ?? document.name ?? unsavedLabel,
-    detail: `${document.filePath ?? document.path ?? unsavedLabel} · ${encoding} · ${document.lineEnding.toUpperCase()}`,
+    label: document.fileName ?? unsavedLabel,
+    detail: `${document.filePath ?? unsavedLabel} · ${encoding} · ${document.lineEnding.toUpperCase()}`,
   };
 }
 
@@ -905,10 +907,10 @@ function CompareModal({ modal, onClose }: { modal: Extract<ModalState, { type: "
           </div>
         </header>
         <ConflictCompareView
-          localContent={modal.source.content}
-          diskContent={modal.target.content}
-          localLabel={comparisonSide(modal.source, t("compareUnsavedDocument"))}
-          diskLabel={comparisonSide(modal.target, t("compareUnsavedDocument"))}
+          localContent={modal.left.content}
+          diskContent={modal.right.content}
+          localLabel={comparisonSide(modal.left, t("compareUnsavedDocument"))}
+          diskLabel={comparisonSide(modal.right, t("compareUnsavedDocument"))}
           largeFileMessage={t("compareLargeFile")}
           noDifferencesLabel={t("compareNoDifferences")}
           differencePositionLabel={(current, total) => t("compareDifferencePosition", { current, total })}
@@ -1034,7 +1036,6 @@ export function App() {
   const [resizingSplit, setResizingSplit] = useState(false);
   const [autoSaveFailures, setAutoSaveFailures] = useState<Record<string, number>>({});
   const [fileWatchListenerReady, setFileWatchListenerReady] = useState(false);
-  const [comparisonLoading, setComparisonLoading] = useState(false);
   const backupTimers = useRef<Record<string, number>>({});
   const idleSaveTimers = useRef<Record<string, { revision: number; timer: number }>>({});
   const saveInFlight = useRef(new Map<string, Promise<boolean>>());
@@ -1062,6 +1063,9 @@ export function App() {
     left: tabs.left.find((tab) => tab.id === activeTab.left)?.documentId,
     right: tabs.right.find((tab) => tab.id === activeTab.right)?.documentId,
   };
+  const leftComparisonDocument = paneActiveDocumentIds.left ? documents[paneActiveDocumentIds.left] : undefined;
+  const rightComparisonDocument = paneActiveDocumentIds.right ? documents[paneActiveDocumentIds.right] : undefined;
+  const canCompareSplitPanes = split && Boolean(leftComparisonDocument && rightComparisonDocument);
   const searchResult = useMemo(
     () => findSearchMatches(activeDocument?.content ?? "", search),
     [activeDocument?.content, search.query, search.replacement, search.caseSensitive, search.wholeWord, search.regexp],
@@ -1289,32 +1293,16 @@ export function App() {
     }
   }, [activePane, addOpenedDocument, flash, rememberRecent, t]);
 
-  const openComparison = useCallback(async () => {
-    const sourceId = activeDocument?.id;
-    if (!sourceId || comparisonLoading) return;
-    setComparisonLoading(true);
-    try {
-      const target = await chooseComparisonDocument();
-      if (!target) return;
-      const source = useAppStore.getState().documents[sourceId];
-      if (!source) return;
-      setModal({
-        type: "compare",
-        source: {
-          filePath: source.filePath,
-          fileName: source.fileName,
-          content: source.content,
-          encoding: source.encoding,
-          lineEnding: source.lineEnding,
-        },
-        target,
-      });
-    } catch {
-      flash(t("compareOpenFailed"));
-    } finally {
-      setComparisonLoading(false);
-    }
-  }, [activeDocument?.id, comparisonLoading, flash, t]);
+  const openComparison = useCallback(() => {
+    const state = useAppStore.getState();
+    if (!state.split) return;
+    const leftDocumentId = state.tabs.left.find((tab) => tab.id === state.activeTab.left)?.documentId;
+    const rightDocumentId = state.tabs.right.find((tab) => tab.id === state.activeTab.right)?.documentId;
+    const leftDocument = leftDocumentId ? state.documents[leftDocumentId] : undefined;
+    const rightDocument = rightDocumentId ? state.documents[rightDocumentId] : undefined;
+    if (!leftDocument || !rightDocument) return;
+    setModal({ type: "compare", left: comparisonSnapshot(leftDocument), right: comparisonSnapshot(rightDocument) });
+  }, []);
 
   const openRecent = useCallback(async (path: string) => {
     try {
@@ -1983,7 +1971,7 @@ export function App() {
       if (key === "t" && event.shiftKey) { event.preventDefault(); void reopenClosedTab(); }
       if (key === "n") { event.preventDefault(); createDocument(activePane); }
       if (key === "o") { event.preventDefault(); void openFiles(); }
-      if (key === "d" && event.shiftKey) { event.preventDefault(); void openComparison(); }
+      if (key === "d" && event.shiftKey && canCompareSplitPanes) { event.preventDefault(); openComparison(); }
       if (key === "s") { event.preventDefault(); void saveActive(event.shiftKey); }
       if (key === "f") { event.preventDefault(); setSearch({ open: true, replaceOpen: false }); }
       if (key === "h") { event.preventDefault(); setSearch({ open: true, replaceOpen: true }); }
@@ -1993,7 +1981,7 @@ export function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [activePane, createDocument, modal.type, openComparison, openFiles, reopenClosedTab, requestCloseTab, saveActive, setActiveTab, setSearch, settings, toggleSplit]);
+  }, [activePane, canCompareSplitPanes, createDocument, modal.type, openComparison, openFiles, reopenClosedTab, requestCloseTab, saveActive, setActiveTab, setSearch, settings, toggleSplit]);
 
   const contextTabs = tabContextMenu ? tabs[tabContextMenu.pane] : [];
   const contextTabIndex = tabContextMenu?.tabId ? contextTabs.findIndex((tab) => tab.id === tabContextMenu.tabId) : -1;
@@ -2010,7 +1998,7 @@ export function App() {
         canRedo={Boolean(history?.redo.length)}
         split={split}
         wrap={settings.wordWrapByDefault}
-        canCompare={Boolean(activeDocument) && !comparisonLoading}
+        canCompare={canCompareSplitPanes}
         onNew={() => createDocument(activePane)}
         onOpen={() => void openFiles()}
         onSave={() => void saveActive()}

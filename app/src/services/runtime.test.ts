@@ -25,7 +25,7 @@ vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn(), revealItemInDir:
 vi.mock("@tauri-apps/plugin-process", () => ({ relaunch: mocks.relaunch }));
 vi.mock("@tauri-apps/plugin-updater", () => ({ check: mocks.check }));
 
-import { checkForUpdates, chooseComparisonDocument, encodedByteLength, getAppVersion, inspectFileMetadata, listenForFileWatchChanges, revealFileInDirectory, saveDocument, syncFileWatches, writeSafetyRecovery } from "./runtime";
+import { checkForUpdates, encodedByteLength, getAppVersion, inspectFileMetadata, listenForFileWatchChanges, revealFileInDirectory, saveDocument, syncFileWatches, writeSafetyRecovery } from "./runtime";
 
 function document(patch: Partial<DocumentRecord> = {}): DocumentRecord {
   return {
@@ -93,30 +93,6 @@ describe("file location runtime bridge", () => {
     expect(mocks.revealItemInDir).toHaveBeenCalledWith("C:\\Notes\\alpha.txt");
   });
 
-  it("opens one selected comparison file without adding it to the workspace", async () => {
-    const comparison = {
-      path: "C:\\Notes\\reference.txt",
-      name: "reference.txt",
-      content: "reference",
-      encoding: "utf-8",
-      lineEnding: "lf",
-      readOnly: false,
-    };
-    mocks.open.mockResolvedValue(comparison.path);
-    mocks.invoke.mockResolvedValue(comparison);
-
-    await expect(chooseComparisonDocument()).resolves.toEqual(comparison);
-
-    expect(mocks.open).toHaveBeenCalledWith(expect.objectContaining({ multiple: false, directory: false }));
-    expect(mocks.invoke).toHaveBeenCalledWith("open_file", { request: { path: comparison.path, encodingOverride: null } });
-  });
-
-  it("does nothing when comparison file selection is cancelled", async () => {
-    mocks.open.mockResolvedValue(null);
-
-    await expect(chooseComparisonDocument()).resolves.toBeNull();
-    expect(mocks.invoke).not.toHaveBeenCalled();
-  });
 });
 
 describe("save dialog defaults", () => {
