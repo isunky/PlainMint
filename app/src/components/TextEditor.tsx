@@ -107,18 +107,18 @@ function editorTheme(settings: UserSettings) {
       minHeight: "100%",
     },
     ".cm-line": {
-      padding: "0 20px",
+      padding: "0 18px",
     },
     ".cm-gutters": {
       backgroundColor: "var(--surface-editor)",
       color: "var(--text-tertiary)",
       border: "none",
       borderRight: "1px solid var(--border-subtle)",
-      minWidth: "70px",
+      minWidth: "56px",
     },
     ".cm-lineNumbers .cm-gutterElement": {
-      padding: "0 17px 0 10px",
-      minWidth: "68px",
+      padding: "0 13px 0 8px",
+      minWidth: "54px",
     },
     ".cm-activeLine": {
       backgroundColor: settings.highlightCurrentLine ? "var(--accent-line)" : "transparent",
@@ -131,7 +131,7 @@ function editorTheme(settings: UserSettings) {
       content: '""',
       position: "absolute",
       left: "0",
-      width: "3px",
+      width: "2px",
       height: "1.55em",
       background: "var(--accent-primary)",
     },

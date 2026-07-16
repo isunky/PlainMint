@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "./i18n";
 import { defaultSettings, useAppStore } from "./store";
@@ -89,6 +89,24 @@ beforeEach(async () => {
 afterEach(cleanup);
 
 describe("tab and split interactions", () => {
+  it("keeps core toolbar labels and accessible icon-only actions", async () => {
+    render(<App />);
+    await settle();
+    const toolbar = within(screen.getByRole("toolbar", { name: "Toolbar" }));
+
+    for (const label of ["New", "Open", "Save"]) {
+      expect(toolbar.getByRole("button", { name: label })).toHaveClass("toolbar-labeled-action");
+    }
+    for (const label of ["Recent files", "Undo", "Redo", "Find", "Compare", "Wrap", "Split", "Settings"]) {
+      expect(toolbar.getByRole("button", { name: label })).toHaveClass("toolbar-icon-action");
+    }
+
+    expect(toolbar.getByRole("button", { name: "New" })).toHaveAttribute("title", "New (Ctrl / ⌘ + N)");
+    expect(toolbar.getByRole("button", { name: "Find" })).toHaveAttribute("title", "Find (Ctrl / ⌘ + F)");
+    expect(toolbar.getByRole("button", { name: "Wrap" })).toHaveAttribute("aria-pressed");
+    expect(toolbar.getByRole("button", { name: "Split" })).toHaveAttribute("aria-pressed", "false");
+  });
+
   it("compares the current left and right pane content with the toolbar and shortcut", async () => {
     useAppStore.setState((state) => ({
       documents: {
@@ -226,10 +244,13 @@ describe("tab and split interactions", () => {
 
   it("shows search options in find mode and applies them to matches", async () => {
     useAppStore.setState({ documents: { a: { ...doc("a"), content: "Cat cat catalog" }, b: doc("b") } });
-    render(<App />);
+    const { container } = render(<App />);
     await settle();
 
     fireEvent.keyDown(window, { key: "f", ctrlKey: true });
+    expect(container.querySelector(".searchbar")).toHaveClass("find-mode");
+    expect(container.querySelector(".searchbar-primary")).toBeInTheDocument();
+    expect(container.querySelector(".searchbar-replace")).not.toBeInTheDocument();
     fireEvent.change(screen.getByPlaceholderText("Find"), { target: { value: "cat" } });
     expect(screen.getByText("1 of 3")).toBeVisible();
 
@@ -256,8 +277,12 @@ describe("tab and split interactions", () => {
       activeTab: { left: null, right: null },
     });
     vi.mocked(loadRecentFiles).mockResolvedValue(["C:\\a.txt", "C:\\b.txt"]);
-    render(<App />);
+    const { container } = render(<App />);
     await settle();
+
+    expect(container.querySelector(".welcome")).toBeInTheDocument();
+    expect(container.querySelector(".welcome-start")).toBeInTheDocument();
+    expect(container.querySelector(".recent-panel")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Remove a.txt from recent files" }));
     expect(persistRecentFiles).toHaveBeenLastCalledWith(["C:\\b.txt"]);
@@ -306,10 +331,12 @@ describe("tab and split interactions", () => {
 
   it("supports regular-expression replacement with capture groups", async () => {
     useAppStore.setState({ documents: { ...useAppStore.getState().documents, a: { ...doc("a"), content: "port=80\nhost=localhost" } } });
-    render(<App />);
+    const { container } = render(<App />);
     await settle();
 
     fireEvent.keyDown(window, { key: "h", ctrlKey: true });
+    expect(container.querySelector(".searchbar")).toHaveClass("replace-mode");
+    expect(container.querySelector(".searchbar-replace")).toBeInTheDocument();
     fireEvent.change(screen.getByPlaceholderText("Find"), { target: { value: "([a-z]+)=(.+)" } });
     fireEvent.change(screen.getByPlaceholderText("Replace with"), { target: { value: "$1: $2" } });
     fireEvent.click(screen.getByRole("checkbox", { name: "Regular expression" }));

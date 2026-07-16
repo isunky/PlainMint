@@ -279,18 +279,20 @@ function Welcome({
   const { t } = useTranslation();
   return (
     <section className="welcome" aria-labelledby="welcome-title">
-      <div className="welcome-hero">
-        <AppLogo />
-        <div>
-          <h1 id="welcome-title">{t("welcomeTitle")}</h1>
-          <p>{t("welcomeBody")}</p>
+      <div className="welcome-start">
+        <div className="welcome-hero">
+          <AppLogo />
+          <div>
+            <h1 id="welcome-title">{t("welcomeTitle")}</h1>
+            <p>{t("welcomeBody")}</p>
+          </div>
         </div>
-      </div>
-      <div className="welcome-actions">
-        <button type="button" className="welcome-action primary" onClick={onNew}><FilePlus size={24} /><span><strong>{t("createFile")}</strong><small>Ctrl / ⌘ + N</small></span></button>
-        <button type="button" className="welcome-action" onClick={onOpen}><FolderOpen size={24} /><span><strong>{t("openFile")}</strong><small>Ctrl / ⌘ + O</small></span></button>
-        <button type="button" className="welcome-action" onClick={onRestoreSession}><ArrowCounterClockwise size={24} /><span><strong>{t("restoreSession")}</strong><small>{t("sessionRecovery")}</small></span></button>
-        <button type="button" className="welcome-action" onClick={onRecovery}><FloppyDisk size={24} /><span><strong>{t("openRecovery")}</strong><small>{t("backupRecovery")}</small></span></button>
+        <div className="welcome-actions">
+          <button type="button" className="welcome-action primary" onClick={onNew}><FilePlus size={22} /><span><strong>{t("createFile")}</strong><small>Ctrl / ⌘ + N</small></span></button>
+          <button type="button" className="welcome-action" onClick={onOpen}><FolderOpen size={22} /><span><strong>{t("openFile")}</strong><small>Ctrl / ⌘ + O</small></span></button>
+          <button type="button" className="welcome-action" onClick={onRestoreSession}><ArrowCounterClockwise size={22} /><span><strong>{t("restoreSession")}</strong><small>{t("sessionRecovery")}</small></span></button>
+          <button type="button" className="welcome-action" onClick={onRecovery}><FloppyDisk size={22} /><span><strong>{t("openRecovery")}</strong><small>{t("backupRecovery")}</small></span></button>
+        </div>
       </div>
       <div className="recent-panel">
         <div className="recent-panel-header">
@@ -377,14 +379,15 @@ function RecentFilesToolbarMenu({
       <button
         ref={triggerRef}
         type="button"
-        className="toolbar-action"
+        className="toolbar-action toolbar-icon-action"
+        aria-label={t("recentFiles")}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
         title={t("recentFiles")}
       >
-        <ClockCounterClockwise size={23} weight="regular" />
-        <span>{t("recentFiles")}</span>
+        <ClockCounterClockwise size={20} weight="regular" />
+        <span className="toolbar-action-label">{t("recentFiles")}</span>
       </button>
       {open && (
         <div className="recent-files-menu" role="menu" aria-label={t("recentFiles")} tabIndex={-1} onKeyDown={onKeyDown}>
@@ -439,27 +442,29 @@ interface ToolbarProps {
 type ToolbarAction =
   | { key: "recent" }
   | {
-    key: "new" | "open" | "save" | "undo" | "redo" | "find" | "compare" | "wrap" | "split" | "settings";
+    key: "new" | "open" | "save" | "undo" | "redo" | "find" | "compare" | "wrap" | "split";
     label: string;
     icon: Icon;
     action: () => void;
+    showLabel: boolean;
+    shortcut?: string;
     disabled?: boolean;
-    active?: boolean;
+    pressed?: boolean;
   };
 
 function Toolbar(props: ToolbarProps) {
   const { t } = useTranslation();
   const actions: ToolbarAction[] = [
-    { key: "new", label: t("new"), icon: FilePlus, action: props.onNew },
-    { key: "open", label: t("open"), icon: FolderOpen, action: props.onOpen },
+    { key: "new", label: t("new"), icon: FilePlus, action: props.onNew, showLabel: true, shortcut: "Ctrl / ⌘ + N" },
+    { key: "open", label: t("open"), icon: FolderOpen, action: props.onOpen, showLabel: true, shortcut: "Ctrl / ⌘ + O" },
     { key: "recent" },
-    { key: "save", label: t("save"), icon: FloppyDisk, action: props.onSave },
-    { key: "undo", label: t("undo"), icon: ArrowCounterClockwise, action: props.onUndo, disabled: !props.canUndo },
-    { key: "redo", label: t("redo"), icon: ArrowClockwise, action: props.onRedo, disabled: !props.canRedo },
-    { key: "find", label: t("find"), icon: MagnifyingGlass, action: props.onFind },
-    { key: "compare", label: t("compare"), icon: ArrowsLeftRight, action: props.onCompare, disabled: !props.canCompare },
-    { key: "wrap", label: t("wrap"), icon: TextAlignLeft, action: props.onWrap, active: props.wrap },
-    { key: "split", label: t("split"), icon: Columns, action: props.onSplit, active: props.split },
+    { key: "save", label: t("save"), icon: FloppyDisk, action: props.onSave, showLabel: true, shortcut: "Ctrl / ⌘ + S" },
+    { key: "undo", label: t("undo"), icon: ArrowCounterClockwise, action: props.onUndo, showLabel: false, shortcut: "Ctrl / ⌘ + Z", disabled: !props.canUndo },
+    { key: "redo", label: t("redo"), icon: ArrowClockwise, action: props.onRedo, showLabel: false, shortcut: "Ctrl / ⌘ + Y", disabled: !props.canRedo },
+    { key: "find", label: t("find"), icon: MagnifyingGlass, action: props.onFind, showLabel: false, shortcut: "Ctrl / ⌘ + F" },
+    { key: "compare", label: t("compare"), icon: ArrowsLeftRight, action: props.onCompare, showLabel: false, shortcut: "Ctrl / ⌘ + Shift + D", disabled: !props.canCompare },
+    { key: "wrap", label: t("wrap"), icon: TextAlignLeft, action: props.onWrap, showLabel: false, pressed: props.wrap },
+    { key: "split", label: t("split"), icon: Columns, action: props.onSplit, showLabel: false, shortcut: "Ctrl / ⌘ + \\", pressed: props.split },
   ];
   return (
     <div className="toolbar" role="toolbar" aria-label={t("toolbar")}>
@@ -468,18 +473,27 @@ function Toolbar(props: ToolbarProps) {
           return <RecentFilesToolbarMenu key={action.key} recentFiles={props.recentFiles} onOpen={props.onOpenRecent} onRemove={props.onRemoveRecent} onClear={props.onClearRecent} />;
         }
         const Icon = action.icon;
+        const title = action.shortcut ? `${action.label} (${action.shortcut})` : action.label;
         return (
-          <div className={"toolbar-action-wrap " + (["undo", "find"].includes(action.key) ? "with-divider" : "")} key={action.key}>
-            <button type="button" className={"toolbar-action " + (action.active ? "active" : "")} disabled={action.disabled} onClick={action.action} title={action.label}>
-              <Icon size={23} weight="regular" />
-              <span>{action.label}</span>
+          <div className={"toolbar-action-wrap " + (["undo", "compare"].includes(action.key) ? "with-divider" : "")} key={action.key}>
+            <button
+              type="button"
+              className={`toolbar-action ${action.showLabel ? "toolbar-labeled-action" : "toolbar-icon-action"} ${action.pressed ? "active" : ""}`}
+              aria-label={action.label}
+              aria-pressed={action.pressed}
+              disabled={action.disabled}
+              onClick={action.action}
+              title={title}
+            >
+              <Icon size={20} weight="regular" />
+              <span className="toolbar-action-label">{action.label}</span>
             </button>
           </div>
         );
       })}
-      <button type="button" className="toolbar-action toolbar-more" onClick={props.onSettings} title={t("settings")}>
-        <GearSix size={22} />
-        <span>{t("settings")}</span>
+      <button type="button" className="toolbar-action toolbar-icon-action toolbar-more" aria-label={t("settings")} onClick={props.onSettings} title={t("settings")}>
+        <GearSix size={20} />
+        <span className="toolbar-action-label">{t("settings")}</span>
       </button>
     </div>
   );
@@ -605,34 +619,40 @@ function SearchBar({
     direction > 0 ? findNextInPane(pane) : findPreviousInPane(pane);
   };
   return (
-    <div className="searchbar" role="search">
-      <div className={"search-input-wrap " + (search.query && !searchValid ? "invalid-query" : search.query && !hasMatches ? "no-match" : "")}>
-        <MagnifyingGlass size={21} />
-        <input
-          autoFocus
-          value={search.query}
-          placeholder={t("find")}
-          onChange={(event) => { setSearch({ query: event.target.value }); onMatchIndex(0); }}
-          onKeyDown={(event) => { if (event.key === "Enter") go(event.shiftKey ? -1 : 1); if (event.key === "Escape") setSearch({ open: false }); }}
-        />
+    <div className={`searchbar ${search.replaceOpen ? "replace-mode" : "find-mode"}`} role="search">
+      <div className="searchbar-primary">
+        <div className={"search-input-wrap " + (search.query && !searchValid ? "invalid-query" : search.query && !hasMatches ? "no-match" : "")}>
+          <MagnifyingGlass size={18} />
+          <input
+            autoFocus
+            value={search.query}
+            placeholder={t("find")}
+            onChange={(event) => { setSearch({ query: event.target.value }); onMatchIndex(0); }}
+            onKeyDown={(event) => { if (event.key === "Enter") go(event.shiftKey ? -1 : 1); if (event.key === "Escape") setSearch({ open: false }); }}
+          />
+        </div>
+        <div className="search-navigation">
+          <IconButton label={t("previousMatch")} onClick={() => go(-1)} disabled={!hasMatches}><CaretUp size={17} /></IconButton>
+          <IconButton label={t("nextMatch")} onClick={() => go(1)} disabled={!hasMatches}><CaretDown size={17} /></IconButton>
+        </div>
+        <span className="match-count">{search.query && !searchValid ? t("invalidRegularExpression") : hasMatches ? t("matchCount", { current: Math.min(matchIndex + 1, matches.length), total: matches.length }) : t("noMatches")}</span>
+        <div className="search-options">
+          <label className="check-control" title={t("caseSensitive")}><input type="checkbox" aria-label={t("caseSensitive")} checked={search.caseSensitive} onChange={(event) => setSearch({ caseSensitive: event.target.checked })} /><span className="check-control-label">{t("caseSensitive")}</span><span className="check-control-compact" aria-hidden="true">Aa</span></label>
+          <label className="check-control" title={t("wholeWord")}><input type="checkbox" aria-label={t("wholeWord")} checked={search.wholeWord} onChange={(event) => setSearch({ wholeWord: event.target.checked })} /><span className="check-control-label">{t("wholeWord")}</span><span className="check-control-compact" aria-hidden="true">W</span></label>
+          <label className="check-control" title={t("regularExpression")}><input type="checkbox" aria-label={t("regularExpression")} checked={search.regexp} onChange={(event) => setSearch({ regexp: event.target.checked })} /><span className="check-control-label">{t("regularExpression")}</span><span className="check-control-compact" aria-hidden="true">.*</span></label>
+        </div>
       </div>
-      <IconButton label={t("previousMatch")} onClick={() => go(-1)} disabled={!hasMatches}><CaretUp size={18} /></IconButton>
-      <IconButton label={t("nextMatch")} onClick={() => go(1)} disabled={!hasMatches}><CaretDown size={18} /></IconButton>
-      <span className="match-count">{search.query && !searchValid ? t("invalidRegularExpression") : hasMatches ? t("matchCount", { current: Math.min(matchIndex + 1, matches.length), total: matches.length }) : t("noMatches")}</span>
-      <label className="check-control"><input type="checkbox" checked={search.caseSensitive} onChange={(event) => setSearch({ caseSensitive: event.target.checked })} /><span>{t("caseSensitive")}</span></label>
-      <label className="check-control"><input type="checkbox" checked={search.wholeWord} onChange={(event) => setSearch({ wholeWord: event.target.checked })} /><span>{t("wholeWord")}</span></label>
-      <label className="check-control"><input type="checkbox" checked={search.regexp} onChange={(event) => setSearch({ regexp: event.target.checked })} /><span>{t("regularExpression")}</span></label>
       {search.replaceOpen && (
-        <>
+        <div className="searchbar-replace">
           <input className="replace-input" value={search.replacement} placeholder={t("replaceWith")} onChange={(event) => setSearch({ replacement: event.target.value })} />
           <button type="button" className="button-secondary search-action" disabled={!hasMatches} onClick={() => {
             const match = matches[Math.min(matchIndex, matches.length - 1)];
             if (replaceCurrentSearchMatchInPane(pane, match)) onMatchIndex(0);
           }}>{t("replace")}</button>
           <button type="button" className="button-primary search-action" disabled={!hasMatches} onClick={() => { if (replaceAllSearchMatchesInPane(pane)) onMatchIndex(0); }}>{t("replaceAll")}</button>
-        </>
+        </div>
       )}
-      <IconButton label={t("closeSearch")} onClick={() => setSearch({ open: false })}><X size={19} /></IconButton>
+      <IconButton label={t("closeSearch")} className="search-close" onClick={() => setSearch({ open: false })}><X size={18} /></IconButton>
     </div>
   );
 }
@@ -646,23 +666,27 @@ function StatusBar({ pane, document }: { pane: PaneId; document?: DocumentRecord
   const lines = document.content.split("\n").length;
   return (
     <div className="statusbar" aria-label={t("statusbar")}>
-      <span>{t("cursor", { line: cursor.line, column: cursor.column })}</span>
-      <span>{t("selectedCharacters", { count: cursor.selected })}</span>
-      <span>{t("characters", { count: characters })}</span>
+      <div className="statusbar-group statusbar-position">
+        <span className="status-cursor">{t("cursor", { line: cursor.line, column: cursor.column })}</span>
+        <span className="status-selection">{t("selectedCharacters", { count: cursor.selected })}</span>
+        <span className="status-characters">{t("characters", { count: characters })}</span>
+      </div>
       <span className="status-spacer" />
-      <span>{t("lines", { count: lines })}</span>
-      <select className="status-format-select" aria-label={t("fileEncoding")} value={document.encoding} disabled={document.readOnly} onChange={(event) => updateDocumentFormat(document.id, { encoding: event.target.value as Encoding })}>
-        <option value="utf-8">UTF-8</option>
-        <option value="utf-8-bom">UTF-8 BOM</option>
-        <option value="utf-16le">UTF-16 LE</option>
-        <option value="utf-16be">UTF-16 BE</option>
-      </select>
-      <select className="status-format-select" aria-label={t("fileLineEnding")} value={document.lineEnding} disabled={document.readOnly} onChange={(event) => updateDocumentFormat(document.id, { lineEnding: event.target.value as LineEnding })}>
-        <option value="lf">LF</option>
-        <option value="crlf">CRLF</option>
-        <option value="cr">CR</option>
-      </select>
-      <span>{document.fileName.endsWith(".md") ? t("markdown") : t("plainText")}</span>
+      <div className="statusbar-group statusbar-format">
+        <span className="status-lines">{t("lines", { count: lines })}</span>
+        <select className="status-format-select" aria-label={t("fileEncoding")} value={document.encoding} disabled={document.readOnly} onChange={(event) => updateDocumentFormat(document.id, { encoding: event.target.value as Encoding })}>
+          <option value="utf-8">UTF-8</option>
+          <option value="utf-8-bom">UTF-8 BOM</option>
+          <option value="utf-16le">UTF-16 LE</option>
+          <option value="utf-16be">UTF-16 BE</option>
+        </select>
+        <select className="status-format-select" aria-label={t("fileLineEnding")} value={document.lineEnding} disabled={document.readOnly} onChange={(event) => updateDocumentFormat(document.id, { lineEnding: event.target.value as LineEnding })}>
+          <option value="lf">LF</option>
+          <option value="crlf">CRLF</option>
+          <option value="cr">CR</option>
+        </select>
+        <span className="status-file-type">{document.fileName.endsWith(".md") ? t("markdown") : t("plainText")}</span>
+      </div>
     </div>
   );
 }

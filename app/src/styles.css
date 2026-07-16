@@ -1,7 +1,7 @@
 :root {
-  font-family: "Segoe UI Variable", "Segoe UI", Inter, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", sans-serif;
   color: #202426;
-  background: #eaf7f6;
+  background: #edf7f5;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -14,23 +14,26 @@
   --accent-selection: rgba(24, 183, 170, 0.2);
   --search-match: rgba(24, 183, 170, 0.24);
   --search-current: rgba(24, 183, 170, 0.42);
-  --surface-window: #ffffff;
-  --surface-toolbar: #fdfdfd;
+  --surface-window: #f5f8f7;
+  --surface-toolbar: #f8faf9;
   --surface-editor: #ffffff;
   --surface-elevated: #ffffff;
   --surface-raised: #ffffff;
-  --surface-muted: #f5f7f7;
-  --surface-hover: #f4f6f6;
-  --surface-pressed: #edf1f1;
+  --surface-muted: #f0f4f3;
+  --surface-hover: #edf3f1;
+  --surface-pressed: #e4ece9;
   --text-primary: #202426;
   --text-secondary: #657076;
   --text-tertiary: #8e979c;
+  --text-muted: #8e979c;
   --border-subtle: #e0e5e6;
+  --border-soft: #e0e5e6;
   --border-strong: #cfd6d8;
   --danger: #d94b45;
   --warning: #b87913;
   --shadow-window: 0 16px 42px rgba(58, 91, 91, 0.21), 0 2px 7px rgba(35, 68, 68, 0.12);
   --shadow-modal: 0 24px 70px rgba(31, 54, 55, 0.24), 0 4px 16px rgba(31, 54, 55, 0.14);
+  --shadow-popup: 0 14px 36px rgba(31, 54, 55, 0.18), 0 2px 8px rgba(31, 54, 55, 0.08);
   --editor-font: "Cascadia Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
@@ -72,47 +75,57 @@
 
 :root[data-appearance="dark"] {
   color-scheme: dark;
-  --surface-window: #171a1c;
-  --surface-toolbar: #1b1f21;
-  --surface-editor: #16191b;
-  --surface-elevated: #23282a;
-  --surface-raised: #23282a;
-  --surface-muted: #202527;
-  --surface-hover: #282e30;
-  --surface-pressed: #303638;
+  --surface-window: #171c1b;
+  --surface-toolbar: #1b211f;
+  --surface-editor: #141817;
+  --surface-elevated: #222927;
+  --surface-raised: #202624;
+  --surface-muted: #1e2422;
+  --surface-hover: #27302d;
+  --surface-pressed: #303a37;
   --text-primary: #e8ecec;
   --text-secondary: #aab3b5;
   --text-tertiary: #788286;
-  --border-subtle: #303638;
-  --border-strong: #424a4d;
-  --accent-soft: rgba(24, 183, 170, 0.15);
-  --accent-border: rgba(24, 183, 170, 0.36);
-  --accent-line: rgba(24, 183, 170, 0.08);
-  --accent-selection: rgba(24, 183, 170, 0.24);
-  background: #0d1214;
+  --text-muted: #788286;
+  --border-subtle: #2d3533;
+  --border-soft: #343d3a;
+  --border-strong: #424c49;
+  --accent-soft: color-mix(in srgb, var(--accent-primary) 15%, transparent);
+  --accent-border: color-mix(in srgb, var(--accent-primary) 36%, transparent);
+  --accent-line: color-mix(in srgb, var(--accent-primary) 8%, transparent);
+  --accent-selection: color-mix(in srgb, var(--accent-primary) 24%, transparent);
+  --shadow-popup: 0 16px 38px rgba(0, 0, 0, 0.34), 0 2px 8px rgba(0, 0, 0, 0.24);
+  background: #101412;
 }
 
 @media (prefers-color-scheme: dark) {
   :root[data-appearance="system"] {
     color-scheme: dark;
-    --surface-window: #171a1c;
-    --surface-toolbar: #1b1f21;
-    --surface-editor: #16191b;
-    --surface-elevated: #23282a;
-    --surface-raised: #23282a;
-    --surface-muted: #202527;
-    --surface-hover: #282e30;
-    --surface-pressed: #303638;
+    --surface-window: #171c1b;
+    --surface-toolbar: #1b211f;
+    --surface-editor: #141817;
+    --surface-elevated: #222927;
+    --surface-raised: #202624;
+    --surface-muted: #1e2422;
+    --surface-hover: #27302d;
+    --surface-pressed: #303a37;
     --text-primary: #e8ecec;
     --text-secondary: #aab3b5;
     --text-tertiary: #788286;
-    --border-subtle: #303638;
-    --border-strong: #424a4d;
-    --accent-soft: rgba(24, 183, 170, 0.15);
-    --accent-border: rgba(24, 183, 170, 0.36);
-    --accent-line: rgba(24, 183, 170, 0.08);
-    --accent-selection: rgba(24, 183, 170, 0.24);
-    background: #0d1214;
+    --text-muted: #788286;
+    --border-subtle: #2d3533;
+    --border-soft: #343d3a;
+    --border-strong: #424c49;
+    --accent-soft: color-mix(in srgb, var(--accent-primary) 15%, transparent);
+    --accent-border: color-mix(in srgb, var(--accent-primary) 36%, transparent);
+    --accent-line: color-mix(in srgb, var(--accent-primary) 8%, transparent);
+    --accent-selection: color-mix(in srgb, var(--accent-primary) 24%, transparent);
+    --shadow-popup: 0 16px 38px rgba(0, 0, 0, 0.34), 0 2px 8px rgba(0, 0, 0, 0.24);
+    background: #101412;
+  }
+
+  :root[data-appearance="system"] body {
+    background: #101412;
   }
 }
 
@@ -133,7 +146,7 @@ body {
   min-height: 560px;
   padding: 26px 40px 40px;
   overflow: hidden;
-  background: #eaf7f6;
+  background: #edf7f5;
 }
 
 .is-tauri body {
@@ -148,13 +161,14 @@ body {
 }
 
 :root[data-appearance="dark"] body {
-  background: #0d1214;
+  background: #101412;
 }
 
 button,
 input,
 select {
   font: inherit;
+  transition: color 120ms ease, background-color 120ms ease, border-color 120ms ease, opacity 120ms ease;
 }
 
 button {
@@ -178,13 +192,13 @@ select:focus-visible {
   overflow: hidden;
   background: var(--surface-window);
   border: 1px solid var(--border-strong);
-  border-radius: 17px;
+  border-radius: 12px;
   box-shadow: var(--shadow-window);
 }
 
 .titlebar {
-  height: 56px;
-  flex: 0 0 56px;
+  height: 46px;
+  flex: 0 0 46px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -196,16 +210,17 @@ select:focus-visible {
 .brand {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding-left: 22px;
-  font-size: 19px;
-  font-weight: 520;
+  gap: 9px;
+  padding-left: 16px;
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 600;
   letter-spacing: -0.02em;
 }
 
 .app-logo {
-  width: 30px;
-  height: 30px;
+  width: 26px;
+  height: 26px;
   object-fit: cover;
   border-radius: 8px;
 }
@@ -217,7 +232,7 @@ select:focus-visible {
 }
 
 .window-controls .icon-button {
-  width: 56px;
+  width: 46px;
   height: 100%;
   border-radius: 0;
 }
@@ -228,13 +243,13 @@ select:focus-visible {
 }
 
 .icon-button {
-  width: 38px;
-  height: 38px;
+  width: 34px;
+  height: 34px;
   padding: 0;
   display: inline-grid;
   place-items: center;
   border: 0;
-  border-radius: 8px;
+  border-radius: 7px;
   background: transparent;
   cursor: pointer;
 }
@@ -259,11 +274,11 @@ select:focus-visible {
 }
 
 .toolbar {
-  min-height: 60px;
-  flex: 0 0 60px;
+  min-height: 48px;
+  flex: 0 0 48px;
   display: flex;
   align-items: stretch;
-  padding: 0 18px;
+  padding: 0 10px;
   border-bottom: 1px solid var(--border-subtle);
   background: var(--surface-toolbar);
 }
@@ -271,7 +286,7 @@ select:focus-visible {
 .toolbar-action-wrap {
   display: flex;
   align-items: center;
-  padding: 0 3px;
+  padding: 0 2px;
 }
 
 .recent-files-trigger {
@@ -279,29 +294,45 @@ select:focus-visible {
 }
 
 .toolbar-action-wrap.with-divider {
-  margin-left: 10px;
-  padding-left: 15px;
+  margin-left: 6px;
+  padding-left: 9px;
   border-left: 1px solid var(--border-subtle);
 }
 
 .toolbar-action {
-  height: 42px;
-  min-width: 92px;
-  padding: 0 11px;
+  height: 34px;
+  min-width: 0;
+  padding: 0;
   display: inline-flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 12px;
+  gap: 8px;
   border: 0;
-  border-radius: 10px;
+  border-radius: 8px;
   background: transparent;
   color: var(--text-primary);
   cursor: pointer;
-  font-size: 16px;
+  font-size: 14px;
+  font-weight: 520;
+}
+
+.toolbar-labeled-action {
+  min-width: 68px;
+  padding: 0 10px;
+}
+
+.toolbar-icon-action {
+  width: 34px;
+  flex: 0 0 34px;
+  justify-content: center;
+}
+
+.toolbar-icon-action .toolbar-action-label {
+  display: none;
 }
 
 .toolbar-action svg {
-  color: var(--accent-primary);
+  color: var(--text-secondary);
   flex: 0 0 auto;
 }
 
@@ -309,25 +340,37 @@ select:focus-visible {
   background: var(--surface-hover);
 }
 
+.toolbar-action:hover svg,
+.toolbar-labeled-action svg {
+  color: var(--accent-primary);
+}
+
 .toolbar-action.active {
   color: var(--accent-pressed);
   background: var(--accent-soft);
 }
 
-.toolbar-more {
-  min-width: 48px;
-  margin-left: auto;
+.toolbar-action.active svg {
+  color: var(--accent-primary);
 }
 
-.toolbar-more span {
-  display: none;
+.toolbar-action:disabled:hover {
+  background: transparent;
+}
+
+.toolbar-action:disabled:hover svg {
+  color: var(--text-secondary);
+}
+
+.toolbar-more {
+  margin-left: auto;
 }
 
 .recent-files-menu {
   position: absolute;
   z-index: 70;
   top: calc(100% + 6px);
-  left: 3px;
+  left: 0;
   width: min(360px, calc(100vw - 36px));
   max-height: min(440px, calc(100vh - 96px));
   padding: 6px;
@@ -335,7 +378,7 @@ select:focus-visible {
   border: 1px solid var(--border-strong);
   border-radius: 10px;
   background: var(--surface-elevated);
-  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.2);
+  box-shadow: var(--shadow-popup);
 }
 
 .recent-files-menu-empty {
@@ -430,7 +473,7 @@ select:focus-visible {
 }
 
 .workspace.split {
-  grid-template-columns: minmax(320px, 1fr) 12px minmax(320px, 1fr);
+  grid-template-columns: minmax(320px, 1fr) 8px minmax(320px, 1fr);
 }
 
 .workspace.resizing,
@@ -442,6 +485,7 @@ select:focus-visible {
 .editor-pane {
   min-width: 0;
   min-height: 0;
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   background: var(--surface-editor);
@@ -469,17 +513,17 @@ select:focus-visible {
 }
 
 .split-divider svg {
-  width: 20px;
-  height: 44px;
+  width: 16px;
+  height: 36px;
   padding: 4px 0;
   border: 1px solid var(--border-strong);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--surface-elevated);
 }
 
 .tabbar {
-  height: 48px;
-  flex: 0 0 48px;
+  height: 40px;
+  flex: 0 0 40px;
   border-bottom: 1px solid var(--border-subtle);
   background: var(--surface-toolbar);
   overflow: hidden;
@@ -504,18 +548,18 @@ select:focus-visible {
 
 .tab {
   position: relative;
-  min-width: 210px;
-  max-width: 270px;
+  min-width: 150px;
+  max-width: 230px;
   height: 100%;
-  padding: 0 16px 0 20px;
+  padding: 0 9px 0 13px;
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: 8px;
   border: 0;
   border-right: 1px solid var(--border-subtle);
   background: transparent;
   cursor: pointer;
-  font-size: 15px;
+  font-size: 13px;
   color: var(--text-secondary);
   user-select: none;
   touch-action: pan-x;
@@ -556,7 +600,7 @@ select:focus-visible {
 
 .tab.active {
   color: var(--text-primary);
-  background: var(--accent-soft);
+  background: var(--surface-elevated);
 }
 
 .tab.active::after {
@@ -590,10 +634,10 @@ select:focus-visible {
 }
 
 .dirty-dot {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   margin-left: auto;
-  flex: 0 0 8px;
+  flex: 0 0 6px;
   border-radius: 50%;
   background: var(--accent-primary);
 }
@@ -610,6 +654,15 @@ select:focus-visible {
   color: inherit;
   background: transparent;
   cursor: pointer;
+  opacity: 0.35;
+  transition: opacity 120ms ease, background-color 120ms ease;
+}
+
+.tab:hover .tab-close,
+.tab.active .tab-close,
+.tab:focus-within .tab-close,
+.tab-close:focus-visible {
+  opacity: 1;
 }
 
 .dirty-dot + .tab-close {
@@ -621,9 +674,9 @@ select:focus-visible {
 }
 
 .new-tab {
-  width: 48px;
-  height: 48px;
-  flex: 0 0 48px;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
   border-radius: 0;
 }
 
@@ -647,7 +700,7 @@ select:focus-visible {
   place-content: center;
   gap: 10px;
   border: 2px dashed var(--accent-primary);
-  border-radius: 14px;
+  border-radius: 12px;
   color: var(--accent-primary);
   background: color-mix(in srgb, var(--accent-soft) 90%, transparent);
   pointer-events: none;
@@ -670,7 +723,7 @@ select:focus-visible {
   border-radius: 8px;
   color: var(--text-primary);
   background: var(--surface-elevated);
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.18);
+  box-shadow: var(--shadow-popup);
   pointer-events: none;
 }
 
@@ -688,7 +741,7 @@ select:focus-visible {
   border: 1px solid var(--border-strong);
   border-radius: 10px;
   background: var(--surface-elevated);
-  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.2);
+  box-shadow: var(--shadow-popup);
 }
 
 .tab-context-menu button {
@@ -767,41 +820,48 @@ select:focus-visible {
 }
 
 .statusbar {
-  min-height: 34px;
-  flex: 0 0 34px;
+  min-height: 30px;
+  flex: 0 0 30px;
   display: flex;
   align-items: center;
   gap: 0;
-  padding: 0 16px;
+  padding: 0 10px;
   border-top: 1px solid var(--border-subtle);
   background: var(--surface-toolbar);
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
 }
 
-.statusbar span {
-  padding: 0 16px;
-  border-left: 1px solid var(--border-subtle);
+.statusbar-group {
+  min-width: 0;
+  display: flex;
+  align-items: center;
 }
 
-.statusbar span:first-child {
-  padding-left: 0;
-  border-left: 0;
+.statusbar-position {
+  overflow: hidden;
+}
+
+.statusbar-group span {
+  padding: 0 8px;
 }
 
 .statusbar .status-spacer {
   flex: 1 1 auto;
-  border: 0;
+  padding: 0;
+}
+
+.statusbar-format {
+  border-left: 1px solid var(--border-subtle);
 }
 
 .status-format-select {
   min-width: 0;
-  height: 24px;
-  padding: 0 7px;
+  height: 22px;
+  padding: 0 6px;
   border: 0;
-  border-left: 1px solid var(--border-subtle);
   color: inherit;
   background: transparent;
   cursor: pointer;
@@ -820,33 +880,64 @@ select:focus-visible {
 }
 
 .searchbar {
-  min-height: 88px;
-  flex: 0 0 88px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 0 30px;
+  position: relative;
+  min-height: 52px;
+  flex: 0 0 52px;
+  display: grid;
+  grid-template-rows: 51px;
+  padding: 0 54px 0 14px;
   border-bottom: 1px solid var(--border-subtle);
   background: var(--surface-toolbar);
-  overflow-x: auto;
+  overflow: hidden;
+}
+
+.searchbar.replace-mode {
+  min-height: 92px;
+  flex-basis: 92px;
+  grid-template-rows: 46px 45px;
+}
+
+.searchbar-primary,
+.searchbar-replace {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.searchbar-replace {
+  gap: 8px;
+  padding-bottom: 7px;
+}
+
+.search-navigation,
+.search-options {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.search-navigation .icon-button {
+  width: 32px;
+  height: 32px;
 }
 
 .search-input-wrap {
-  height: 51px;
-  min-width: 300px;
-  flex: 1 1 360px;
+  height: 34px;
+  min-width: 160px;
+  flex: 1 1 320px;
   display: flex;
   align-items: center;
-  gap: 15px;
-  padding: 0 17px;
+  gap: 9px;
+  padding: 0 11px;
   border: 1px solid var(--border-strong);
-  border-radius: 9px;
+  border-radius: 7px;
   background: var(--surface-elevated);
 }
 
 .search-input-wrap:focus-within {
   border-color: var(--accent-primary);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
 .search-input-wrap.no-match {
@@ -872,34 +963,44 @@ select:focus-visible {
 }
 
 .replace-input {
-  height: 51px;
-  width: 230px;
-  padding: 0 18px;
+  height: 34px;
+  min-width: 180px;
+  max-width: 420px;
+  flex: 1 1 320px;
+  padding: 0 11px;
   border: 1px solid var(--border-strong);
-  border-radius: 9px;
+  border-radius: 7px;
   background: var(--surface-elevated);
 }
 
 .match-count {
-  min-width: 88px;
+  min-width: 72px;
+  max-width: 120px;
   color: var(--text-secondary);
-  font-size: 15px;
+  font-size: 12px;
   text-align: center;
 }
 
 .check-control {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 5px;
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: 12px;
   white-space: nowrap;
 }
 
 .check-control input {
-  width: 19px;
-  height: 19px;
+  width: 16px;
+  height: 16px;
   accent-color: var(--accent-primary);
+}
+
+.check-control-compact {
+  display: none;
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 650;
 }
 
 .button-primary,
@@ -950,18 +1051,31 @@ select:focus-visible {
 }
 
 .search-action {
-  min-width: 110px;
-  height: 48px;
+  min-width: 76px;
+  min-height: 34px;
+  height: 34px;
+  padding: 0 14px;
   white-space: nowrap;
 }
 
+.search-close {
+  position: absolute;
+  z-index: 2;
+  top: 8px;
+  right: 12px;
+}
+
+.replace-mode .search-close {
+  top: 6px;
+}
+
 .notice-bar {
-  min-height: 58px;
+  min-height: 48px;
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 18px;
-  padding: 8px 26px;
+  gap: 14px;
+  padding: 7px 18px;
   border-bottom: 1px solid var(--accent-border);
   background: var(--accent-soft);
   color: var(--text-primary);
@@ -988,8 +1102,8 @@ select:focus-visible {
 }
 
 .notice-bar.warning {
-  background: #fff8e8;
-  border-color: #efd9a1;
+  background: color-mix(in srgb, var(--warning) 10%, var(--surface-toolbar));
+  border-color: color-mix(in srgb, var(--warning) 36%, var(--border-subtle));
 }
 
 .toast {
@@ -1001,7 +1115,7 @@ select:focus-visible {
   border: 1px solid var(--border-strong);
   border-radius: 9px;
   background: var(--surface-elevated);
-  box-shadow: 0 10px 28px rgba(28, 49, 50, 0.16);
+  box-shadow: var(--shadow-popup);
   transform: translateX(-50%);
   color: var(--text-primary);
 }
@@ -1794,11 +1908,11 @@ select:focus-visible {
   flex: 1;
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(320px, 520px) minmax(260px, 420px);
+  grid-template-columns: minmax(320px, 480px) minmax(280px, 380px);
   align-content: center;
   justify-content: center;
-  gap: 46px;
-  padding: 48px;
+  gap: 40px;
+  padding: 44px;
   background: var(--surface-editor);
   color: var(--text-primary);
 }
@@ -1806,14 +1920,14 @@ select:focus-visible {
 .welcome-hero {
   display: flex;
   align-items: center;
-  gap: 18px;
-  margin-bottom: 28px;
+  gap: 16px;
+  margin-bottom: 22px;
 }
 
 .welcome-hero .app-logo {
-  width: 58px;
-  height: 58px;
-  border-radius: 16px;
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
 }
 
 .welcome h1,
@@ -1822,7 +1936,7 @@ select:focus-visible {
 }
 
 .welcome h1 {
-  font-size: 26px;
+  font-size: 24px;
   line-height: 1.25;
 }
 
@@ -1835,7 +1949,7 @@ select:focus-visible {
 .welcome-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: 10px;
 }
 
 .welcome-action,
@@ -1843,17 +1957,17 @@ select:focus-visible {
   border: 1px solid var(--border-soft);
   background: var(--surface-raised);
   color: var(--text-primary);
-  border-radius: 12px;
+  border-radius: 10px;
   cursor: pointer;
   text-align: left;
 }
 
 .welcome-action {
-  min-height: 76px;
-  padding: 15px;
+  min-height: 64px;
+  padding: 12px 13px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .welcome-action:hover,
@@ -1888,9 +2002,9 @@ select:focus-visible {
 
 .recent-panel {
   min-width: 0;
-  padding: 24px;
+  padding: 20px;
   border: 1px solid var(--border-soft);
-  border-radius: 16px;
+  border-radius: 12px;
   background: var(--surface-window);
 }
 
@@ -1967,6 +2081,8 @@ select:focus-visible {
     grid-template-columns: minmax(0, 620px);
     overflow: auto;
     align-content: start;
+    gap: 28px;
+    padding: 32px;
   }
 }
 
@@ -1977,22 +2093,54 @@ select:focus-visible {
   margin-top: 28px;
 }
 
-@media (max-width: 1240px) {
-  .toolbar-action {
-    min-width: 72px;
-    gap: 10px;
+@media (max-width: 1080px) {
+  .search-options .check-control {
+    width: 42px;
+    height: 30px;
+    justify-content: center;
   }
 
-  .toolbar-action span {
+  .search-options .check-control-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .search-options .check-control-compact {
+    display: inline;
+  }
+}
+
+@container (max-width: 520px) {
+  .status-selection,
+  .status-characters,
+  .status-lines,
+  .status-file-type {
     display: none;
   }
 
-  .tab {
-    min-width: 190px;
+  .statusbar {
+    padding-inline: 5px;
   }
 
-  .searchbar .check-control span {
-    display: none;
+  .statusbar-group span {
+    padding-inline: 5px;
+  }
+}
+
+@media (max-width: 780px) {
+  .statusbar {
+    padding: 0 5px;
+    font-size: 11px;
+  }
+
+  .statusbar-group span {
+    padding: 0 5px;
   }
 }
 
