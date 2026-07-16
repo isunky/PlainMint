@@ -152,6 +152,7 @@ struct BackupRequest {
     content: String,
     encoding: Encoding,
     line_ending: LineEnding,
+    reason: Option<RecoveryReason>,
     retention_days: u64,
     max_versions: usize,
 }
@@ -167,6 +168,17 @@ struct BackupFile {
     content: String,
     encoding: Encoding,
     line_ending: LineEnding,
+    #[serde(default)]
+    reason: RecoveryReason,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum RecoveryReason {
+    #[default]
+    Automatic,
+    ConflictLocal,
+    ConflictDisk,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -180,6 +192,7 @@ struct RecoveryEntry {
     size: usize,
     encoding: Encoding,
     line_ending: LineEnding,
+    reason: RecoveryReason,
     status: RecoveryStatus,
 }
 
@@ -234,23 +247,27 @@ fn hash_bytes(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
-fn fingerprint(path: &Path) -> CommandResult<FileFingerprint> {
-    let metadata = fs::metadata(path).map_err(|error| AppError::io("file_missing", error))?;
+fn fingerprint_from_bytes(metadata: &fs::Metadata, bytes: &[u8]) -> FileFingerprint {
     let modified_at = metadata
         .modified()
         .ok()
         .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
         .map(|duration| duration.as_millis() as u64)
         .unwrap_or_default();
+    FileFingerprint {
+        modified_at,
+        size: bytes.len() as u64,
+        hash: hash_bytes(bytes),
+    }
+}
+
+fn fingerprint(path: &Path) -> CommandResult<FileFingerprint> {
+    let metadata = fs::metadata(path).map_err(|error| AppError::io("file_missing", error))?;
     let mut file = File::open(path).map_err(|error| AppError::io("file_open_failed", error))?;
     let mut bytes = Vec::with_capacity(metadata.len().min(32 * 1024 * 1024) as usize);
     file.read_to_end(&mut bytes)
         .map_err(|error| AppError::io("file_read_failed", error))?;
-    Ok(FileFingerprint {
-        modified_at,
-        size: metadata.len(),
-        hash: hash_bytes(&bytes),
-    })
+    Ok(fingerprint_from_bytes(&metadata, &bytes))
 }
 
 fn detect_line_ending(content: &str) -> LineEnding {
@@ -632,7 +649,7 @@ fn open_file(request: OpenFileRequest) -> CommandResult<OpenedDocument> {
         encoding,
         line_ending,
         read_only,
-        fingerprint: Some(fingerprint(&path)?),
+        fingerprint: Some(fingerprint_from_bytes(&metadata, &bytes)),
         recovered: false,
     })
 }
@@ -905,6 +922,7 @@ fn write_backup(app: AppHandle, request: BackupRequest) -> CommandResult<()> {
         content: request.content,
         encoding: request.encoding,
         line_ending: request.line_ending,
+        reason: request.reason.unwrap_or_default(),
     };
     let path = directory.join(format!("{}-{}.json", backup.created_at, backup.id));
     let bytes = serde_json::to_vec(&backup).map_err(|error| {
@@ -969,6 +987,7 @@ fn recovery_entry_from_path(path: &Path) -> RecoveryEntry {
             size: backup.content.len(),
             encoding: backup.encoding,
             line_ending: backup.line_ending,
+            reason: backup.reason,
             status: RecoveryStatus::Ready,
         },
         Err(_) => RecoveryEntry {
@@ -991,6 +1010,7 @@ fn recovery_entry_from_path(path: &Path) -> RecoveryEntry {
                 .unwrap_or_default(),
             encoding: Encoding::Utf8,
             line_ending: LineEnding::Lf,
+            reason: RecoveryReason::Automatic,
             status: RecoveryStatus::Corrupted,
         },
     }
@@ -1136,6 +1156,7 @@ mod tests {
             content: format!("content-{id}"),
             encoding: Encoding::Utf8,
             line_ending: LineEnding::Lf,
+            reason: RecoveryReason::Automatic,
         };
         let path = directory.join(format!("{created_at}-{id}.json"));
         fs::write(&path, serde_json::to_vec(&backup).unwrap()).unwrap();
@@ -1195,6 +1216,21 @@ mod tests {
             let (decoded, _) = decode_bytes(&bytes, None).unwrap();
             assert_eq!(decoded, input);
         }
+    }
+
+    #[test]
+    fn fingerprints_match_the_exact_opened_bytes() {
+        let directory = test_directory("fingerprint-bytes");
+        let path = directory.join("notes.txt");
+        let bytes = b"same bytes used for open";
+        fs::write(&path, bytes).unwrap();
+
+        let metadata = fs::metadata(&path).unwrap();
+        let result = fingerprint_from_bytes(&metadata, bytes);
+
+        assert_eq!(result.size, bytes.len() as u64);
+        assert_eq!(result.hash, hash_bytes(bytes));
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

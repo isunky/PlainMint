@@ -36,6 +36,34 @@ describe("document history", () => {
   });
 });
 
+describe("disk reload", () => {
+  it("replaces a clean document only at the expected revision and clears history", () => {
+    const id = "disk-reload";
+    useAppStore.setState((state) => ({
+      documents: { ...state.documents, [id]: { ...documentRecord(id), dirty: false, externalModified: true, revision: 4 } },
+      histories: {
+        ...state.histories,
+        [id]: { undo: [{ forward: ChangeSet.of([], 0), inverse: ChangeSet.of([], 0) }], redo: [] },
+      },
+    }));
+    const opened = {
+      path: "C:\\disk-reload.txt",
+      name: "disk-reload.txt",
+      content: "from disk",
+      encoding: "utf-8" as const,
+      lineEnding: "crlf" as const,
+      readOnly: false,
+      fingerprint: { modifiedAt: 10, size: 9, hash: "disk" },
+    };
+
+    expect(useAppStore.getState().replaceDocumentFromDisk(id, opened, 3)).toBe(false);
+    expect(useAppStore.getState().replaceDocumentFromDisk(id, opened, 4)).toBe(true);
+    const document = useAppStore.getState().documents[id];
+    expect(document).toMatchObject({ content: "from disk", dirty: false, externalModified: false, revision: 5, lineEnding: "crlf" });
+    expect(useAppStore.getState().histories[id]).toEqual({ undo: [], redo: [] });
+  });
+});
+
 describe("workspace session", () => {
   it("restores valid tabs and removes references to missing documents", () => {
     const session: WorkspaceSession = {

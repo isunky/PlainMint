@@ -46,6 +46,7 @@ interface AppState {
   undoDocument: (documentId: string) => void;
   redoDocument: (documentId: string) => void;
   markSaved: (documentId: string, filePath: string, savedRevision: number, fingerprint?: DocumentRecord["fingerprint"]) => void;
+  replaceDocumentFromDisk: (documentId: string, opened: OpenedDocument, expectedRevision: number) => boolean;
   updateDocumentFlags: (documentId: string, flags: Partial<Pick<DocumentRecord, "readOnly" | "missing" | "externalModified">>) => void;
   setSearch: (patch: Partial<SearchState>) => void;
   replaceCurrent: (documentId: string, from: number, to: number, value: string) => void;
@@ -523,6 +524,40 @@ export const useAppStore = create<AppState>((set, get) => ({
       },
     };
   }),
+
+  replaceDocumentFromDisk: (documentId, opened, expectedRevision) => {
+    let replaced = false;
+    set((state) => {
+      const document = state.documents[documentId];
+      if (!document || document.revision !== expectedRevision) return state;
+      replaced = true;
+      return {
+        documents: {
+          ...state.documents,
+          [documentId]: {
+            ...document,
+            filePath: opened.path || document.filePath,
+            fileName: opened.name,
+            content: opened.content,
+            encoding: opened.encoding,
+            lineEnding: opened.lineEnding,
+            readOnly: opened.readOnly,
+            missing: false,
+            externalModified: false,
+            fingerprint: opened.fingerprint,
+            dirty: false,
+            revision: document.revision + 1,
+            patch: undefined,
+          },
+        },
+        histories: {
+          ...state.histories,
+          [documentId]: { undo: [], redo: [] },
+        },
+      };
+    });
+    return replaced;
+  },
 
   updateDocumentFlags: (documentId, flags) => set((state) => {
     const document = state.documents[documentId];

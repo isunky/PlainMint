@@ -1347,6 +1347,119 @@ select:focus-visible {
   color: var(--text-secondary);
 }
 
+.conflict-modal {
+  width: min(1240px, calc(100vw - 80px));
+  height: min(760px, calc(100vh - 80px));
+  min-height: 420px;
+  padding: 24px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  background: var(--surface-elevated);
+  box-shadow: 0 24px 70px rgba(25, 36, 43, 0.22);
+}
+
+.conflict-modal header h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.conflict-modal header p,
+.conflict-message,
+.conflict-compare-fallback {
+  margin: 5px 0 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.conflict-message {
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid color-mix(in srgb, var(--warning) 55%, var(--border-subtle));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+}
+
+.conflict-compare {
+  min-height: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.conflict-compare-labels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  flex: 0 0 auto;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  background: var(--border-subtle);
+}
+
+.conflict-compare-labels span {
+  padding: 8px 12px;
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.conflict-merge-host,
+.conflict-plain-views {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0 0 8px 8px;
+}
+
+.conflict-merge-host .cm-mergeView,
+.conflict-merge-host .cm-editor,
+.conflict-plain-views .cm-editor {
+  height: 100%;
+}
+
+.conflict-merge-host .cm-mergeView {
+  overflow: auto;
+}
+
+.conflict-plain-views {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.conflict-plain-views > div {
+  min-width: 0;
+  min-height: 0;
+}
+
+.conflict-plain-views > div + div {
+  border-left: 1px solid var(--border-subtle);
+}
+
+.conflict-actions {
+  flex-wrap: wrap;
+}
+
+@media (max-width: 720px) {
+  .conflict-modal {
+    width: calc(100vw - 24px);
+    height: calc(100vh - 24px);
+    padding: 18px;
+  }
+
+  .conflict-actions .button-secondary,
+  .conflict-actions .button-danger {
+    flex: 1 1 45%;
+  }
+}
+
 .update-modal-backdrop {
   z-index: 40;
 }
