@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { defaultSettings } from "../store";
 import type { DocumentRecord } from "../types";
 
 const mocks = vi.hoisted(() => ({
@@ -18,7 +19,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({ open: mocks.open, save: mocks.save
 vi.mock("@tauri-apps/plugin-process", () => ({ relaunch: mocks.relaunch }));
 vi.mock("@tauri-apps/plugin-updater", () => ({ check: mocks.check }));
 
-import { checkForUpdates, encodedByteLength, getAppVersion, saveDocument } from "./runtime";
+import { checkForUpdates, encodedByteLength, getAppVersion, saveDocument, writeSafetyRecovery } from "./runtime";
 
 function document(patch: Partial<DocumentRecord> = {}): DocumentRecord {
   return {
@@ -67,12 +68,48 @@ describe("save dialog defaults", () => {
     expect(mocks.join).not.toHaveBeenCalled();
     expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ defaultPath: existing.filePath }));
   });
+
+  it("rejects a conflict copy that targets the original path", async () => {
+    const existing = document({ filePath: "C:\\Existing\\notes.txt", fileName: "notes.txt" });
+    mocks.save.mockResolvedValue("c:\\existing\\notes.txt");
+
+    await expect(saveDocument(existing, { forceSaveAs: true, requireDifferentPath: existing.filePath })).rejects.toEqual({ code: "same_file_path" });
+    expect(mocks.invoke).not.toHaveBeenCalled();
+  });
+
+  it("sends an accepted disk fingerprint when overwriting a reviewed conflict", async () => {
+    const existing = document({ filePath: "C:\\Existing\\notes.txt", fileName: "notes.txt" });
+    const fingerprint = { modifiedAt: 7, size: 4, hash: "disk-hash" };
+
+    await saveDocument(existing, { acceptedExternalFingerprint: fingerprint });
+
+    expect(mocks.invoke).toHaveBeenCalledWith("save_file", expect.objectContaining({
+      request: expect.objectContaining({ expectedFingerprint: fingerprint }),
+    }));
+  });
 });
 
 describe("encoded file size", () => {
   it("accounts for BOMs, UTF-16 units, and converted line endings", () => {
     expect(encodedByteLength(document({ content: "a\nb", encoding: "utf-8-bom", lineEnding: "crlf" }))).toBe(7);
     expect(encodedByteLength(document({ content: "a😀", encoding: "utf-16le" }))).toBe(8);
+  });
+});
+
+describe("conflict safety backups", () => {
+  it("creates a forced recovery copy even when automatic backups are disabled", async () => {
+    await writeSafetyRecovery({
+      documentId: "doc-1",
+      fileName: "notes.txt",
+      originalPath: "C:\\notes.txt",
+      content: "safe local copy",
+      encoding: "utf-8",
+      lineEnding: "lf",
+    }, { ...defaultSettings, autoBackupEnabled: false }, "conflict-local");
+
+    expect(mocks.invoke).toHaveBeenCalledWith("write_backup", expect.objectContaining({
+      request: expect.objectContaining({ reason: "conflict-local", content: "safe local copy" }),
+    }));
   });
 });
 

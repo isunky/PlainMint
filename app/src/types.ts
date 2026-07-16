@@ -131,8 +131,11 @@ export interface RecoveryEntry {
   size: number;
   encoding: Encoding;
   lineEnding: LineEnding;
+  reason: RecoveryReason;
   status: "ready" | "corrupted";
 }
+
+export type RecoveryReason = "automatic" | "conflict-local" | "conflict-disk";
 
 export interface BatchRecoveryResult {
   documents: OpenedDocument[];

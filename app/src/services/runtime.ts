@@ -13,6 +13,7 @@ import type {
   DocumentRecord,
   FileFingerprint,
   OpenedDocument,
+  RecoveryReason,
   RecoveryEntry,
   RecentlyClosedTab,
   SaveResult,
@@ -24,6 +25,17 @@ import type {
 export interface SaveDocumentOptions {
   forceSaveAs?: boolean;
   defaultSaveFolder?: string;
+  acceptedExternalFingerprint?: FileFingerprint;
+  requireDifferentPath?: string;
+}
+
+export interface RecoverySnapshot {
+  documentId: string;
+  fileName: string;
+  originalPath?: string;
+  content: string;
+  encoding: DocumentRecord["encoding"];
+  lineEnding: DocumentRecord["lineEnding"];
 }
 
 export interface UpdateInstallProgress {
@@ -53,6 +65,10 @@ const filters = [{
 
 function webFingerprint(content: string): FileFingerprint {
   return { modifiedAt: Date.now(), size: new TextEncoder().encode(content).length, hash: "web-preview" };
+}
+
+function samePath(left: string, right: string) {
+  return left.replace(/\\/g, "/").toLocaleLowerCase() === right.replace(/\\/g, "/").toLocaleLowerCase();
 }
 
 export async function chooseAndOpenDocuments(): Promise<OpenedDocument[]> {
@@ -88,7 +104,7 @@ export function encodedByteLength(document: Pick<DocumentRecord, "content" | "en
 }
 
 export async function saveDocument(document: DocumentRecord, options: SaveDocumentOptions = {}): Promise<SaveResult | null> {
-  const { forceSaveAs = false, defaultSaveFolder } = options;
+  const { forceSaveAs = false, defaultSaveFolder, acceptedExternalFingerprint, requireDifferentPath } = options;
   let path = forceSaveAs ? undefined : document.filePath;
   if (isTauri() && !path) {
     const fileName = document.fileName === "Untitled" ? "untitled.txt" : document.fileName;
@@ -104,6 +120,9 @@ export async function saveDocument(document: DocumentRecord, options: SaveDocume
   }
   if (!path && !isTauri()) path = document.fileName;
   if (!path) return null;
+  if (forceSaveAs && requireDifferentPath && samePath(path, requireDifferentPath)) {
+    throw { code: "same_file_path" };
+  }
   if (!isTauri()) {
     return { path, fingerprint: webFingerprint(document.content), savedAt: Date.now() };
   }
@@ -113,7 +132,7 @@ export async function saveDocument(document: DocumentRecord, options: SaveDocume
       content: document.content,
       encoding: document.encoding,
       lineEnding: document.lineEnding,
-      expectedFingerprint: forceSaveAs ? null : document.fingerprint ?? null,
+      expectedFingerprint: forceSaveAs ? null : acceptedExternalFingerprint ?? document.fingerprint ?? null,
     },
   });
 }
@@ -246,19 +265,35 @@ export async function copyText(text: string) {
 
 export async function writeRecovery(document: DocumentRecord, settings: UserSettings) {
   if (!settings.autoBackupEnabled || !document.dirty) return;
+  await writeBackup({
+    documentId: document.id,
+    fileName: document.fileName,
+    originalPath: document.filePath,
+    content: document.content,
+    encoding: document.encoding,
+    lineEnding: document.lineEnding,
+  }, settings, "automatic");
+}
+
+async function writeBackup(snapshot: RecoverySnapshot, settings: UserSettings, reason: RecoveryReason) {
   if (!isTauri()) return;
   await invoke("write_backup", {
     request: {
-      documentId: document.id,
-      fileName: document.fileName,
-      originalPath: document.filePath ?? null,
-      content: document.content,
-      encoding: document.encoding,
-      lineEnding: document.lineEnding,
+      documentId: snapshot.documentId,
+      fileName: snapshot.fileName,
+      originalPath: snapshot.originalPath ?? null,
+      content: snapshot.content,
+      encoding: snapshot.encoding,
+      lineEnding: snapshot.lineEnding,
+      reason,
       retentionDays: settings.backupRetentionDays,
       maxVersions: settings.maxBackupVersionsPerFile,
     },
   });
+}
+
+export async function writeSafetyRecovery(snapshot: RecoverySnapshot, settings: UserSettings, reason: Exclude<RecoveryReason, "automatic">) {
+  await writeBackup(snapshot, settings, reason);
 }
 
 export async function pruneRecoveries(settings: UserSettings) {

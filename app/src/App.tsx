@@ -30,6 +30,7 @@ import { isAutoSaveEligible, isAutoSaveRevisionSuppressed } from "./autoSavePoli
 import { needsSaveConfirmation } from "./closePolicy";
 import { createWorkspaceSession, decideStartupRecovery } from "./recoveryPolicy";
 import { resolveInitialSaveFolder } from "./saveFolderPolicy";
+import { ConflictCompareView } from "./components/ConflictCompareView";
 import { SettingsModal } from "./components/SettingsModal";
 import {
   findNextInPane,
@@ -68,10 +69,11 @@ import {
   toggleMaximizeWindow,
   validateDirectory,
   writeRecovery,
+  writeSafetyRecovery,
 } from "./services/runtime";
 import type { UpdateCheckResult, UpdateInstallProgress } from "./services/runtime";
 import { useAppStore } from "./store";
-import type { DirectoryValidationResult, DocumentRecord, PaneId, RecoveryEntry, RecentlyClosedTab, UserSettings, WorkspaceSession } from "./types";
+import type { DirectoryValidationResult, DocumentRecord, FileFingerprint, OpenedDocument, PaneId, RecoveryEntry, RecentlyClosedTab, UserSettings, WorkspaceSession } from "./types";
 
 type ModalState =
   | { type: "none" }
@@ -80,7 +82,16 @@ type ModalState =
   | { type: "startup-recovery"; session: WorkspaceSession }
   | { type: "exit"; documents: DocumentRecord[] }
   | { type: "bulk-close"; targets: TabCloseTarget[]; documents: DocumentRecord[] }
-  | { type: "close-tab"; pane: PaneId; tabId: string; document: DocumentRecord };
+  | { type: "close-tab"; pane: PaneId; tabId: string; document: DocumentRecord }
+  | {
+    type: "conflict";
+    documentId: string;
+    revision: number;
+    disk: OpenedDocument;
+    phase: "compare" | "confirm-overwrite";
+    busy?: "save-copy" | "reload" | "overwrite";
+    message?: "disk-changed" | "backup-failed" | "same-path" | "action-failed";
+  };
 
 type TabCloseTarget = { pane: PaneId; tabId: string };
 
@@ -135,6 +146,21 @@ const accentMap = {
   coral: "#E96F61",
   iris: "#8B6FD6",
 };
+
+function sameFingerprint(left?: FileFingerprint | null, right?: FileFingerprint | null) {
+  return Boolean(left && right && left.hash === right.hash);
+}
+
+function recoverySnapshot(document: DocumentRecord) {
+  return {
+    documentId: document.id,
+    fileName: document.fileName,
+    originalPath: document.filePath,
+    content: document.content,
+    encoding: document.encoding,
+    lineEnding: document.lineEnding,
+  };
+}
 
 function IconButton({
   label,
@@ -607,7 +633,7 @@ function RecoveryModal({ onClose }: { onClose: () => void }) {
               <FileText size={22} />
               <div>
                 <strong>{entry.status === "corrupted" ? t("damagedBackup") : entry.fileName}</strong>
-                <span>{entry.status === "corrupted" ? t("damagedBackupDescription") : `${new Date(entry.createdAt).toLocaleString()} · ${Math.max(1, Math.round(entry.size / 1024))} KB`}</span>
+                <span>{entry.status === "corrupted" ? t("damagedBackupDescription") : `${new Date(entry.createdAt).toLocaleString()} · ${t(`recoveryReason_${entry.reason}`)} · ${Math.max(1, Math.round(entry.size / 1024))} KB`}</span>
               </div>
               {entry.status === "ready" && <button type="button" className="button-secondary" disabled={busy} onClick={() => void recover([entry.id])}>{t("recover")}</button>}
               <button type="button" className="icon-button" disabled={busy} aria-label={t("delete")} onClick={() => {
@@ -765,6 +791,71 @@ function UpdateModal({ state, onClose, onInstall }: {
   );
 }
 
+function ConflictModal({
+  modal,
+  document,
+  onLater,
+  onSaveCopy,
+  onReload,
+  onRequestOverwrite,
+  onCancelOverwrite,
+  onConfirmOverwrite,
+}: {
+  modal: Extract<ModalState, { type: "conflict" }>;
+  document: DocumentRecord;
+  onLater: () => void;
+  onSaveCopy: () => void;
+  onReload: () => void;
+  onRequestOverwrite: () => void;
+  onCancelOverwrite: () => void;
+  onConfirmOverwrite: () => void;
+}) {
+  const { t } = useTranslation();
+  const busy = Boolean(modal.busy);
+  if (modal.phase === "confirm-overwrite") {
+    return (
+      <div className="modal-backdrop">
+        <section className="confirm-modal conflict-confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="conflict-overwrite-title">
+          <h2 id="conflict-overwrite-title">{t("conflictOverwriteTitle")}</h2>
+          <p>{t("conflictOverwriteBody", { name: document.fileName })}</p>
+          <div className="modal-actions">
+            <button type="button" className="button-secondary" disabled={busy} onClick={onCancelOverwrite}>{t("cancel")}</button>
+            <button type="button" className="button-danger" disabled={busy} onClick={onConfirmOverwrite}>{t("conflictOverwrite")}</button>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
+  const message = modal.message ? t(`conflictMessage_${modal.message}`) : undefined;
+  return (
+    <div className="modal-backdrop">
+      <section className="conflict-modal" role="dialog" aria-modal="true" aria-labelledby="conflict-title">
+        <header>
+          <div>
+            <h2 id="conflict-title">{t("conflictTitle")}</h2>
+            <p>{t("conflictBody", { name: document.fileName })}</p>
+          </div>
+        </header>
+        {message && <p className="conflict-message" role="status">{message}</p>}
+        <ConflictCompareView
+          localContent={document.content}
+          diskContent={modal.disk.content}
+          localLabel={t("conflictLocalVersion")}
+          diskLabel={t("conflictDiskVersion")}
+          largeFileMessage={t("conflictLargeFile")}
+        />
+        <div className="modal-actions conflict-actions">
+          <button type="button" className="button-secondary" disabled={busy} onClick={onLater}>{t("conflictLater")}</button>
+          <button type="button" className="button-secondary" disabled={busy} onClick={onSaveCopy}>{t("conflictSaveCopy")}</button>
+          <button type="button" className="button-danger" disabled={busy} onClick={onReload}>{t("conflictReload")}</button>
+          <button type="button" className="button-danger" disabled={busy || !modal.disk.fingerprint} onClick={onRequestOverwrite}>{t("conflictOverwrite")}</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function TabContextMenu({ menu, filePath, hasTabsToRight, hasOtherTabs, recent, showCloseSplit, onDismiss, onNew, onClose, onCloseOthers, onCloseRight, onMove, onCopyPath, onCloseSplit, onReopen }: {
   menu: TabContextMenuState;
   filePath?: string;
@@ -852,6 +943,7 @@ export function App() {
   const undoDocument = useAppStore((state) => state.undoDocument);
   const redoDocument = useAppStore((state) => state.redoDocument);
   const markSaved = useAppStore((state) => state.markSaved);
+  const replaceDocumentFromDisk = useAppStore((state) => state.replaceDocumentFromDisk);
   const setSearch = useAppStore((state) => state.setSearch);
   const updateSettings = useAppStore((state) => state.updateSettings);
   const loadSettingsIntoStore = useAppStore((state) => state.loadSettings);
@@ -874,6 +966,8 @@ export function App() {
   const backupTimers = useRef<Record<string, number>>({});
   const idleSaveTimers = useRef<Record<string, { revision: number; timer: number }>>({});
   const saveInFlight = useRef(new Map<string, Promise<boolean>>());
+  const diskReadInFlight = useRef(new Set<string>());
+  const conflictReadInFlight = useRef(new Set<string>());
   const failedAutoSaveRevisions = useRef<Record<string, number>>({});
   const previousActiveDocuments = useRef<Record<PaneId, string | undefined>>({ left: undefined, right: undefined });
   const previousAutoSaveMode = useRef(settings.autoSaveMode);
@@ -889,6 +983,7 @@ export function App() {
 
   const activeDocumentId = tabs[activePane].find((tab) => tab.id === activeTab[activePane])?.documentId;
   const activeDocument = activeDocumentId ? documents[activeDocumentId] : undefined;
+  const conflictDocument = modal.type === "conflict" ? documents[modal.documentId] : undefined;
   const paneActiveDocumentIds: Record<PaneId, string | undefined> = {
     left: tabs.left.find((tab) => tab.id === activeTab.left)?.documentId,
     right: tabs.right.find((tab) => tab.id === activeTab.right)?.documentId,
@@ -997,6 +1092,26 @@ export function App() {
     return result.valid;
   }, []);
 
+  const openConflictModal = useCallback(async (documentId: string) => {
+    if (conflictReadInFlight.current.has(documentId)) return;
+    const snapshot = useAppStore.getState().documents[documentId];
+    if (!snapshot?.filePath) return;
+    const { filePath } = snapshot;
+    conflictReadInFlight.current.add(documentId);
+    try {
+      const disk = await openDocumentPath(filePath);
+      const current = useAppStore.getState().documents[documentId];
+      if (!current || current.filePath !== filePath) return;
+      updateDocumentFlags(documentId, { externalModified: true, missing: false });
+      setModal({ type: "conflict", documentId, revision: current.revision, disk, phase: "compare" });
+    } catch {
+      updateDocumentFlags(documentId, { missing: true });
+      flash(t("openFailed"));
+    } finally {
+      conflictReadInFlight.current.delete(documentId);
+    }
+  }, [flash, t, updateDocumentFlags]);
+
   const saveDocumentById = useCallback((documentId: string, intent: SaveIntent = {}) => {
     const existing = saveInFlight.current.get(documentId);
     if (existing) return existing;
@@ -1043,7 +1158,7 @@ export function App() {
       } catch (error) {
         if (appErrorCode(error) === "external_conflict") {
           updateDocumentFlags(snapshot.id, { externalModified: true });
-          if (!intent.automatic) flash(t("externalChanged"));
+          if (!intent.automatic) void openConflictModal(snapshot.id);
           return false;
         }
         if (intent.automatic) {
@@ -1060,7 +1175,7 @@ export function App() {
       if (saveInFlight.current.get(documentId) === task) saveInFlight.current.delete(documentId);
     });
     return task;
-  }, [flash, markSaved, rememberRecent, t, updateDocumentFlags]);
+  }, [flash, markSaved, openConflictModal, rememberRecent, t, updateDocumentFlags]);
 
   const openFiles = useCallback(async () => {
     try {
@@ -1104,6 +1219,102 @@ export function App() {
   const saveActive = useCallback((forceSaveAs = false) => (
     activeDocument ? saveDocumentById(activeDocument.id, { forceSaveAs }) : Promise.resolve(false)
   ), [activeDocument, saveDocumentById]);
+
+  const refreshConflictWithLatestDisk = useCallback(async (
+    conflict: Extract<ModalState, { type: "conflict" }>,
+    message: Extract<ModalState, { type: "conflict" }> ["message"] = "disk-changed",
+  ) => {
+    const document = useAppStore.getState().documents[conflict.documentId];
+    if (!document?.filePath) return;
+    try {
+      const disk = await openDocumentPath(document.filePath);
+      const current = useAppStore.getState().documents[conflict.documentId];
+      if (!current || current.filePath !== document.filePath) return;
+      setModal({ type: "conflict", documentId: current.id, revision: current.revision, disk, phase: "compare", message });
+    } catch {
+      updateDocumentFlags(conflict.documentId, { missing: true });
+      setModal((current) => current.type === "conflict" && current.documentId === conflict.documentId
+        ? { ...current, busy: undefined, message: "action-failed" }
+        : current);
+    }
+  }, [updateDocumentFlags]);
+
+  const handleConflictSaveCopy = useCallback(async () => {
+    if (modal.type !== "conflict") return;
+    const conflict = modal;
+    const document = useAppStore.getState().documents[conflict.documentId];
+    if (!document?.filePath || document.revision !== conflict.revision) return void refreshConflictWithLatestDisk(conflict);
+    setModal({ ...conflict, busy: "save-copy" });
+    try {
+      const result = await saveDocument(document, { forceSaveAs: true, requireDifferentPath: document.filePath });
+      if (!result) {
+        setModal((current) => current.type === "conflict" && current.documentId === conflict.documentId
+          ? { ...current, busy: undefined }
+          : current);
+        return;
+      }
+      markSaved(document.id, result.path, document.revision, result.fingerprint);
+      updateDocumentFlags(document.id, { externalModified: false, missing: false, readOnly: false });
+      rememberRecent([result.path]);
+      flash(t("saved"));
+      setModal({ type: "none" });
+    } catch (error) {
+      setModal((current) => current.type === "conflict" && current.documentId === conflict.documentId
+        ? { ...current, busy: undefined, message: appErrorCode(error) === "same_file_path" ? "same-path" : "action-failed" }
+        : current);
+    }
+  }, [flash, markSaved, modal, refreshConflictWithLatestDisk, rememberRecent, t, updateDocumentFlags]);
+
+  const handleConflictReload = useCallback(async () => {
+    if (modal.type !== "conflict") return;
+    const conflict = modal;
+    const document = useAppStore.getState().documents[conflict.documentId];
+    if (!document?.filePath || document.revision !== conflict.revision) return void refreshConflictWithLatestDisk(conflict);
+    setModal({ ...conflict, busy: "reload" });
+    try {
+      const latest = await openDocumentPath(document.filePath);
+      if (!sameFingerprint(latest.fingerprint, conflict.disk.fingerprint)) return void refreshConflictWithLatestDisk(conflict);
+      await writeSafetyRecovery(recoverySnapshot(document), useAppStore.getState().settings, "conflict-local");
+      if (!replaceDocumentFromDisk(document.id, latest, document.revision)) return void refreshConflictWithLatestDisk(conflict);
+      flash(t("fileReloaded"));
+      setModal({ type: "none" });
+    } catch {
+      setModal((current) => current.type === "conflict" && current.documentId === conflict.documentId
+        ? { ...current, busy: undefined, message: "backup-failed" }
+        : current);
+    }
+  }, [flash, modal, refreshConflictWithLatestDisk, replaceDocumentFromDisk, t]);
+
+  const handleConflictOverwrite = useCallback(async () => {
+    if (modal.type !== "conflict") return;
+    const conflict = modal;
+    const document = useAppStore.getState().documents[conflict.documentId];
+    if (!document?.filePath || document.revision !== conflict.revision) return void refreshConflictWithLatestDisk(conflict);
+    setModal({ ...conflict, busy: "overwrite" });
+    try {
+      const latest = await openDocumentPath(document.filePath);
+      if (!sameFingerprint(latest.fingerprint, conflict.disk.fingerprint)) return void refreshConflictWithLatestDisk(conflict);
+      await writeSafetyRecovery({
+        documentId: document.id,
+        fileName: latest.name,
+        originalPath: latest.path,
+        content: latest.content,
+        encoding: latest.encoding,
+        lineEnding: latest.lineEnding,
+      }, useAppStore.getState().settings, "conflict-disk");
+      const result = await saveDocument(document, { acceptedExternalFingerprint: latest.fingerprint ?? undefined });
+      if (!result) throw new Error("save-cancelled");
+      markSaved(document.id, result.path, document.revision, result.fingerprint);
+      updateDocumentFlags(document.id, { externalModified: false, missing: false });
+      flash(t("saved"));
+      setModal({ type: "none" });
+    } catch (error) {
+      if (appErrorCode(error) === "external_conflict") return void refreshConflictWithLatestDisk(conflict);
+      setModal((current) => current.type === "conflict" && current.documentId === conflict.documentId
+        ? { ...current, busy: undefined, message: "backup-failed" }
+        : current);
+    }
+  }, [flash, markSaved, modal, refreshConflictWithLatestDisk, t, updateDocumentFlags]);
 
   useEffect(() => {
     if (modal.type !== "settings") return;
@@ -1374,16 +1585,27 @@ export function App() {
     const timer = window.setInterval(() => {
       Object.values(documents).forEach((document) => {
         if (!document.filePath || !document.fingerprint || saveInFlight.current.has(document.id)) return;
-        void inspectFile(document.filePath).then((fingerprint) => {
+        const filePath = document.filePath;
+        void inspectFile(filePath).then((fingerprint) => {
           if (!fingerprint) return;
-          if (fingerprint.hash !== document.fingerprint?.hash) {
-            updateDocumentFlags(document.id, { externalModified: true });
-          }
+          if (fingerprint.hash === document.fingerprint?.hash || diskReadInFlight.current.has(document.id)) return;
+          diskReadInFlight.current.add(document.id);
+          void openDocumentPath(filePath).then((disk) => {
+            const current = useAppStore.getState().documents[document.id];
+            if (!current || current.filePath !== filePath) return;
+            if (current.dirty || current.revision !== document.revision) {
+              updateDocumentFlags(document.id, { externalModified: true });
+              return;
+            }
+            if (replaceDocumentFromDisk(document.id, disk, document.revision)) flash(t("fileReloaded"));
+          }).catch(() => updateDocumentFlags(document.id, { missing: true })).finally(() => {
+            diskReadInFlight.current.delete(document.id);
+          });
         }).catch(() => updateDocumentFlags(document.id, { missing: true }));
       });
     }, 4000);
     return () => window.clearInterval(timer);
-  }, [documents, updateDocumentFlags]);
+  }, [documents, flash, replaceDocumentFromDisk, t, updateDocumentFlags]);
 
   const updateTabDrag = useCallback((next: TabDragView | null) => {
     dragViewRef.current = next;
@@ -1596,7 +1818,7 @@ export function App() {
       {activeDocument?.externalModified && (
         <div className="notice-bar">
           <div><strong>{t("externalChanged")}</strong><span>{t("externalChangedBody")}</span></div>
-          <button type="button" className="button-secondary" onClick={() => updateDocumentFlags(activeDocument.id, { externalModified: false })}>{t("keepEditing")}</button>
+          <button type="button" className="button-secondary" onClick={() => void openConflictModal(activeDocument.id)}>{t("handleConflict")}</button>
         </div>
       )}
       {activeDocument?.missing && <div className="notice-bar warning"><span>{t("missingFile")}</span><button type="button" className="button-secondary" onClick={() => void saveActive(true)}>{t("saveAs")}</button></div>}
@@ -1695,6 +1917,18 @@ export function App() {
         />
       )}
       {modal.type === "recovery" && <RecoveryModal onClose={() => setModal({ type: "none" })} />}
+      {modal.type === "conflict" && conflictDocument && (
+        <ConflictModal
+          modal={modal}
+          document={conflictDocument}
+          onLater={() => setModal({ type: "none" })}
+          onSaveCopy={() => void handleConflictSaveCopy()}
+          onReload={() => void handleConflictReload()}
+          onRequestOverwrite={() => setModal((current) => current.type === "conflict" ? { ...current, phase: "confirm-overwrite", message: undefined } : current)}
+          onCancelOverwrite={() => setModal((current) => current.type === "conflict" ? { ...current, phase: "compare" } : current)}
+          onConfirmOverwrite={() => void handleConflictOverwrite()}
+        />
+      )}
       {modal.type === "startup-recovery" && (
         <StartupRecoveryModal
           session={modal.session}
