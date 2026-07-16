@@ -10,16 +10,19 @@ const mocks = vi.hoisted(() => ({
   check: vi.fn(),
   relaunch: vi.fn(),
   getVersion: vi.fn(),
+  listen: vi.fn(),
+  unlisten: vi.fn(),
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("@tauri-apps/api/app", () => ({ getVersion: mocks.getVersion }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen }));
 vi.mock("@tauri-apps/api/path", () => ({ join: mocks.join }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: mocks.open, save: mocks.save }));
 vi.mock("@tauri-apps/plugin-process", () => ({ relaunch: mocks.relaunch }));
 vi.mock("@tauri-apps/plugin-updater", () => ({ check: mocks.check }));
 
-import { checkForUpdates, encodedByteLength, getAppVersion, saveDocument, writeSafetyRecovery } from "./runtime";
+import { checkForUpdates, encodedByteLength, getAppVersion, inspectFileMetadata, listenForFileWatchChanges, saveDocument, syncFileWatches, writeSafetyRecovery } from "./runtime";
 
 function document(patch: Partial<DocumentRecord> = {}): DocumentRecord {
   return {
@@ -44,10 +47,38 @@ beforeEach(() => {
   mocks.join.mockResolvedValue("C:\\Default\\untitled.txt");
   mocks.save.mockResolvedValue("C:\\Default\\untitled.txt");
   mocks.getVersion.mockResolvedValue("1.2.3");
+  mocks.listen.mockResolvedValue(mocks.unlisten);
   mocks.invoke.mockResolvedValue({
     path: "C:\\Default\\untitled.txt",
     fingerprint: { modifiedAt: 1, size: 9, hash: "hash" },
     savedAt: 1,
+  });
+});
+
+describe("file watch runtime bridge", () => {
+  it("uses metadata-only inspection and synchronizes watched paths", async () => {
+    const metadata = { exists: true, modifiedAt: 4, size: 12, readOnly: false };
+    const status = { available: true, watchedFiles: 1, watchedDirectories: 1, failedDirectories: [] };
+    mocks.invoke.mockImplementation(async (command: string) => command === "inspect_file_metadata" ? metadata : status);
+
+    await expect(inspectFileMetadata("C:\\Notes\\alpha.txt")).resolves.toEqual(metadata);
+    await expect(syncFileWatches(["C:\\Notes\\alpha.txt"])).resolves.toEqual(status);
+
+    expect(mocks.invoke).toHaveBeenNthCalledWith(1, "inspect_file_metadata", { path: "C:\\Notes\\alpha.txt" });
+    expect(mocks.invoke).toHaveBeenNthCalledWith(2, "sync_file_watches", { paths: ["C:\\Notes\\alpha.txt"] });
+  });
+
+  it("forwards Rust file events and returns an unlisten handle", async () => {
+    const handler = vi.fn();
+    const dispose = await listenForFileWatchChanges(handler);
+    const eventHandler = mocks.listen.mock.calls[0][1] as (event: { payload: { paths: string[] } }) => void;
+
+    eventHandler({ payload: { paths: ["C:\\Notes\\alpha.txt"] } });
+    dispose();
+
+    expect(mocks.listen).toHaveBeenCalledWith("plainmint-file-watch-change", expect.any(Function));
+    expect(handler).toHaveBeenCalledWith(["C:\\Notes\\alpha.txt"]);
+    expect(mocks.unlisten).toHaveBeenCalledOnce();
   });
 });
 

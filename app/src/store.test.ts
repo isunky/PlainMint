@@ -62,6 +62,30 @@ describe("disk reload", () => {
     expect(document).toMatchObject({ content: "from disk", dirty: false, externalModified: false, revision: 5, lineEnding: "crlf" });
     expect(useAppStore.getState().histories[id]).toEqual({ undo: [], redo: [] });
   });
+
+  it("refreshes disk metadata without changing content, revision, dirty state, or history", () => {
+    const id = "disk-state";
+    useAppStore.setState((state) => ({
+      documents: { ...state.documents, [id]: { ...documentRecord(id), dirty: true, missing: true, revision: 8 } },
+      histories: {
+        ...state.histories,
+        [id]: { undo: [{ forward: ChangeSet.of([], 0), inverse: ChangeSet.of([], 0) }], redo: [] },
+      },
+    }));
+    const beforeHistory = useAppStore.getState().histories[id];
+
+    useAppStore.getState().refreshDocumentDiskState(id, `C:\\${id}.txt`, { modifiedAt: 12, size: 10, hash: "same" }, true);
+
+    expect(useAppStore.getState().documents[id]).toMatchObject({
+      content: id,
+      dirty: true,
+      missing: false,
+      readOnly: true,
+      revision: 8,
+      fingerprint: { modifiedAt: 12, size: 10, hash: "same" },
+    });
+    expect(useAppStore.getState().histories[id]).toBe(beforeHistory);
+  });
 });
 
 describe("workspace session", () => {
