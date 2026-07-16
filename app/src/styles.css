@@ -1218,16 +1218,6 @@ select:focus-visible {
   color: white;
 }
 
-.update-card {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-}
-
-.update-card div {
-  flex: 1;
-}
-
 .about-panel {
   max-width: 760px;
   margin: 24px auto;
@@ -1247,6 +1237,34 @@ select:focus-visible {
 
 .about-panel > p {
   color: var(--text-secondary);
+}
+
+.about-version {
+  margin: 14px 0 0;
+  color: var(--text-primary) !important;
+  font-weight: 600;
+}
+
+.about-author {
+  margin: 8px 0 0;
+}
+
+.about-author a {
+  color: var(--accent-primary);
+  text-decoration: none;
+}
+
+.about-author a:hover {
+  text-decoration: underline;
+}
+
+.shortcut-panel {
+  max-width: 760px;
+  margin: 24px auto;
+}
+
+.shortcut-panel .shortcut-card {
+  margin-top: 0;
 }
 
 .shortcut-card {
@@ -1478,6 +1496,33 @@ select:focus-visible {
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 650;
+}
+
+.about-update-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 28px auto 0;
+  padding: 18px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--surface-elevated);
+  text-align: left;
+}
+
+.about-update-card > div {
+  flex: 1;
+}
+
+.about-update-card h4,
+.about-update-card p {
+  margin: 0;
+}
+
+.about-update-card p {
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 13px;
 }
 
 .conflict-compare-labels strong,
@@ -1870,6 +1915,15 @@ select:focus-visible {
 
   .accent-options {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .about-update-card {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .about-update-card > div {
+    min-width: 0;
   }
 }
 

@@ -379,6 +379,10 @@ export async function showSourceCode() {
   await openUrl("https://github.com/isunky/PlainMint");
 }
 
+export async function showAuthorWebsite() {
+  await openUrl("http://www.sunky.net");
+}
+
 export async function minimizeWindow() {
   if (isTauri()) await getCurrentWindow().minimize();
 }

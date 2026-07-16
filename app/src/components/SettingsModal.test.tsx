@@ -13,6 +13,7 @@ const handlers = {
   onOpenRecovery: vi.fn(),
   onCheckUpdates: vi.fn(),
   onOpenSource: vi.fn(),
+  onOpenAuthorWebsite: vi.fn(),
 };
 
 beforeEach(async () => {
@@ -90,8 +91,8 @@ describe("settings runtime controls", () => {
     expect(handlers.onChange).toHaveBeenCalledWith({ spellCheckEnabled: true });
   });
 
-  it("lists editing shortcuts in the about section", () => {
-    render(<SettingsModal
+  it("shows shortcuts on their own page before the about page", () => {
+    const { container } = render(<SettingsModal
       settings={{ ...defaultSettings }}
       directoryChecks={{ defaultSaveFolder: { status: "idle" }, cloudSyncFolder: { status: "idle" } }}
       applying={false}
@@ -99,9 +100,38 @@ describe("settings runtime controls", () => {
       {...handlers}
     />);
 
-    fireEvent.click(screen.getByRole("button", { name: "About" }));
-    expect(screen.getByRole("heading", { name: "Keyboard shortcuts" })).toBeInTheDocument();
+    expect(Array.from(container.querySelectorAll(".settings-sidebar nav button")).map((button) => button.textContent)).toEqual([
+      "General", "Editor", "Files & folders", "Backup & recovery", "Appearance", "Keyboard shortcuts", "About",
+    ]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Keyboard shortcuts" }));
+    expect(screen.getAllByRole("heading", { name: "Keyboard shortcuts" })).toHaveLength(2);
     expect(screen.getByText("Go to line")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "About" }));
+    expect(screen.queryByRole("heading", { name: "Keyboard shortcuts" })).not.toBeInTheDocument();
+    expect(screen.getByText("Current version 0.1.0")).toBeInTheDocument();
+    expect(container.querySelector(".about-author")).toHaveTextContent("Author: Sunky");
+    const website = screen.getByRole("link", { name: "http://www.sunky.net" });
+    expect(website).toHaveAttribute("href", "http://www.sunky.net");
+    fireEvent.click(website);
+    expect(handlers.onOpenAuthorWebsite).toHaveBeenCalledOnce();
+  });
+
+  it("shows update results inside the about page", () => {
+    render(<SettingsModal
+      settings={{ ...defaultSettings }}
+      directoryChecks={{ defaultSaveFolder: { status: "idle" }, cloudSyncFolder: { status: "idle" } }}
+      applying={false}
+      canApply
+      updateCheckStatus="latest"
+      {...handlers}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "About" }));
+    expect(screen.getByText("You are using the latest version.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
+    expect(handlers.onCheckUpdates).toHaveBeenCalledOnce();
   });
 
   it("shows a directory error and prevents applying invalid settings", () => {

@@ -112,4 +112,19 @@ describe("application updates", () => {
     expect(runtimeMocks.install).not.toHaveBeenCalled();
     expect(screen.getByRole("status")).toHaveTextContent("Save or discard unsaved changes");
   });
+
+  it("shows a no-update result in the about page without a toast", async () => {
+    runtimeMocks.checkForUpdates.mockResolvedValue({ available: false });
+    useAppStore.setState((state) => ({ settings: { ...state.settings, autoCheckUpdates: false } }));
+
+    render(<App />);
+    await settle();
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "About" }));
+    fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
+    await settle();
+
+    expect(screen.getByText("You are using the latest version.")).toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
 });

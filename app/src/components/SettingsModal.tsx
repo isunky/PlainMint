@@ -6,6 +6,7 @@ import {
   FolderSimple,
   GearSix,
   Info,
+  Keyboard,
   PaintBrush,
   PencilSimple,
   ShieldCheck,
@@ -13,7 +14,7 @@ import {
 } from "@phosphor-icons/react";
 import type { AccentTheme, AppLocale, AppearanceMode, DirectoryValidationResult, Encoding, LineEnding, UserSettings } from "../types";
 
-type SettingsSection = "general" | "editor" | "files" | "backup" | "appearance" | "updates" | "about";
+type SettingsSection = "general" | "editor" | "files" | "backup" | "appearance" | "shortcuts" | "about";
 
 interface SettingsModalProps {
   settings: UserSettings;
@@ -25,6 +26,7 @@ interface SettingsModalProps {
   canApply: boolean;
   currentVersion?: string;
   checkingForUpdates?: boolean;
+  updateCheckStatus?: "idle" | "latest" | "failed";
   onChange: (patch: Partial<UserSettings>) => void;
   onApply: () => void;
   onCancel: () => void;
@@ -33,6 +35,7 @@ interface SettingsModalProps {
   onOpenRecovery: () => void;
   onCheckUpdates: () => void;
   onOpenSource: () => void;
+  onOpenAuthorWebsite: () => void;
 }
 
 function formatBytes(bytes: number, locale: string) {
@@ -98,6 +101,7 @@ export function SettingsModal({
   canApply,
   currentVersion = "0.1.0",
   checkingForUpdates = false,
+  updateCheckStatus = "idle",
   onChange,
   onApply,
   onCancel,
@@ -106,6 +110,7 @@ export function SettingsModal({
   onOpenRecovery,
   onCheckUpdates,
   onOpenSource,
+  onOpenAuthorWebsite,
 }: SettingsModalProps) {
   const { t, i18n } = useTranslation();
   const [section, setSection] = useState<SettingsSection>("general");
@@ -115,7 +120,7 @@ export function SettingsModal({
     { id: "files", label: t("filesFolders"), icon: FolderSimple },
     { id: "backup", label: t("backupRecovery"), icon: CloudArrowUp },
     { id: "appearance", label: t("appearance"), icon: PaintBrush },
-    { id: "updates", label: t("updates"), icon: ArrowsClockwise },
+    { id: "shortcuts", label: t("keyboardShortcuts"), icon: Keyboard },
     { id: "about", label: t("about"), icon: Info },
   ];
 
@@ -319,28 +324,8 @@ export function SettingsModal({
               </div>
             )}
 
-            {section === "updates" && (
-              <div className="settings-grid">
-                <section className="settings-card settings-card-wide update-card">
-                  <ArrowsClockwise size={36} color="var(--accent-primary)" />
-                  <div><h4>{t("currentVersion")} {currentVersion}</h4><p>{t("updateReadyDescription")}</p></div>
-                  <button type="button" className="button-secondary" disabled={checkingForUpdates} onClick={onCheckUpdates}>
-                    {checkingForUpdates ? t("checkingUpdates") : t("checkUpdates")}
-                  </button>
-                </section>
-              </div>
-            )}
-
-            {section === "about" && (
-              <div className="about-panel">
-                <img src="/plainmint-icon-source.png" alt="" />
-                <h3>{t("productName")}</h3>
-                <p>{t("productDescription")}</p>
-                <p className="privacy-copy">{t("privacy")}</p>
-                <div className="about-actions">
-                  <button type="button" className="button-secondary" onClick={onOpenSource}>{t("sourceCode")}</button>
-                  <span>{t("license")}</span>
-                </div>
+            {section === "shortcuts" && (
+              <div className="shortcut-panel">
                 <section className="shortcut-card" aria-labelledby="shortcut-title">
                   <h4 id="shortcut-title">{t("keyboardShortcuts")}</h4>
                   <div className="shortcut-list">
@@ -352,6 +337,29 @@ export function SettingsModal({
                       [t("deleteLine"), "Ctrl / ⌘ + Shift + K"], [t("indentSelection"), "Tab / Shift + Tab"],
                     ].map(([label, keys]) => <div className="shortcut-row" key={String(label)}><span>{label}</span><kbd>{keys}</kbd></div>)}
                   </div>
+                </section>
+              </div>
+            )}
+
+            {section === "about" && (
+              <div className="about-panel">
+                <img src="/plainmint-icon-source.png" alt="" />
+                <h3>{t("productName")}</h3>
+                <p>{t("productDescription")}</p>
+                <p className="about-version">{t("currentVersion")} {currentVersion}</p>
+                <p className="about-author">{t("author")}: Sunky · <a href="http://www.sunky.net" onClick={(event) => { event.preventDefault(); onOpenAuthorWebsite(); }}>http://www.sunky.net</a></p>
+                <p className="privacy-copy">{t("privacy")}</p>
+                <div className="about-actions">
+                  <button type="button" className="button-secondary" onClick={onOpenSource}>{t("sourceCode")}</button>
+                  <span>{t("license")}</span>
+                </div>
+                <section className="about-update-card" aria-labelledby="about-update-title">
+                  <ArrowsClockwise size={30} color="var(--accent-primary)" />
+                  <div>
+                    <h4 id="about-update-title">{t("updates")}</h4>
+                    <p>{checkingForUpdates ? t("checkingUpdates") : updateCheckStatus === "latest" ? t("latestVersion") : updateCheckStatus === "failed" ? t("updateCheckFailed") : t("updateReadyDescription")}</p>
+                  </div>
+                  <button type="button" className="button-secondary" disabled={checkingForUpdates} onClick={onCheckUpdates}>{checkingForUpdates ? t("checkingUpdates") : t("checkUpdates")}</button>
                 </section>
               </div>
             )}

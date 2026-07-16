@@ -74,6 +74,7 @@ import {
   saveDocument,
   syncFileWatches,
   showSourceCode,
+  showAuthorWebsite,
   toggleMaximizeWindow,
   validateDirectory,
   writeRecovery,
@@ -1026,6 +1027,7 @@ export function App() {
   const [matchIndex, setMatchIndex] = useState(0);
   const [appVersion, setAppVersion] = useState("0.1.0");
   const [checkingForUpdates, setCheckingForUpdates] = useState(false);
+  const [updateCheckStatus, setUpdateCheckStatus] = useState<"idle" | "latest" | "failed">("idle");
   const [updateDialog, setUpdateDialog] = useState<UpdateDialogState | null>(null);
   const [recentFiles, setRecentFiles] = useState<string[]>([]);
   const [hydrated, setHydrated] = useState(false);
@@ -1090,12 +1092,13 @@ export function App() {
     if (updateCheckInFlight.current) return;
     updateCheckInFlight.current = true;
     setCheckingForUpdates(true);
+    if (!automatic) setUpdateCheckStatus("idle");
     try {
       const result = await checkForUpdates();
       if (result.available) {
         setUpdateDialog({ update: result, status: "ready", progress: 0 });
-      } else if (!automatic) {
-        flash(result.error ? t("updateCheckFailed") : t("latestVersion"));
+      } else {
+        setUpdateCheckStatus(result.error ? "failed" : "latest");
       }
     } finally {
       updateCheckInFlight.current = false;
@@ -1150,7 +1153,7 @@ export function App() {
       return [];
     });
     flash(t("recentFilesCleared"));
-  }, [flash, t]);
+  }, []);
 
   const closeTargetsNow = useCallback((targets: TabCloseTarget[]) => {
     const state = useAppStore.getState();
@@ -2100,6 +2103,7 @@ export function App() {
           applying={settingsApplying}
           currentVersion={appVersion}
           checkingForUpdates={checkingForUpdates}
+          updateCheckStatus={updateCheckStatus}
           canApply={(["defaultSaveFolder", "cloudSyncFolder"] as DirectoryField[]).every((field) => (
             !settings[field] || directoryChecks[field].status === "valid"
           ))}
@@ -2115,6 +2119,7 @@ export function App() {
           onOpenRecovery={() => setModal({ type: "recovery" })}
           onCheckUpdates={() => void requestUpdateCheck(false)}
           onOpenSource={() => void showSourceCode()}
+          onOpenAuthorWebsite={() => void showAuthorWebsite()}
         />
       )}
       {modal.type === "recovery" && <RecoveryModal onClose={() => setModal({ type: "none" })} />}
