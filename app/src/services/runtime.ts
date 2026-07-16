@@ -113,15 +113,15 @@ export function encodedByteLength(document: Pick<DocumentRecord, "content" | "en
 
 export async function saveDocument(document: DocumentRecord, options: SaveDocumentOptions = {}): Promise<SaveResult | null> {
   const { forceSaveAs = false, defaultSaveFolder, acceptedExternalFingerprint, requireDifferentPath } = options;
+  const fallbackFileName = document.fileName === "Untitled" ? "untitled.txt" : document.fileName;
   let path = forceSaveAs ? undefined : document.filePath;
   if (isTauri() && !path) {
-    const fileName = document.fileName === "Untitled" ? "untitled.txt" : document.fileName;
     const initialSaveFolder = defaultSaveFolder ?? await documentDir().catch(() => undefined);
     const defaultPath = forceSaveAs && document.filePath
       ? document.filePath
       : initialSaveFolder
-        ? await join(initialSaveFolder, fileName)
-        : fileName;
+        ? await join(initialSaveFolder, fallbackFileName)
+        : fallbackFileName;
     path = await save({
       defaultPath,
       filters,
@@ -138,6 +138,7 @@ export async function saveDocument(document: DocumentRecord, options: SaveDocume
   return invoke<SaveResult>("save_file", {
     request: {
       path,
+      fallbackFileName,
       content: document.content,
       encoding: document.encoding,
       lineEnding: document.lineEnding,

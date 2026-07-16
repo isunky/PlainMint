@@ -190,6 +190,7 @@ struct OpenedDocument {
 #[serde(rename_all = "camelCase")]
 struct SaveFileRequest {
     path: String,
+    fallback_file_name: String,
     content: String,
     encoding: Encoding,
     line_ending: LineEnding,
@@ -678,6 +679,30 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> CommandResult<()> {
     })
 }
 
+fn resolve_save_target(path: &Path, fallback_file_name: &str) -> CommandResult<PathBuf> {
+    match fs::metadata(path) {
+        Ok(metadata) if metadata.is_dir() => {
+            let fallback_path = Path::new(fallback_file_name);
+            let valid_file_name = fallback_path.components().count() == 1
+                && fallback_path
+                    .file_name()
+                    .filter(|name| !name.is_empty())
+                    .is_some();
+            if !valid_file_name {
+                return Err(AppError::new(
+                    "invalid_file_name",
+                    "saveFailed",
+                    Some(fallback_file_name.to_string()),
+                ));
+            }
+            Ok(path.join(fallback_file_name))
+        }
+        Ok(_) => Ok(path.to_path_buf()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(path.to_path_buf()),
+        Err(error) => Err(AppError::io("save_target_inspect_failed", error)),
+    }
+}
+
 fn validate_directory_path(path: &Path, required_bytes: u64) -> DirectoryValidationResult {
     let metadata = match fs::metadata(path) {
         Ok(metadata) => metadata,
@@ -1012,7 +1037,7 @@ fn open_file(request: OpenFileRequest) -> CommandResult<OpenedDocument> {
 
 #[tauri::command]
 fn save_file(request: SaveFileRequest) -> CommandResult<SaveResult> {
-    let path = PathBuf::from(&request.path);
+    let path = resolve_save_target(Path::new(&request.path), &request.fallback_file_name)?;
     if let Some(expected) = &request.expected_fingerprint {
         if path.exists() {
             let current = fingerprint(&path)?;
@@ -1637,6 +1662,27 @@ mod tests {
         assert!(result.writable);
         assert!(result.available_bytes >= DIRECTORY_SPACE_RESERVE);
         assert_eq!(fs::read_dir(&directory).unwrap().count(), 0);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn saves_a_new_file_when_the_dialog_returns_a_directory() {
+        let directory = test_directory("directory-save-target");
+        let target = resolve_save_target(&directory, "notes.txt").unwrap();
+
+        assert_eq!(target, directory.join("notes.txt"));
+        atomic_write(&target, b"PlainMint").unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"PlainMint");
+
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn rejects_a_directory_save_target_with_a_path_like_file_name() {
+        let directory = test_directory("invalid-directory-save-target");
+        let error = resolve_save_target(&directory, "nested/notes.txt").unwrap_err();
+
+        assert_eq!(error.code, "invalid_file_name");
         fs::remove_dir_all(directory).unwrap();
     }
 

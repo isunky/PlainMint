@@ -1203,7 +1203,8 @@ export function App() {
           failedAutoSaveRevisions.current[snapshot.id] = snapshot.revision;
           setAutoSaveFailures((current) => ({ ...current, [snapshot.id]: snapshot.revision }));
         } else {
-          flash(t("saveFailed"));
+          const code = appErrorCode(error);
+          flash(code ? t("saveFailedWithCode", { code }) : t("saveFailed"));
         }
         return false;
       }

@@ -137,7 +137,15 @@ describe("save dialog defaults", () => {
     await saveDocument(existing, { acceptedExternalFingerprint: fingerprint });
 
     expect(mocks.invoke).toHaveBeenCalledWith("save_file", expect.objectContaining({
-      request: expect.objectContaining({ expectedFingerprint: fingerprint }),
+      request: expect.objectContaining({ expectedFingerprint: fingerprint, fallbackFileName: "notes.txt" }),
+    }));
+  });
+
+  it("sends a fallback file name so a selected directory can be saved into", async () => {
+    await saveDocument(document({ fileName: "draft.txt" }));
+
+    expect(mocks.invoke).toHaveBeenCalledWith("save_file", expect.objectContaining({
+      request: expect.objectContaining({ fallbackFileName: "draft.txt" }),
     }));
   });
 });
