@@ -94,6 +94,7 @@ export interface UserSettings {
   maxBackupVersionsPerFile: number;
   autoSaveMode: "off" | "idle" | "interval" | "blur" | "tab-switch";
   defaultEncoding: Encoding;
+  defaultLineEnding: LineEnding;
   sessionRecoveryMode: "ask" | "auto" | "empty";
   defaultSaveFolder?: string;
   cloudSyncFolder?: string;

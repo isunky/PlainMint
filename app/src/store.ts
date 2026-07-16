@@ -5,6 +5,7 @@ import type {
   DocumentRecord,
   Encoding,
   EditorTab,
+  LineEnding,
   OpenedDocument,
   PaneId,
   RecentlyClosedTab,
@@ -49,6 +50,7 @@ interface AppState {
   replaceDocumentFromDisk: (documentId: string, opened: OpenedDocument, expectedRevision: number) => boolean;
   refreshDocumentDiskState: (documentId: string, filePath: string, fingerprint: DocumentRecord["fingerprint"], readOnly: boolean) => void;
   updateDocumentFlags: (documentId: string, flags: Partial<Pick<DocumentRecord, "readOnly" | "missing" | "externalModified">>) => void;
+  updateDocumentFormat: (documentId: string, patch: Partial<Pick<DocumentRecord, "encoding" | "lineEnding">>) => void;
   setSearch: (patch: Partial<SearchState>) => void;
   replaceCurrent: (documentId: string, from: number, to: number, value: string) => void;
   replaceAll: (documentId: string, ranges: Array<{ from: number; to: number }>, value: string) => void;
@@ -75,6 +77,7 @@ export const defaultSettings: UserSettings = {
   maxBackupVersionsPerFile: 20,
   autoSaveMode: "off",
   defaultEncoding: "utf-8",
+  defaultLineEnding: "lf",
   sessionRecoveryMode: "ask",
   recentFileLimit: 20,
   autoCheckUpdates: true,
@@ -121,6 +124,7 @@ const notesContent = [
 ].join("\n");
 
 const supportedEncodings: Encoding[] = ["utf-8", "utf-8-bom", "utf-16le", "utf-16be"];
+const supportedLineEndings: LineEnding[] = ["lf", "crlf", "cr"];
 
 export function normalizeSettings(settings: Partial<UserSettings>): UserSettings {
   const merged = { ...defaultSettings, ...settings };
@@ -129,18 +133,19 @@ export function normalizeSettings(settings: Partial<UserSettings>): UserSettings
     ...merged,
     tabSize: Number.isFinite(requestedTabSize) ? Math.min(8, Math.max(2, Math.round(requestedTabSize))) : defaultSettings.tabSize,
     defaultEncoding: supportedEncodings.includes(merged.defaultEncoding) ? merged.defaultEncoding : defaultSettings.defaultEncoding,
+    defaultLineEnding: supportedLineEndings.includes(merged.defaultLineEnding) ? merged.defaultLineEnding : defaultSettings.defaultLineEnding,
     defaultSaveFolder: merged.defaultSaveFolder?.trim() || undefined,
     cloudSyncFolder: merged.cloudSyncFolder?.trim() || undefined,
   };
 }
 
-function makeDocument(id: string, fileName: string, content: string, dirty = false, encoding: Encoding = "utf-8"): DocumentRecord {
+function makeDocument(id: string, fileName: string, content: string, dirty = false, encoding: Encoding = "utf-8", lineEnding: LineEnding = "lf"): DocumentRecord {
   return {
     id,
     fileName,
     content,
     encoding,
-    lineEnding: "lf",
+    lineEnding,
     dirty,
     readOnly: false,
     missing: false,
@@ -244,7 +249,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   createDocument: (pane = get().activePane) => {
     const id = uniqueId("doc");
     const tabId = uniqueId("tab");
-    const document = makeDocument(id, "Untitled", "", true, get().settings.defaultEncoding);
+    const document = makeDocument(id, "Untitled", "", true, get().settings.defaultEncoding, get().settings.defaultLineEnding);
     set((state) => ({
       documents: { ...state.documents, [id]: document },
       tabs: {
@@ -435,6 +440,9 @@ export const useAppStore = create<AppState>((set, get) => ({
           encoding: document.revision === 0 && !document.filePath && document.fileName === "Untitled" && document.content.length === 0
             ? state.settings.defaultEncoding
             : document.encoding,
+          lineEnding: document.revision === 0 && !document.filePath && document.fileName === "Untitled" && document.content.length === 0
+            ? state.settings.defaultLineEnding
+            : document.lineEnding,
           dirty: true,
           revision: document.revision + 1,
           patch: { sequence: ++sequence, origin, changes },
@@ -581,6 +589,26 @@ export const useAppStore = create<AppState>((set, get) => ({
     return document
       ? { documents: { ...state.documents, [documentId]: { ...document, ...flags } } }
       : state;
+  }),
+
+  updateDocumentFormat: (documentId, patch) => set((state) => {
+    const document = state.documents[documentId];
+    if (!document || document.readOnly) return state;
+    const encoding = patch.encoding ?? document.encoding;
+    const lineEnding = patch.lineEnding ?? document.lineEnding;
+    if (encoding === document.encoding && lineEnding === document.lineEnding) return state;
+    return {
+      documents: {
+        ...state.documents,
+        [documentId]: {
+          ...document,
+          encoding,
+          lineEnding,
+          dirty: true,
+          revision: document.revision + 1,
+        },
+      },
+    };
   }),
 
   setSearch: (patch) => set((state) => ({ search: { ...state.search, ...patch } })),

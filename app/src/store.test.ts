@@ -154,10 +154,11 @@ describe("runtime settings", () => {
   it("fills the default encoding when loading a legacy settings file", () => {
     useAppStore.getState().loadSettings({ tabSize: 4 });
     expect(useAppStore.getState().settings.defaultEncoding).toBe("utf-8");
+    expect(useAppStore.getState().settings.defaultLineEnding).toBe("lf");
   });
 
-  it("uses the configured default encoding only for newly created documents", () => {
-    useAppStore.getState().loadSettings({ ...defaultSettings, defaultEncoding: "utf-16le" });
+  it("uses configured defaults only for newly created documents", () => {
+    useAppStore.getState().loadSettings({ ...defaultSettings, defaultEncoding: "utf-16le", defaultLineEnding: "crlf" });
     const createdId = useAppStore.getState().createDocument("left");
     const openedId = useAppStore.getState().addOpenedDocument({
       path: "C:\\opened.txt",
@@ -169,15 +170,36 @@ describe("runtime settings", () => {
     }, "left");
 
     expect(useAppStore.getState().documents[createdId].encoding).toBe("utf-16le");
+    expect(useAppStore.getState().documents[createdId].lineEnding).toBe("crlf");
     expect(useAppStore.getState().documents[openedId].encoding).toBe("utf-8-bom");
+    expect(useAppStore.getState().documents[openedId].lineEnding).toBe("lf");
   });
 
   it("applies hydrated defaults when the startup blank document is first edited", () => {
-    useAppStore.getState().loadSettings({ ...defaultSettings, defaultEncoding: "utf-8" });
+    useAppStore.getState().loadSettings({ ...defaultSettings, defaultEncoding: "utf-8", defaultLineEnding: "lf" });
     const id = useAppStore.getState().createDocument("left");
-    useAppStore.getState().loadSettings({ ...defaultSettings, defaultEncoding: "utf-16be" });
+    useAppStore.getState().loadSettings({ ...defaultSettings, defaultEncoding: "utf-16be", defaultLineEnding: "cr" });
     useAppStore.getState().applyChanges(id, ChangeSet.of({ from: 0, insert: "text" }, 0), "test");
     expect(useAppStore.getState().documents[id].encoding).toBe("utf-16be");
+    expect(useAppStore.getState().documents[id].lineEnding).toBe("cr");
+  });
+
+  it("marks format changes as unsaved without changing content or history", () => {
+    const id = useAppStore.getState().createDocument("left");
+    const before = useAppStore.getState().documents[id];
+
+    useAppStore.getState().updateDocumentFormat(id, { encoding: "utf-16le", lineEnding: "crlf" });
+    const updated = useAppStore.getState().documents[id];
+
+    expect(updated).toMatchObject({ encoding: "utf-16le", lineEnding: "crlf", content: before.content, dirty: true, revision: before.revision + 1 });
+    expect(useAppStore.getState().histories[id]).toBeUndefined();
+
+    useAppStore.getState().updateDocumentFormat(id, { encoding: "utf-16le" });
+    expect(useAppStore.getState().documents[id].revision).toBe(updated.revision);
+
+    useAppStore.setState({ documents: { ...useAppStore.getState().documents, [id]: { ...updated, readOnly: true } } });
+    useAppStore.getState().updateDocumentFormat(id, { lineEnding: "cr" });
+    expect(useAppStore.getState().documents[id].lineEnding).toBe("crlf");
   });
 
   it("does not clear newer edits when an older revision finishes saving", () => {

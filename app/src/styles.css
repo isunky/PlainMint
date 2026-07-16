@@ -694,6 +694,29 @@ select:focus-visible {
   border: 0;
 }
 
+.status-format-select {
+  min-width: 0;
+  height: 24px;
+  padding: 0 7px;
+  border: 0;
+  border-left: 1px solid var(--border-subtle);
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+}
+
+.status-format-select:hover,
+.status-format-select:focus-visible {
+  color: var(--accent-primary);
+  outline: none;
+}
+
+.status-format-select:disabled {
+  cursor: default;
+  opacity: 0.58;
+}
+
 .searchbar {
   min-height: 88px;
   flex: 0 0 88px;

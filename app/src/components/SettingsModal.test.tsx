@@ -58,6 +58,22 @@ describe("settings runtime controls", () => {
     expect(handlers.onChange).toHaveBeenCalledWith({ defaultEncoding: "utf-16be" });
   });
 
+  it("binds the new-file line-ending selector to settings", () => {
+    render(<SettingsModal
+      settings={{ ...defaultSettings, defaultLineEnding: "crlf" }}
+      directoryChecks={{ defaultSaveFolder: { status: "idle" }, cloudSyncFolder: { status: "idle" } }}
+      applying={false}
+      canApply
+      {...handlers}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Files & folders" }));
+    const lineEnding = screen.getByLabelText("New file line ending") as HTMLSelectElement;
+    expect(lineEnding.value).toBe("crlf");
+    fireEvent.change(lineEnding, { target: { value: "cr" } });
+    expect(handlers.onChange).toHaveBeenCalledWith({ defaultLineEnding: "cr" });
+  });
+
   it("shows a directory error and prevents applying invalid settings", () => {
     render(<SettingsModal
       settings={{ ...defaultSettings, defaultSaveFolder: "C:\\missing" }}

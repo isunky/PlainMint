@@ -159,6 +159,16 @@ describe("tab and split interactions", () => {
     expect(screen.getByText("1 of 1")).toBeVisible();
   });
 
+  it("changes the active document format from the status bar", async () => {
+    render(<App />);
+    await settle();
+
+    fireEvent.change(screen.getByLabelText("File encoding"), { target: { value: "utf-16be" } });
+    fireEvent.change(screen.getByLabelText("File line ending"), { target: { value: "crlf" } });
+
+    expect(useAppStore.getState().documents.a).toMatchObject({ encoding: "utf-16be", lineEnding: "crlf", dirty: true, revision: 2 });
+  });
+
   it("removes and clears recent files without opening them", async () => {
     useAppStore.setState({
       documents: {},

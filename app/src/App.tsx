@@ -76,7 +76,7 @@ import {
 } from "./services/runtime";
 import type { UpdateCheckResult, UpdateInstallProgress } from "./services/runtime";
 import { useAppStore } from "./store";
-import type { DirectoryValidationResult, DocumentRecord, FileFingerprint, OpenedDocument, PaneId, RecoveryEntry, RecentlyClosedTab, UserSettings, WorkspaceSession } from "./types";
+import type { DirectoryValidationResult, DocumentRecord, Encoding, FileFingerprint, LineEnding, OpenedDocument, PaneId, RecoveryEntry, RecentlyClosedTab, UserSettings, WorkspaceSession } from "./types";
 
 type ModalState =
   | { type: "none" }
@@ -508,6 +508,7 @@ function SearchBar({
 function StatusBar({ pane, document }: { pane: PaneId; document?: DocumentRecord }) {
   const { t } = useTranslation();
   const cursor = useAppStore((state) => state.cursor[pane]);
+  const updateDocumentFormat = useAppStore((state) => state.updateDocumentFormat);
   if (!document) return <div className="statusbar" />;
   const characters = Array.from(document.content).length;
   const lines = document.content.split("\n").length;
@@ -518,8 +519,17 @@ function StatusBar({ pane, document }: { pane: PaneId; document?: DocumentRecord
       <span>{t("characters", { count: characters })}</span>
       <span className="status-spacer" />
       <span>{t("lines", { count: lines })}</span>
-      <span>{document.encoding.toUpperCase()}</span>
-      <span>{document.lineEnding.toUpperCase()}</span>
+      <select className="status-format-select" aria-label={t("fileEncoding")} value={document.encoding} disabled={document.readOnly} onChange={(event) => updateDocumentFormat(document.id, { encoding: event.target.value as Encoding })}>
+        <option value="utf-8">UTF-8</option>
+        <option value="utf-8-bom">UTF-8 BOM</option>
+        <option value="utf-16le">UTF-16 LE</option>
+        <option value="utf-16be">UTF-16 BE</option>
+      </select>
+      <select className="status-format-select" aria-label={t("fileLineEnding")} value={document.lineEnding} disabled={document.readOnly} onChange={(event) => updateDocumentFormat(document.id, { lineEnding: event.target.value as LineEnding })}>
+        <option value="lf">LF</option>
+        <option value="crlf">CRLF</option>
+        <option value="cr">CR</option>
+      </select>
       <span>{document.fileName.endsWith(".md") ? t("markdown") : t("plainText")}</span>
     </div>
   );

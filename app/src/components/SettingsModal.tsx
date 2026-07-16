@@ -11,7 +11,7 @@ import {
   ShieldCheck,
   X,
 } from "@phosphor-icons/react";
-import type { AccentTheme, AppLocale, AppearanceMode, DirectoryValidationResult, Encoding, UserSettings } from "../types";
+import type { AccentTheme, AppLocale, AppearanceMode, DirectoryValidationResult, Encoding, LineEnding, UserSettings } from "../types";
 
 type SettingsSection = "general" | "editor" | "files" | "backup" | "appearance" | "updates" | "about";
 
@@ -248,6 +248,10 @@ export function SettingsModal({
                     <label className="field-label">
                       <span>{t("encoding")}</span>
                       <select value={settings.defaultEncoding} onChange={(event) => onChange({ defaultEncoding: event.target.value as Encoding })}><option value="utf-8">UTF-8</option><option value="utf-8-bom">UTF-8 BOM</option><option value="utf-16le">UTF-16 LE</option><option value="utf-16be">UTF-16 BE</option></select>
+                    </label>
+                    <label className="field-label">
+                      <span>{t("lineEnding")}</span>
+                      <select value={settings.defaultLineEnding} onChange={(event) => onChange({ defaultLineEnding: event.target.value as LineEnding })}><option value="lf">LF</option><option value="crlf">CRLF</option><option value="cr">CR</option></select>
                     </label>
                     <label className="field-label">
                       <span>{t("recentFiles")}</span>
