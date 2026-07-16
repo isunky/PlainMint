@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "./i18n";
 import { defaultSettings, useAppStore } from "./store";
-import type { DocumentRecord } from "./types";
+import type { DocumentRecord, OpenedDocument } from "./types";
 
 vi.mock("./services/runtime", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./services/runtime")>();
@@ -20,12 +20,13 @@ vi.mock("./services/runtime", async (importOriginal) => {
     revealFileInDirectory: vi.fn().mockResolvedValue(undefined),
     writeRecovery: vi.fn().mockResolvedValue(undefined),
     listenForWindowClose: vi.fn().mockResolvedValue(() => undefined),
+    chooseComparisonDocument: vi.fn(),
   };
 });
 
 import { App } from "./App";
 import { selectNextOccurrenceInPane } from "./components/TextEditor";
-import { loadRecentFiles, persistRecentFiles, revealFileInDirectory } from "./services/runtime";
+import { chooseComparisonDocument, loadRecentFiles, persistRecentFiles, revealFileInDirectory } from "./services/runtime";
 
 function doc(id: string): DocumentRecord {
   return {
@@ -74,11 +75,66 @@ beforeEach(async () => {
   });
   vi.mocked(loadRecentFiles).mockResolvedValue([]);
   vi.mocked(revealFileInDirectory).mockResolvedValue(undefined);
+  vi.mocked(chooseComparisonDocument).mockResolvedValue(null);
 });
 
 afterEach(cleanup);
 
 describe("tab and split interactions", () => {
+  it("compares the current unsaved content with one selected file and closes with Escape", async () => {
+    const selected: OpenedDocument = {
+      path: "D:\\Reference\\a.txt",
+      name: "a.txt",
+      content: "alpha\nsame\ndisk\nsame\ntarget",
+      encoding: "utf-8",
+      lineEnding: "crlf",
+      readOnly: false,
+    };
+    useAppStore.setState((state) => ({ documents: { ...state.documents, a: { ...state.documents.a, content: "alpha\nsame\nlocal\nsame\nomega", dirty: true } } }));
+    vi.mocked(chooseComparisonDocument).mockResolvedValue(selected);
+
+    const { container } = render(<App />);
+    await settle();
+    fireEvent.keyDown(window, { key: "d", ctrlKey: true, shiftKey: true });
+    await settle();
+
+    expect(chooseComparisonDocument).toHaveBeenCalledOnce();
+    expect(screen.getByRole("dialog", { name: "Compare text files" })).toBeInTheDocument();
+    expect(container.textContent).toContain("alpha");
+    expect(container.textContent).toContain("D:\\Reference\\a.txt");
+    expect(container.textContent).toContain("UTF-8 · CRLF");
+    expect(screen.getByText("Difference 1 of 2")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next difference" }));
+    expect(screen.getByText("Difference 2 of 2")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous difference" }));
+    expect(screen.getByText("Difference 1 of 2")).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Compare text files" })).not.toBeInTheDocument();
+  });
+
+  it("disables comparison when no document is active and reports a read failure", async () => {
+    useAppStore.setState({ documents: {}, tabs: { left: [], right: [] }, activeTab: { left: null, right: null } });
+    const { unmount } = render(<App />);
+    await settle();
+    expect(screen.getByRole("button", { name: "Compare" })).toBeDisabled();
+    unmount();
+
+    useAppStore.setState({
+      documents: { a: doc("a") },
+      tabs: { left: [{ id: "tab-a", documentId: "a", pane: "left", order: 0 }], right: [] },
+      activeTab: { left: "tab-a", right: null },
+    });
+    vi.mocked(chooseComparisonDocument).mockRejectedValue(new Error("read failed"));
+    render(<App />);
+    await settle();
+    fireEvent.click(screen.getByRole("button", { name: "Compare" }));
+    await settle();
+    expect(screen.getByRole("status")).toHaveTextContent("could not be read for comparison");
+  });
+
   it("supports context-menu bulk close and double-click new tab", async () => {
     const { container } = render(<App />);
     await settle();

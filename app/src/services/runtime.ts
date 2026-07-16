@@ -83,6 +83,13 @@ export async function chooseAndOpenDocuments(): Promise<OpenedDocument[]> {
   ));
 }
 
+export async function chooseComparisonDocument(): Promise<OpenedDocument | null> {
+  if (!isTauri()) return null;
+  const selected = await open({ multiple: false, directory: false, filters });
+  if (typeof selected !== "string") return null;
+  return invoke<OpenedDocument>("open_file", { request: { path: selected, encodingOverride: null } });
+}
+
 export async function openDocumentPath(path: string): Promise<OpenedDocument> {
   if (!isTauri()) {
     return {
