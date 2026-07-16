@@ -47,10 +47,11 @@ import {
   closeWindow,
   copyText,
   deleteRecovery,
-  inspectFile,
+  inspectFileMetadata,
   encodedByteLength,
   getAppVersion,
   listenForWindowClose,
+  listenForFileWatchChanges,
   listRecoveries,
   loadRecentFiles,
   loadRecentlyClosedTabs,
@@ -65,6 +66,7 @@ import {
   openDocumentPath,
   restoreRecoveries,
   saveDocument,
+  syncFileWatches,
   showSourceCode,
   toggleMaximizeWindow,
   validateDirectory,
@@ -149,6 +151,10 @@ const accentMap = {
 
 function sameFingerprint(left?: FileFingerprint | null, right?: FileFingerprint | null) {
   return Boolean(left && right && left.hash === right.hash);
+}
+
+function normalizedWindowsPath(path: string) {
+  return path.replace(/\\/g, "/").replace(/\/$/, "").toLocaleLowerCase();
 }
 
 function recoverySnapshot(document: DocumentRecord) {
@@ -944,6 +950,7 @@ export function App() {
   const redoDocument = useAppStore((state) => state.redoDocument);
   const markSaved = useAppStore((state) => state.markSaved);
   const replaceDocumentFromDisk = useAppStore((state) => state.replaceDocumentFromDisk);
+  const refreshDocumentDiskState = useAppStore((state) => state.refreshDocumentDiskState);
   const setSearch = useAppStore((state) => state.setSearch);
   const updateSettings = useAppStore((state) => state.updateSettings);
   const loadSettingsIntoStore = useAppStore((state) => state.loadSettings);
@@ -963,10 +970,13 @@ export function App() {
   const [tabContextMenu, setTabContextMenu] = useState<TabContextMenuState | null>(null);
   const [resizingSplit, setResizingSplit] = useState(false);
   const [autoSaveFailures, setAutoSaveFailures] = useState<Record<string, number>>({});
+  const [fileWatchListenerReady, setFileWatchListenerReady] = useState(false);
   const backupTimers = useRef<Record<string, number>>({});
   const idleSaveTimers = useRef<Record<string, { revision: number; timer: number }>>({});
   const saveInFlight = useRef(new Map<string, Promise<boolean>>());
-  const diskReadInFlight = useRef(new Set<string>());
+  const diskCheckInFlight = useRef(new Set<string>());
+  const pendingDiskChecks = useRef(new Set<string>());
+  const diskCheckRunner = useRef<(documentId: string) => void>(() => undefined);
   const conflictReadInFlight = useRef(new Set<string>());
   const failedAutoSaveRevisions = useRef<Record<string, number>>({});
   const previousActiveDocuments = useRef<Record<PaneId, string | undefined>>({ left: undefined, right: undefined });
@@ -995,6 +1005,14 @@ export function App() {
     search.wholeWord,
   ), [activeDocument?.content, search.query, search.caseSensitive, search.wholeWord]);
   const history = activeDocument ? histories[activeDocument.id] : undefined;
+  const watchedFilePaths = useMemo(() => {
+    const unique = new Map<string, string>();
+    Object.values(documents).forEach((document) => {
+      if (document.filePath) unique.set(normalizedWindowsPath(document.filePath), document.filePath);
+    });
+    return [...unique.values()].sort((left, right) => normalizedWindowsPath(left).localeCompare(normalizedWindowsPath(right)));
+  }, [documents]);
+  const watchedFileSignature = watchedFilePaths.map(normalizedWindowsPath).join("\0");
 
   const flash = useCallback((message: string) => {
     setToast(message);
@@ -1316,6 +1334,66 @@ export function App() {
     }
   }, [flash, markSaved, modal, refreshConflictWithLatestDisk, t, updateDocumentFlags]);
 
+  const checkDocumentOnDisk = useCallback((documentId: string) => {
+    const saveTask = saveInFlight.current.get(documentId);
+    if (saveTask) {
+      if (!pendingDiskChecks.current.has(documentId)) {
+        pendingDiskChecks.current.add(documentId);
+        void saveTask.finally(() => {
+          if (pendingDiskChecks.current.delete(documentId)) diskCheckRunner.current(documentId);
+        });
+      }
+      return;
+    }
+    if (diskCheckInFlight.current.has(documentId)) {
+      pendingDiskChecks.current.add(documentId);
+      return;
+    }
+    const snapshot = useAppStore.getState().documents[documentId];
+    if (!snapshot?.filePath || !snapshot.fingerprint) return;
+    const filePath = snapshot.filePath;
+    diskCheckInFlight.current.add(documentId);
+    void openDocumentPath(filePath).then((disk) => {
+      const current = useAppStore.getState().documents[documentId];
+      if (!current || current.filePath !== filePath || !disk.fingerprint) return;
+      if (disk.fingerprint.hash === current.fingerprint?.hash) {
+        refreshDocumentDiskState(documentId, filePath, disk.fingerprint, disk.readOnly);
+        return;
+      }
+      if (current.dirty || current.revision !== snapshot.revision) {
+        updateDocumentFlags(documentId, { externalModified: true, missing: false, readOnly: disk.readOnly });
+        return;
+      }
+      if (replaceDocumentFromDisk(documentId, disk, snapshot.revision)) flash(t("fileReloaded"));
+    }).catch(() => updateDocumentFlags(documentId, { missing: true })).finally(() => {
+      diskCheckInFlight.current.delete(documentId);
+      if (pendingDiskChecks.current.delete(documentId)) diskCheckRunner.current(documentId);
+    });
+  }, [flash, refreshDocumentDiskState, replaceDocumentFromDisk, t, updateDocumentFlags]);
+  diskCheckRunner.current = checkDocumentOnDisk;
+
+  const checkDocumentMetadata = useCallback((documentId: string) => {
+    const snapshot = useAppStore.getState().documents[documentId];
+    if (!snapshot?.filePath || !snapshot.fingerprint || snapshot.externalModified || saveInFlight.current.has(documentId)) return;
+    const filePath = snapshot.filePath;
+    void inspectFileMetadata(filePath).then((metadata) => {
+      if (!metadata) return;
+      const current = useAppStore.getState().documents[documentId];
+      if (!current || current.filePath !== filePath || !current.fingerprint) return;
+      if (!metadata.exists) {
+        updateDocumentFlags(documentId, { missing: true });
+        return;
+      }
+      if (metadata.modifiedAt !== current.fingerprint.modifiedAt || metadata.size !== current.fingerprint.size) {
+        checkDocumentOnDisk(documentId);
+        return;
+      }
+      if (current.readOnly !== metadata.readOnly || current.missing) {
+        updateDocumentFlags(documentId, { readOnly: metadata.readOnly, missing: false });
+      }
+    }).catch(() => undefined);
+  }, [checkDocumentOnDisk, updateDocumentFlags]);
+
   useEffect(() => {
     if (modal.type !== "settings") return;
     void validateSettingsDirectory("defaultSaveFolder", settings.defaultSaveFolder);
@@ -1582,30 +1660,45 @@ export function App() {
   }, [requestCloseWindow]);
 
   useEffect(() => {
-    const timer = window.setInterval(() => {
-      Object.values(documents).forEach((document) => {
-        if (!document.filePath || !document.fingerprint || saveInFlight.current.has(document.id)) return;
-        const filePath = document.filePath;
-        void inspectFile(filePath).then((fingerprint) => {
-          if (!fingerprint) return;
-          if (fingerprint.hash === document.fingerprint?.hash || diskReadInFlight.current.has(document.id)) return;
-          diskReadInFlight.current.add(document.id);
-          void openDocumentPath(filePath).then((disk) => {
-            const current = useAppStore.getState().documents[document.id];
-            if (!current || current.filePath !== filePath) return;
-            if (current.dirty || current.revision !== document.revision) {
-              updateDocumentFlags(document.id, { externalModified: true });
-              return;
-            }
-            if (replaceDocumentFromDisk(document.id, disk, document.revision)) flash(t("fileReloaded"));
-          }).catch(() => updateDocumentFlags(document.id, { missing: true })).finally(() => {
-            diskReadInFlight.current.delete(document.id);
-          });
-        }).catch(() => updateDocumentFlags(document.id, { missing: true }));
+    if (!hydrated) return;
+    let cancelled = false;
+    let unlisten: () => void = () => undefined;
+    void listenForFileWatchChanges((paths) => {
+      const changed = new Set(paths.map(normalizedWindowsPath));
+      Object.values(useAppStore.getState().documents).forEach((document) => {
+        if (document.filePath && changed.has(normalizedWindowsPath(document.filePath))) {
+          checkDocumentOnDisk(document.id);
+        }
       });
-    }, 4000);
+    }).then((dispose) => {
+      if (cancelled) dispose();
+      else {
+        unlisten = dispose;
+        setFileWatchListenerReady(true);
+      }
+    }).catch(() => undefined);
+    return () => {
+      cancelled = true;
+      unlisten();
+    };
+  }, [checkDocumentOnDisk, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated || !fileWatchListenerReady) return;
+    void syncFileWatches(watchedFilePaths).catch(() => undefined);
+  }, [fileWatchListenerReady, hydrated, watchedFileSignature]);
+
+  useEffect(() => () => {
+    void syncFileWatches([]).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    const timer = window.setInterval(() => {
+      Object.values(useAppStore.getState().documents).forEach((document) => checkDocumentMetadata(document.id));
+    }, 60_000);
     return () => window.clearInterval(timer);
-  }, [documents, flash, replaceDocumentFromDisk, t, updateDocumentFlags]);
+  }, [checkDocumentMetadata, hydrated]);
 
   const updateTabDrag = useCallback((next: TabDragView | null) => {
     dragViewRef.current = next;

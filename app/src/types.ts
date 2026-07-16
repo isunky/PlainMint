@@ -13,6 +13,20 @@ export interface FileFingerprint {
   hash: string;
 }
 
+export interface FileMetadataSnapshot {
+  exists: boolean;
+  modifiedAt: number;
+  size: number;
+  readOnly: boolean;
+}
+
+export interface FileWatchStatus {
+  available: boolean;
+  watchedFiles: number;
+  watchedDirectories: number;
+  failedDirectories: string[];
+}
+
 export interface DocumentRecord {
   id: string;
   filePath?: string;

@@ -47,6 +47,7 @@ interface AppState {
   redoDocument: (documentId: string) => void;
   markSaved: (documentId: string, filePath: string, savedRevision: number, fingerprint?: DocumentRecord["fingerprint"]) => void;
   replaceDocumentFromDisk: (documentId: string, opened: OpenedDocument, expectedRevision: number) => boolean;
+  refreshDocumentDiskState: (documentId: string, filePath: string, fingerprint: DocumentRecord["fingerprint"], readOnly: boolean) => void;
   updateDocumentFlags: (documentId: string, flags: Partial<Pick<DocumentRecord, "readOnly" | "missing" | "externalModified">>) => void;
   setSearch: (patch: Partial<SearchState>) => void;
   replaceCurrent: (documentId: string, from: number, to: number, value: string) => void;
@@ -558,6 +559,22 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
     return replaced;
   },
+
+  refreshDocumentDiskState: (documentId, filePath, fingerprint, readOnly) => set((state) => {
+    const document = state.documents[documentId];
+    if (!document || document.filePath !== filePath) return state;
+    return {
+      documents: {
+        ...state.documents,
+        [documentId]: {
+          ...document,
+          fingerprint,
+          readOnly,
+          missing: false,
+        },
+      },
+    };
+  }),
 
   updateDocumentFlags: (documentId, flags) => set((state) => {
     const document = state.documents[documentId];

@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
+import { listen } from "@tauri-apps/api/event";
 import { join } from "@tauri-apps/api/path";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open, save } from "@tauri-apps/plugin-dialog";
@@ -12,6 +13,8 @@ import type {
   DirectoryValidationResult,
   DocumentRecord,
   FileFingerprint,
+  FileMetadataSnapshot,
+  FileWatchStatus,
   OpenedDocument,
   RecoveryReason,
   RecoveryEntry,
@@ -137,9 +140,21 @@ export async function saveDocument(document: DocumentRecord, options: SaveDocume
   });
 }
 
-export async function inspectFile(path: string): Promise<FileFingerprint | null> {
+export async function inspectFileMetadata(path: string): Promise<FileMetadataSnapshot | null> {
   if (!isTauri()) return null;
-  return invoke<FileFingerprint>("inspect_file", { path });
+  return invoke<FileMetadataSnapshot>("inspect_file_metadata", { path });
+}
+
+export async function syncFileWatches(paths: string[]): Promise<FileWatchStatus> {
+  if (!isTauri()) {
+    return { available: false, watchedFiles: 0, watchedDirectories: 0, failedDirectories: [] };
+  }
+  return invoke<FileWatchStatus>("sync_file_watches", { paths });
+}
+
+export async function listenForFileWatchChanges(handler: (paths: string[]) => void): Promise<() => void> {
+  if (!isTauri()) return () => undefined;
+  return listen<{ paths: string[] }>("plainmint-file-watch-change", (event) => handler(event.payload.paths));
 }
 
 export async function chooseDirectory(): Promise<string | null> {

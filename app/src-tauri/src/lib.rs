@@ -1,6 +1,15 @@
+#[cfg(target_os = "windows")]
+use notify::{event::ModifyKind, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+#[cfg(target_os = "windows")]
+use std::{
+    collections::{HashMap, HashSet},
+    sync::{mpsc, Arc, RwLock},
+    thread,
+    time::{Duration, Instant},
+};
 use std::{
     fs::{self, File, OpenOptions},
     io::{Read, Write},
@@ -8,10 +17,16 @@ use std::{
     sync::{Mutex, OnceLock},
     time::{SystemTime, UNIX_EPOCH},
 };
+#[cfg(target_os = "windows")]
+use tauri::Emitter;
 use tauri::{AppHandle, Manager};
 use uuid::Uuid;
 
 const DIRECTORY_SPACE_RESERVE: u64 = 1024 * 1024;
+#[cfg(target_os = "windows")]
+const FILE_WATCH_EVENT: &str = "plainmint-file-watch-change";
+#[cfg(target_os = "windows")]
+const FILE_WATCH_DEBOUNCE: Duration = Duration::from_millis(750);
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -67,6 +82,94 @@ struct FileFingerprint {
     modified_at: u64,
     size: u64,
     hash: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FileMetadataSnapshot {
+    exists: bool,
+    modified_at: u64,
+    size: u64,
+    read_only: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FileWatchStatus {
+    available: bool,
+    watched_files: usize,
+    watched_directories: usize,
+    failed_directories: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FileWatchEventPayload {
+    paths: Vec<String>,
+}
+
+#[cfg(target_os = "windows")]
+#[derive(Clone, Debug)]
+struct WatchedTarget {
+    path: String,
+    parent_key: String,
+}
+
+#[cfg(target_os = "windows")]
+#[derive(Clone, Debug, Default)]
+struct WatchTargets {
+    by_path: HashMap<String, WatchedTarget>,
+    by_parent: HashMap<String, Vec<String>>,
+    directories: HashMap<String, PathBuf>,
+}
+
+#[cfg(target_os = "windows")]
+struct WindowsFileWatchState {
+    watcher: Option<RecommendedWatcher>,
+    watched_directories: HashMap<String, PathBuf>,
+}
+
+struct FileWatchState {
+    #[cfg(target_os = "windows")]
+    inner: Mutex<WindowsFileWatchState>,
+    #[cfg(target_os = "windows")]
+    targets: Arc<RwLock<WatchTargets>>,
+}
+
+#[cfg(target_os = "windows")]
+#[derive(Default)]
+struct DebounceQueue {
+    deadlines: HashMap<String, Instant>,
+}
+
+#[cfg(target_os = "windows")]
+impl DebounceQueue {
+    fn schedule(&mut self, paths: Vec<String>, now: Instant) {
+        let deadline = now + FILE_WATCH_DEBOUNCE;
+        for path in paths {
+            self.deadlines.insert(path, deadline);
+        }
+    }
+
+    fn wait_duration(&self, now: Instant) -> Option<Duration> {
+        self.deadlines
+            .values()
+            .min()
+            .map(|deadline| deadline.saturating_duration_since(now))
+    }
+
+    fn take_due(&mut self, now: Instant) -> Vec<String> {
+        let mut due = self
+            .deadlines
+            .iter()
+            .filter_map(|(path, deadline)| (*deadline <= now).then_some(path.clone()))
+            .collect::<Vec<_>>();
+        for path in &due {
+            self.deadlines.remove(path);
+        }
+        due.sort();
+        due
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -247,18 +350,186 @@ fn hash_bytes(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
-fn fingerprint_from_bytes(metadata: &fs::Metadata, bytes: &[u8]) -> FileFingerprint {
-    let modified_at = metadata
+fn metadata_modified_at(metadata: &fs::Metadata) -> u64 {
+    metadata
         .modified()
         .ok()
         .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
         .map(|duration| duration.as_millis() as u64)
-        .unwrap_or_default();
+        .unwrap_or_default()
+}
+
+fn fingerprint_from_bytes(metadata: &fs::Metadata, bytes: &[u8]) -> FileFingerprint {
     FileFingerprint {
-        modified_at,
+        modified_at: metadata_modified_at(metadata),
         size: bytes.len() as u64,
         hash: hash_bytes(bytes),
     }
+}
+
+fn file_metadata_snapshot(path: &Path) -> CommandResult<FileMetadataSnapshot> {
+    match fs::metadata(path) {
+        Ok(metadata) => Ok(FileMetadataSnapshot {
+            exists: true,
+            modified_at: metadata_modified_at(&metadata),
+            size: metadata.len(),
+            read_only: metadata.permissions().readonly() || metadata.len() > 100 * 1024 * 1024,
+        }),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(FileMetadataSnapshot {
+            exists: false,
+            modified_at: 0,
+            size: 0,
+            read_only: false,
+        }),
+        Err(error) => Err(AppError::io("file_metadata_failed", error)),
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn normalized_path_key(path: &Path) -> String {
+    path.to_string_lossy()
+        .replace('\\', "/")
+        .trim_end_matches('/')
+        .to_lowercase()
+}
+
+#[cfg(target_os = "windows")]
+fn watch_targets_from_paths(paths: Vec<String>) -> WatchTargets {
+    let mut targets = WatchTargets::default();
+    for original_path in paths {
+        let path = PathBuf::from(&original_path);
+        let Some(parent) = path.parent().filter(|value| !value.as_os_str().is_empty()) else {
+            continue;
+        };
+        let path_key = normalized_path_key(&path);
+        if targets.by_path.contains_key(&path_key) {
+            continue;
+        }
+        let parent = parent.to_path_buf();
+        let parent_key = normalized_path_key(&parent);
+        targets
+            .directories
+            .entry(parent_key.clone())
+            .or_insert(parent);
+        targets
+            .by_parent
+            .entry(parent_key.clone())
+            .or_default()
+            .push(original_path.clone());
+        targets.by_path.insert(
+            path_key,
+            WatchedTarget {
+                path: original_path,
+                parent_key,
+            },
+        );
+    }
+    for paths in targets.by_parent.values_mut() {
+        paths.sort();
+    }
+    targets
+}
+
+#[cfg(target_os = "windows")]
+fn is_broad_directory_event(kind: &EventKind) -> bool {
+    matches!(
+        kind,
+        EventKind::Any
+            | EventKind::Create(_)
+            | EventKind::Remove(_)
+            | EventKind::Other
+            | EventKind::Modify(ModifyKind::Any | ModifyKind::Name(_) | ModifyKind::Other)
+    )
+}
+
+#[cfg(target_os = "windows")]
+fn affected_watch_targets(event: &Event, targets: &WatchTargets) -> Vec<String> {
+    if matches!(event.kind, EventKind::Access(_)) {
+        return Vec::new();
+    }
+    let broad = is_broad_directory_event(&event.kind);
+    let mut affected = HashSet::new();
+    for event_path in &event.paths {
+        let event_key = normalized_path_key(event_path);
+        if let Some(target) = targets.by_path.get(&event_key) {
+            affected.insert(target.path.clone());
+        }
+        if let Some(paths) = targets.by_parent.get(&event_key) {
+            affected.extend(paths.iter().cloned());
+        }
+        if broad {
+            if let Some(parent) = event_path.parent() {
+                if let Some(paths) = targets.by_parent.get(&normalized_path_key(parent)) {
+                    affected.extend(paths.iter().cloned());
+                }
+            }
+        }
+    }
+    let mut affected = affected.into_iter().collect::<Vec<_>>();
+    affected.sort();
+    affected
+}
+
+#[cfg(target_os = "windows")]
+fn run_file_watch_debounce(rx: mpsc::Receiver<Vec<String>>, app: AppHandle) {
+    let mut queue = DebounceQueue::default();
+    loop {
+        let received = match queue.wait_duration(Instant::now()) {
+            Some(wait) => rx.recv_timeout(wait),
+            None => match rx.recv() {
+                Ok(paths) => {
+                    queue.schedule(paths, Instant::now());
+                    continue;
+                }
+                Err(_) => break,
+            },
+        };
+        match received {
+            Ok(paths) => queue.schedule(paths, Instant::now()),
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                let paths = queue.take_due(Instant::now());
+                if !paths.is_empty() {
+                    let _ = app.emit(FILE_WATCH_EVENT, FileWatchEventPayload { paths });
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn create_file_watch_state(app: AppHandle) -> FileWatchState {
+    let targets = Arc::new(RwLock::new(WatchTargets::default()));
+    let callback_targets = Arc::clone(&targets);
+    let (tx, rx) = mpsc::channel::<Vec<String>>();
+    let watcher = notify::recommended_watcher(move |result: notify::Result<Event>| {
+        let Ok(event) = result else {
+            return;
+        };
+        let Ok(targets) = callback_targets.read() else {
+            return;
+        };
+        let affected = affected_watch_targets(&event, &targets);
+        if !affected.is_empty() {
+            let _ = tx.send(affected);
+        }
+    })
+    .ok();
+    if watcher.is_some() {
+        thread::spawn(move || run_file_watch_debounce(rx, app));
+    }
+    FileWatchState {
+        inner: Mutex::new(WindowsFileWatchState {
+            watcher,
+            watched_directories: HashMap::new(),
+        }),
+        targets,
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn create_file_watch_state(_app: AppHandle) -> FileWatchState {
+    FileWatchState {}
 }
 
 fn fingerprint(path: &Path) -> CommandResult<FileFingerprint> {
@@ -612,8 +883,93 @@ fn close_app_window(app: AppHandle, window: tauri::WebviewWindow) -> CommandResu
 }
 
 #[tauri::command]
-fn inspect_file(path: String) -> CommandResult<FileFingerprint> {
-    fingerprint(Path::new(&path))
+fn inspect_file_metadata(path: String) -> CommandResult<FileMetadataSnapshot> {
+    file_metadata_snapshot(Path::new(&path))
+}
+
+#[tauri::command]
+fn sync_file_watches(
+    state: tauri::State<'_, FileWatchState>,
+    paths: Vec<String>,
+) -> FileWatchStatus {
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (state, paths);
+        FileWatchStatus {
+            available: false,
+            watched_files: 0,
+            watched_directories: 0,
+            failed_directories: Vec::new(),
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let next_targets = watch_targets_from_paths(paths);
+        let desired_directories = next_targets.directories.clone();
+        if let Ok(mut targets) = state.targets.write() {
+            *targets = next_targets.clone();
+        }
+        let Ok(mut inner) = state.inner.lock() else {
+            return FileWatchStatus {
+                available: false,
+                watched_files: 0,
+                watched_directories: 0,
+                failed_directories: desired_directories
+                    .values()
+                    .map(|path| path.to_string_lossy().to_string())
+                    .collect(),
+            };
+        };
+        let available = inner.watcher.is_some();
+        let removed = inner
+            .watched_directories
+            .keys()
+            .filter(|key| !desired_directories.contains_key(*key))
+            .cloned()
+            .collect::<Vec<_>>();
+        for key in removed {
+            if let Some(path) = inner.watched_directories.remove(&key) {
+                if let Some(watcher) = inner.watcher.as_mut() {
+                    let _ = watcher.unwatch(&path);
+                }
+            }
+        }
+
+        let mut failed_directories = Vec::new();
+        for (key, path) in &desired_directories {
+            if inner.watched_directories.contains_key(key) {
+                continue;
+            }
+            let watched = inner
+                .watcher
+                .as_mut()
+                .is_some_and(|watcher| watcher.watch(path, RecursiveMode::NonRecursive).is_ok());
+            if watched {
+                inner.watched_directories.insert(key.clone(), path.clone());
+            } else {
+                failed_directories.push(path.to_string_lossy().to_string());
+            }
+        }
+        failed_directories.sort();
+        let watched_directory_keys = inner
+            .watched_directories
+            .keys()
+            .cloned()
+            .collect::<HashSet<_>>();
+        let watched_directories = watched_directory_keys.len();
+        let watched_files = next_targets
+            .by_path
+            .values()
+            .filter(|target| watched_directory_keys.contains(&target.parent_key))
+            .count();
+        FileWatchStatus {
+            available,
+            watched_files,
+            watched_directories,
+            failed_directories,
+        }
+    }
 }
 
 #[tauri::command]
@@ -1105,13 +1461,18 @@ fn delete_recovery(app: AppHandle, id: String) -> CommandResult<()> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .setup(|app| {
+            app.manage(create_file_watch_state(app.handle().clone()));
+            Ok(())
+        })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
-            inspect_file,
+            inspect_file_metadata,
+            sync_file_watches,
             validate_directory,
             open_file,
             save_file,
@@ -1139,6 +1500,8 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(target_os = "windows")]
+    use notify::event::{AccessKind, DataChange, RenameMode};
 
     fn test_directory(label: &str) -> PathBuf {
         let path = std::env::temp_dir().join(format!("plainmint-{label}-{}", Uuid::new_v4()));
@@ -1172,6 +1535,95 @@ mod tests {
         assert!(matches!(encoding, Encoding::Utf8Bom));
         assert_eq!(detect_line_ending(&decoded), LineEnding::Crlf);
         assert_eq!(normalize_line_endings(decoded), input);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn normalizes_and_deduplicates_windows_watch_paths() {
+        let targets = watch_targets_from_paths(vec![
+            r"C:\Notes\Alpha.txt".into(),
+            r"c:/notes/alpha.txt".into(),
+            r"C:\Notes\Beta.txt".into(),
+        ]);
+
+        assert_eq!(
+            normalized_path_key(Path::new(r"C:\Notes\Alpha.txt")),
+            "c:/notes/alpha.txt"
+        );
+        assert_eq!(targets.by_path.len(), 2);
+        assert_eq!(targets.directories.len(), 1);
+        assert_eq!(targets.by_parent.values().next().unwrap().len(), 2);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn maps_exact_and_replacement_events_without_sibling_data_noise() {
+        let targets = watch_targets_from_paths(vec![
+            r"C:\Notes\Alpha.txt".into(),
+            r"C:\Notes\Beta.txt".into(),
+        ]);
+        let exact = Event::new(EventKind::Modify(ModifyKind::Data(DataChange::Content)))
+            .add_path(PathBuf::from(r"C:\Notes\Alpha.txt"));
+        assert_eq!(
+            affected_watch_targets(&exact, &targets),
+            vec![r"C:\Notes\Alpha.txt"]
+        );
+
+        let sibling = Event::new(EventKind::Modify(ModifyKind::Data(DataChange::Content)))
+            .add_path(PathBuf::from(r"C:\Notes\Other.txt"));
+        assert!(affected_watch_targets(&sibling, &targets).is_empty());
+
+        let replacement = Event::new(EventKind::Modify(ModifyKind::Name(RenameMode::Both)))
+            .add_path(PathBuf::from(r"C:\Notes\.Alpha.tmp"));
+        assert_eq!(
+            affected_watch_targets(&replacement, &targets),
+            vec![r"C:\Notes\Alpha.txt", r"C:\Notes\Beta.txt"]
+        );
+
+        let access = Event::new(EventKind::Access(AccessKind::Read))
+            .add_path(PathBuf::from(r"C:\Notes\Alpha.txt"));
+        assert!(affected_watch_targets(&access, &targets).is_empty());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn debounces_each_target_from_its_latest_event() {
+        let start = Instant::now();
+        let mut queue = DebounceQueue::default();
+        queue.schedule(vec!["alpha".into(), "beta".into()], start);
+        queue.schedule(vec!["alpha".into()], start + Duration::from_millis(500));
+
+        assert_eq!(
+            queue.take_due(start + Duration::from_millis(749)),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            queue.take_due(start + Duration::from_millis(750)),
+            vec!["beta"]
+        );
+        assert_eq!(
+            queue.take_due(start + Duration::from_millis(1_249)),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            queue.take_due(start + Duration::from_millis(1_250)),
+            vec!["alpha"]
+        );
+    }
+
+    #[test]
+    fn metadata_inspection_reports_missing_files_without_reading_content() {
+        let directory = test_directory("metadata-only");
+        let path = directory.join("notes.txt");
+        fs::write(&path, b"metadata only").unwrap();
+
+        let present = file_metadata_snapshot(&path).unwrap();
+        assert!(present.exists);
+        assert_eq!(present.size, 13);
+        let missing = file_metadata_snapshot(&directory.join("missing.txt")).unwrap();
+        assert!(!missing.exists);
+
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
