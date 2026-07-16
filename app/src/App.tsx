@@ -9,6 +9,7 @@ import {
   ArrowsClockwise,
   CaretDown,
   CaretUp,
+  ClockCounterClockwise,
   Columns,
   Copy,
   DotsThree,
@@ -26,6 +27,7 @@ import {
   WarningCircle,
   X,
 } from "@phosphor-icons/react";
+import type { Icon } from "@phosphor-icons/react";
 import i18n, { resolveLocale } from "./i18n";
 import { isAutoSaveEligible, isAutoSaveRevisionSuppressed } from "./autoSavePolicy";
 import { needsSaveConfirmation } from "./closePolicy";
@@ -313,14 +315,117 @@ function Welcome({
   );
 }
 
+function RecentFilesToolbarMenu({
+  recentFiles,
+  onOpen,
+  onRemove,
+  onClear,
+}: {
+  recentFiles: string[];
+  onOpen: (path: string) => void;
+  onRemove: (path: string) => void;
+  onClear: () => void;
+}) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const dismiss = useCallback((restoreFocus = false) => {
+    setOpen(false);
+    if (restoreFocus) triggerRef.current?.focus();
+  }, []);
+
+  const run = (action: () => void) => () => {
+    dismiss();
+    action();
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const dismissOutside = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) dismiss();
+    };
+    window.setTimeout(() => {
+      const menu = menuRef.current?.querySelector<HTMLDivElement>("[role='menu']");
+      const firstItem = menu?.querySelector<HTMLButtonElement>("button[role='menuitem']:not(:disabled)");
+      (firstItem ?? menu)?.focus();
+    }, 0);
+    window.addEventListener("pointerdown", dismissOutside);
+    return () => window.removeEventListener("pointerdown", dismissOutside);
+  }, [dismiss, open]);
+
+  const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const items = [...(menuRef.current?.querySelectorAll<HTMLButtonElement>("button[role='menuitem']:not(:disabled)") ?? [])];
+    const current = items.indexOf(document.activeElement as HTMLButtonElement);
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      dismiss(true);
+      return;
+    }
+    if (!(["ArrowDown", "ArrowUp", "Home", "End"] as string[]).includes(event.key) || items.length === 0) return;
+    event.preventDefault();
+    const next = event.key === "Home" ? 0
+      : event.key === "End" ? items.length - 1
+        : (current + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+    items[next]?.focus();
+  };
+
+  return (
+    <div className="toolbar-action-wrap recent-files-trigger" ref={menuRef}>
+      <button
+        ref={triggerRef}
+        type="button"
+        className="toolbar-action"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+        title={t("recentFiles")}
+      >
+        <ClockCounterClockwise size={23} weight="regular" />
+        <span>{t("recentFiles")}</span>
+      </button>
+      {open && (
+        <div className="recent-files-menu" role="menu" aria-label={t("recentFiles")} tabIndex={-1} onKeyDown={onKeyDown}>
+          {recentFiles.length === 0 ? <p className="recent-files-menu-empty">{t("recentEmpty")}</p> : (
+            <>
+              <div className="recent-files-menu-list">
+                {recentFiles.map((path) => {
+                  const fileName = path.split(/[\\/]/).at(-1) ?? path;
+                  return (
+                    <div className="recent-files-menu-item" key={path}>
+                      <button type="button" role="menuitem" className="recent-files-menu-open" onClick={run(() => onOpen(path))}>
+                        <FileText size={18} />
+                        <span><strong>{fileName}</strong><small>{path}</small></span>
+                      </button>
+                      <button type="button" role="menuitem" className="icon-button recent-files-menu-remove" aria-label={t("removeRecentFile", { name: fileName })} title={t("removeRecentFile", { name: fileName })} onClick={run(() => onRemove(path))}><X size={16} /></button>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="menu-separator" role="separator" />
+              <button type="button" role="menuitem" className="recent-files-menu-clear" onClick={run(onClear)}>{t("clearRecentFiles")}</button>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface ToolbarProps {
   canUndo: boolean;
   canRedo: boolean;
   split: boolean;
   wrap: boolean;
   canCompare: boolean;
+  recentFiles: string[];
   onNew: () => void;
   onOpen: () => void;
+  onOpenRecent: (path: string) => void;
+  onRemoveRecent: (path: string) => void;
+  onClearRecent: () => void;
   onSave: () => void;
   onUndo: () => void;
   onRedo: () => void;
@@ -331,11 +436,23 @@ interface ToolbarProps {
   onSettings: () => void;
 }
 
+type ToolbarAction =
+  | { key: "recent" }
+  | {
+    key: "new" | "open" | "save" | "undo" | "redo" | "find" | "compare" | "wrap" | "split" | "settings";
+    label: string;
+    icon: Icon;
+    action: () => void;
+    disabled?: boolean;
+    active?: boolean;
+  };
+
 function Toolbar(props: ToolbarProps) {
   const { t } = useTranslation();
-  const actions = [
+  const actions: ToolbarAction[] = [
     { key: "new", label: t("new"), icon: FilePlus, action: props.onNew },
     { key: "open", label: t("open"), icon: FolderOpen, action: props.onOpen },
+    { key: "recent" },
     { key: "save", label: t("save"), icon: FloppyDisk, action: props.onSave },
     { key: "undo", label: t("undo"), icon: ArrowCounterClockwise, action: props.onUndo, disabled: !props.canUndo },
     { key: "redo", label: t("redo"), icon: ArrowClockwise, action: props.onRedo, disabled: !props.canRedo },
@@ -346,14 +463,20 @@ function Toolbar(props: ToolbarProps) {
   ];
   return (
     <div className="toolbar" role="toolbar" aria-label={t("toolbar")}>
-      {actions.map(({ key, label, icon: Icon, action, disabled, active }, index) => (
-        <div className={"toolbar-action-wrap " + ([3, 5].includes(index) ? "with-divider" : "")} key={key}>
-          <button type="button" className={"toolbar-action " + (active ? "active" : "")} disabled={disabled} onClick={action} title={label}>
-            <Icon size={23} weight="regular" />
-            <span>{label}</span>
-          </button>
-        </div>
-      ))}
+      {actions.map((action) => {
+        if (action.key === "recent") {
+          return <RecentFilesToolbarMenu key={action.key} recentFiles={props.recentFiles} onOpen={props.onOpenRecent} onRemove={props.onRemoveRecent} onClear={props.onClearRecent} />;
+        }
+        const Icon = action.icon;
+        return (
+          <div className={"toolbar-action-wrap " + (["undo", "find"].includes(action.key) ? "with-divider" : "")} key={action.key}>
+            <button type="button" className={"toolbar-action " + (action.active ? "active" : "")} disabled={action.disabled} onClick={action.action} title={action.label}>
+              <Icon size={23} weight="regular" />
+              <span>{action.label}</span>
+            </button>
+          </div>
+        );
+      })}
       <button type="button" className="toolbar-action toolbar-more" onClick={props.onSettings} title={t("settings")}>
         <GearSix size={22} />
         <span>{t("settings")}</span>
@@ -1314,7 +1437,11 @@ export function App() {
       rememberRecent([opened.path]);
       flash(t("opened"));
     } catch {
-      setRecentFiles((current) => current.filter((item) => item !== path));
+      setRecentFiles((current) => {
+        const next = current.filter((item) => item !== path);
+        void persistRecentFiles(next);
+        return next;
+      });
       flash(t("openFailed"));
     }
   }, [activePane, addOpenedDocument, flash, rememberRecent, t]);
@@ -2002,8 +2129,12 @@ export function App() {
         split={split}
         wrap={settings.wordWrapByDefault}
         canCompare={canCompareSplitPanes}
+        recentFiles={recentFiles}
         onNew={() => createDocument(activePane)}
         onOpen={() => void openFiles()}
+        onOpenRecent={(path) => void openRecent(path)}
+        onRemoveRecent={removeRecent}
+        onClearRecent={clearRecent}
         onSave={() => void saveActive()}
         onUndo={() => activeDocument && undoDocument(activeDocument.id)}
         onRedo={() => activeDocument && redoDocument(activeDocument.id)}

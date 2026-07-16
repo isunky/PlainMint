@@ -12,6 +12,7 @@ vi.mock("./services/runtime", async (importOriginal) => {
     loadSettings: vi.fn().mockResolvedValue(null),
     loadSession: vi.fn().mockResolvedValue(null),
     loadRecentFiles: vi.fn().mockResolvedValue([]),
+    openDocumentPath: vi.fn(),
     loadRecentlyClosedTabs: vi.fn().mockResolvedValue([]),
     persistSession: vi.fn().mockResolvedValue(undefined),
     persistRecentFiles: vi.fn().mockResolvedValue(undefined),
@@ -25,7 +26,7 @@ vi.mock("./services/runtime", async (importOriginal) => {
 
 import { App } from "./App";
 import { selectNextOccurrenceInPane } from "./components/TextEditor";
-import { loadRecentFiles, persistRecentFiles, revealFileInDirectory } from "./services/runtime";
+import { loadRecentFiles, openDocumentPath, persistRecentFiles, revealFileInDirectory } from "./services/runtime";
 
 function doc(id: string): DocumentRecord {
   return {
@@ -73,6 +74,15 @@ beforeEach(async () => {
     settings: { ...defaultSettings, autoBackupEnabled: false },
   });
   vi.mocked(loadRecentFiles).mockResolvedValue([]);
+  vi.mocked(openDocumentPath).mockImplementation(async (path) => ({
+    path,
+    name: path.split(/[\\/]/).at(-1) ?? "document.txt",
+    content: "recent",
+    encoding: "utf-8",
+    lineEnding: "lf",
+    readOnly: false,
+    fingerprint: { modifiedAt: 1, size: 6, hash: "recent" },
+  }));
   vi.mocked(revealFileInDirectory).mockResolvedValue(undefined);
 });
 
@@ -255,6 +265,43 @@ describe("tab and split interactions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Clear recent files" }));
     expect(persistRecentFiles).toHaveBeenLastCalledWith([]);
     expect(screen.getByText("Recent files will appear here.")).toBeVisible();
+  });
+
+  it("opens and manages recent files from the toolbar dropdown", async () => {
+    vi.mocked(loadRecentFiles).mockResolvedValue(["C:\\recent.txt", "C:\\other.txt"]);
+    render(<App />);
+    await settle();
+
+    const trigger = screen.getByRole("button", { name: "Recent files" });
+    fireEvent.click(trigger);
+    const menu = screen.getByRole("menu", { name: "Recent files" });
+    expect(menu).toHaveTextContent("recent.txt");
+    expect(menu).toHaveTextContent("C:\\recent.txt");
+    fireEvent.keyDown(menu, { key: "End" });
+    expect(screen.getByRole("menuitem", { name: "Clear recent files" })).toHaveFocus();
+    fireEvent.keyDown(menu, { key: "Escape" });
+    expect(trigger).toHaveFocus();
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByText("recent.txt").closest("button") as HTMLButtonElement);
+    await settle();
+    expect(openDocumentPath).toHaveBeenCalledWith("C:\\recent.txt");
+    expect(screen.queryByRole("menu", { name: "Recent files" })).not.toBeInTheDocument();
+
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Remove other.txt from recent files" }));
+    expect(persistRecentFiles).toHaveBeenLastCalledWith(["C:\\recent.txt"]);
+
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Clear recent files" }));
+    expect(persistRecentFiles).toHaveBeenLastCalledWith([]);
+
+    fireEvent.click(trigger);
+    const emptyMenu = screen.getByRole("menu", { name: "Recent files" });
+    expect(emptyMenu).toHaveTextContent("Recent files will appear here.");
+    fireEvent.keyDown(emptyMenu, { key: "Escape" });
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
   });
 
   it("supports regular-expression replacement with capture groups", async () => {

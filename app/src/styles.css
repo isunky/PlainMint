@@ -274,6 +274,10 @@ select:focus-visible {
   padding: 0 3px;
 }
 
+.recent-files-trigger {
+  position: relative;
+}
+
 .toolbar-action-wrap.with-divider {
   margin-left: 10px;
   padding-left: 15px;
@@ -317,6 +321,104 @@ select:focus-visible {
 
 .toolbar-more span {
   display: none;
+}
+
+.recent-files-menu {
+  position: absolute;
+  z-index: 70;
+  top: calc(100% + 6px);
+  left: 3px;
+  width: min(360px, calc(100vw - 36px));
+  max-height: min(440px, calc(100vh - 96px));
+  padding: 6px;
+  overflow-y: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface-elevated);
+  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.2);
+}
+
+.recent-files-menu-empty {
+  margin: 10px 12px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.recent-files-menu-list {
+  display: grid;
+  gap: 3px;
+}
+
+.recent-files-menu-item {
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 3px;
+}
+
+.recent-files-menu-open,
+.recent-files-menu-clear {
+  min-width: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.recent-files-menu-open {
+  flex: 1 1 auto;
+  min-height: 48px;
+  padding: 7px 9px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+}
+
+.recent-files-menu-open svg {
+  flex: 0 0 auto;
+  color: var(--accent-primary);
+}
+
+.recent-files-menu-open span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.recent-files-menu-open strong,
+.recent-files-menu-open small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-files-menu-open small {
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.recent-files-menu-remove {
+  align-self: center;
+  flex: 0 0 auto;
+}
+
+.recent-files-menu-clear {
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 9px;
+  color: var(--danger);
+  text-align: left;
+}
+
+.recent-files-menu-open:hover,
+.recent-files-menu-open:focus-visible,
+.recent-files-menu-clear:hover,
+.recent-files-menu-clear:focus-visible {
+  outline: none;
+  background: var(--surface-hover);
 }
 
 .workspace {
