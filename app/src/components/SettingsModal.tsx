@@ -182,20 +182,6 @@ export function SettingsModal({
                     onChange={(value) => onChange({ autoCheckUpdates: value })}
                   />
                 </section>
-                <section className="settings-card">
-                  <h4>{t("language")}</h4>
-                  <label className="field-label">
-                    <span>{t("language")}</span>
-                    <select
-                      value={settings.locale}
-                      onChange={(event) => onChange({ locale: event.target.value as AppLocale })}
-                    >
-                      <option value="system">{t("languageSystem")}</option>
-                      <option value="zh-CN">{t("chinese")}</option>
-                      <option value="en">{t("english")}</option>
-                    </select>
-                  </label>
-                </section>
               </div>
             )}
 
@@ -305,6 +291,20 @@ export function SettingsModal({
                       </button>
                     ))}
                   </div>
+                </section>
+                <section className="settings-card settings-card-wide">
+                  <h4>{t("language")}</h4>
+                  <label className="field-label">
+                    <span>{t("language")}</span>
+                    <select
+                      value={settings.locale}
+                      onChange={(event) => onChange({ locale: event.target.value as AppLocale })}
+                    >
+                      <option value="system">{t("languageSystem")}</option>
+                      <option value="zh-CN">{t("chinese")}</option>
+                      <option value="en">{t("english")}</option>
+                    </select>
+                  </label>
                 </section>
               </div>
             )}

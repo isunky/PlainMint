@@ -23,6 +23,25 @@ beforeEach(async () => {
 afterEach(cleanup);
 
 describe("settings runtime controls", () => {
+  it("groups language settings with appearance", () => {
+    render(<SettingsModal
+      settings={{ ...defaultSettings, locale: "system" }}
+      directoryChecks={{ defaultSaveFolder: { status: "idle" }, cloudSyncFolder: { status: "idle" } }}
+      applying={false}
+      canApply
+      {...handlers}
+    />);
+
+    expect(screen.queryByLabelText("Language")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
+    const language = screen.getByLabelText("Language") as HTMLSelectElement;
+    expect(language.value).toBe("system");
+
+    fireEvent.change(language, { target: { value: "zh-CN" } });
+    expect(handlers.onChange).toHaveBeenCalledWith({ locale: "zh-CN" });
+  });
+
   it("binds the new-file encoding selector to settings", () => {
     render(<SettingsModal
       settings={{ ...defaultSettings, defaultEncoding: "utf-8-bom" }}
