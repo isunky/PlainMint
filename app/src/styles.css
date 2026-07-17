@@ -871,11 +871,26 @@ select:focus-visible {
 }
 
 .statusbar-position {
+  display: grid;
+  grid-template-columns: 134px 122px 126px;
   overflow: hidden;
 }
 
 .statusbar-group span {
   padding: 0 8px;
+}
+
+.statusbar-position > span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statusbar-position > span + span {
+  border-left: 1px solid var(--border-subtle);
 }
 
 .statusbar .status-spacer {
@@ -885,6 +900,13 @@ select:focus-visible {
 
 .statusbar-format {
   border-left: 1px solid var(--border-subtle);
+}
+
+.status-lines {
+  min-width: 96px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 .status-format-select {
@@ -2281,6 +2303,10 @@ select:focus-visible {
 }
 
 @container (max-width: 520px) {
+  .statusbar-position {
+    grid-template-columns: 134px;
+  }
+
   .status-selection,
   .status-characters,
   .status-lines {
