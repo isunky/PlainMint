@@ -33,6 +33,7 @@ import i18n, { resolveLocale } from "./i18n";
 import { isAutoSaveEligible, isAutoSaveRevisionSuppressed } from "./autoSavePolicy";
 import { needsSaveConfirmation } from "./closePolicy";
 import { displayDocumentName } from "./documentName";
+import { buildEditorFontFamily } from "./fontSettings";
 import { createWorkspaceSession, decideStartupRecovery } from "./recoveryPolicy";
 import { resolveInitialSaveFolder } from "./saveFolderPolicy";
 import { findSearchMatches } from "./searchPolicy";
@@ -1829,11 +1830,9 @@ export function App() {
     void i18n.changeLanguage(resolved);
     document.documentElement.dataset.appearance = settings.appearanceMode;
     document.documentElement.dataset.accent = settings.accentTheme;
-    document.documentElement.style.setProperty("--editor-font", settings.fontFamily === "ui-monospace"
-      ? '"Cascadia Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace'
-      : settings.fontFamily + ", monospace");
+    document.documentElement.style.setProperty("--editor-font", buildEditorFontFamily(settings.latinFontFamily, settings.cjkFontFamily));
     document.documentElement.style.setProperty("--accent-primary", accentMap[settings.accentTheme]);
-  }, [settings.locale, settings.appearanceMode, settings.accentTheme, settings.fontFamily]);
+  }, [settings.locale, settings.appearanceMode, settings.accentTheme, settings.latinFontFamily, settings.cjkFontFamily]);
 
   useEffect(() => {
     Object.values(documents).forEach((document) => {

@@ -1,5 +1,5 @@
 :root {
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", sans-serif;
   color: var(--text-primary);
   background: #edf7f5;
   font-synthesis: none;
@@ -44,7 +44,7 @@
   --shadow-window: 0 16px 42px rgba(58, 91, 91, 0.21), 0 2px 7px rgba(35, 68, 68, 0.12);
   --shadow-modal: 0 24px 70px rgba(31, 54, 55, 0.24), 0 4px 16px rgba(31, 54, 55, 0.14);
   --shadow-popup: 0 14px 36px rgba(31, 54, 55, 0.18), 0 2px 8px rgba(31, 54, 55, 0.08);
-  --editor-font: "Cascadia Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --editor-font: "Cascadia Mono", "Cascadia Code", "SFMono-Regular", "SF Mono", Menlo, Monaco, Consolas, "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", monospace;
 }
 
 :root[data-accent="graphite"] {
@@ -1410,6 +1410,14 @@ select:focus-visible {
 .field-label input:focus,
 .field-label select:focus {
   border-color: var(--accent-primary);
+}
+
+.editor-font-hint {
+  grid-column: 1 / -1;
+  margin: -6px 0 2px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .path-field {

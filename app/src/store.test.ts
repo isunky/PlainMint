@@ -1,6 +1,6 @@
 import { ChangeSet } from "@codemirror/state";
 import { describe, expect, it } from "vitest";
-import { defaultSettings, normalizeRecentlyClosedTabs, useAppStore } from "./store";
+import { defaultSettings, normalizeRecentlyClosedTabs, normalizeSettings, useAppStore } from "./store";
 import type { DocumentRecord, WorkspaceSession } from "./types";
 
 function documentRecord(id: string): DocumentRecord {
@@ -88,6 +88,15 @@ describe("disk reload", () => {
       fingerprint: { modifiedAt: 12, size: 10, hash: "same" },
     });
     expect(useAppStore.getState().histories[id]).toBe(beforeHistory);
+  });
+});
+
+describe("settings migration", () => {
+  it("keeps a legacy editor font as the selected Latin font", () => {
+    const settings = normalizeSettings({ fontFamily: "Consolas" });
+
+    expect(settings.latinFontFamily).toBe("Consolas");
+    expect(settings.cjkFontFamily).toBe("system-cjk");
   });
 });
 

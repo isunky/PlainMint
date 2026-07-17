@@ -122,7 +122,10 @@ export interface UserSettings {
   locale: AppLocale;
   appearanceMode: AppearanceMode;
   accentTheme: AccentTheme;
+  /** Retained to migrate preferences saved before separate Latin and CJK font settings. */
   fontFamily: string;
+  latinFontFamily: string;
+  cjkFontFamily: string;
   fontSize: number;
   lineHeight: number;
   tabSize: number;

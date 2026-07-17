@@ -15,6 +15,7 @@ import {
   X,
 } from "@phosphor-icons/react";
 import type { AccentTheme, AppLocale, AppearanceMode, ContextMenuStatus, DirectoryValidationResult, Encoding, LineEnding, UserSettings } from "../types";
+import { cjkFontOptions, latinFontOptions, systemCjkFont, systemMonospaceFont } from "../fontSettings";
 import { defaultSettings } from "../store";
 
 type SettingsSection = "general" | "editor" | "files" | "backup" | "appearance" | "shortcuts" | "about";
@@ -26,7 +27,7 @@ function defaultsForSection(section: SettingsSection): Partial<UserSettings> {
     case "general":
       return pickDefaults("autoBackupEnabled", "sessionRecoveryMode", "wordWrapByDefault", "showLineNumbers", "autoCheckUpdates");
     case "editor":
-      return pickDefaults("fontFamily", "fontSize", "lineHeight", "tabSize", "highlightCurrentLine", "spellCheckEnabled");
+      return pickDefaults("fontFamily", "latinFontFamily", "cjkFontFamily", "fontSize", "lineHeight", "tabSize", "highlightCurrentLine", "spellCheckEnabled");
     case "files":
       return pickDefaults("defaultSaveFolder", "cloudSyncFolder", "defaultEncoding", "defaultLineEnding", "recentFileLimit");
     case "backup":
@@ -294,14 +295,22 @@ export function SettingsModal({
                   <h4>{t("editor")}</h4>
                   <div className="field-grid">
                     <label className="field-label">
-                      <span>{t("fontFamily")}</span>
-                      <select value={settings.fontFamily} onChange={(event) => onChange({ fontFamily: event.target.value })}>
-                        <option value="ui-monospace">System monospace</option>
-                        <option value="Cascadia Mono">Cascadia Mono</option>
-                        <option value="SFMono-Regular">SF Mono</option>
-                        <option value="Consolas">Consolas</option>
+                      <span>{t("latinFont")}</span>
+                      <select value={settings.latinFontFamily} onChange={(event) => onChange({ latinFontFamily: event.target.value })}>
+                        {latinFontOptions.map((font) => (
+                          <option value={font} key={font}>{font === systemMonospaceFont ? t("systemMonospaceFont") : font === "SFMono-Regular" ? "SF Mono" : font}</option>
+                        ))}
                       </select>
                     </label>
+                    <label className="field-label">
+                      <span>{t("cjkFont")}</span>
+                      <select value={settings.cjkFontFamily} onChange={(event) => onChange({ cjkFontFamily: event.target.value })}>
+                        {cjkFontOptions.map((font) => (
+                          <option value={font} key={font}>{font === systemCjkFont ? t("systemCjkFont") : font}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <p className="editor-font-hint">{t("editorFontHint")}</p>
                     <label className="field-label">
                       <span>{t("fontSize")}</span>
                       <input type="number" min={10} max={28} value={settings.fontSize} onChange={(event) => onChange({ fontSize: Number(event.target.value) })} />

@@ -91,6 +91,28 @@ describe("settings runtime controls", () => {
     expect(handlers.onChange).toHaveBeenCalledWith({ spellCheckEnabled: true });
   });
 
+  it("lets users choose separate Latin and CJK editor fonts", () => {
+    render(<SettingsModal
+      settings={{ ...defaultSettings }}
+      directoryChecks={{ defaultSaveFolder: { status: "idle" }, cloudSyncFolder: { status: "idle" } }}
+      applying={false}
+      canApply
+      {...handlers}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Editor" }));
+    const latinFont = screen.getByLabelText("Latin font") as HTMLSelectElement;
+    const cjkFont = screen.getByLabelText("Chinese / CJK font") as HTMLSelectElement;
+    expect(latinFont.value).toBe("system-monospace");
+    expect(cjkFont.value).toBe("system-cjk");
+    expect(screen.getByText("PlainMint uses the Latin font first, then falls back to the selected Chinese / CJK font for Chinese characters.")).toBeInTheDocument();
+
+    fireEvent.change(latinFont, { target: { value: "JetBrains Mono" } });
+    fireEvent.change(cjkFont, { target: { value: "PingFang SC" } });
+    expect(handlers.onChange).toHaveBeenCalledWith({ latinFontFamily: "JetBrains Mono" });
+    expect(handlers.onChange).toHaveBeenCalledWith({ cjkFontFamily: "PingFang SC" });
+  });
+
   it("shows shortcuts on their own page before the about page", () => {
     const { container } = render(<SettingsModal
       settings={{ ...defaultSettings }}

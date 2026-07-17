@@ -71,6 +71,8 @@ export const defaultSettings: UserSettings = {
   appearanceMode: "system",
   accentTheme: "tiffany",
   fontFamily: "ui-monospace",
+  latinFontFamily: "system-monospace",
+  cjkFontFamily: "system-cjk",
   fontSize: 14,
   lineHeight: 1.55,
   tabSize: 4,
@@ -135,9 +137,12 @@ const supportedLineEndings: LineEnding[] = ["lf", "crlf", "cr"];
 
 export function normalizeSettings(settings: Partial<UserSettings>): UserSettings {
   const merged = { ...defaultSettings, ...settings };
+  const legacyFontFamily = settings.fontFamily && settings.fontFamily !== "ui-monospace" ? settings.fontFamily : undefined;
   const requestedTabSize = Number(merged.tabSize);
   return {
     ...merged,
+    latinFontFamily: settings.latinFontFamily || legacyFontFamily || defaultSettings.latinFontFamily,
+    cjkFontFamily: settings.cjkFontFamily || defaultSettings.cjkFontFamily,
     tabSize: Number.isFinite(requestedTabSize) ? Math.min(8, Math.max(2, Math.round(requestedTabSize))) : defaultSettings.tabSize,
     defaultEncoding: supportedEncodings.includes(merged.defaultEncoding) ? merged.defaultEncoding : defaultSettings.defaultEncoding,
     defaultLineEnding: supportedLineEndings.includes(merged.defaultLineEnding) ? merged.defaultLineEnding : defaultSettings.defaultLineEnding,
