@@ -852,6 +852,13 @@ select:focus-visible {
   font-size: 13px;
 }
 
+.editor-loading-button {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  cursor: text;
+}
+
 .compare-loading {
   min-height: 360px;
   border: 1px solid var(--border-subtle);

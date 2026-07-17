@@ -745,13 +745,15 @@ function StatusBar({ pane, document }: { pane: PaneId; document?: DocumentRecord
   );
 }
 
-function EditorPane({ pane, onCloseTab, onActivateTab, onTabPointerDown, onTabContextMenu, drag }: {
+function EditorPane({ pane, onCloseTab, onActivateTab, onTabPointerDown, onTabContextMenu, drag, editorRuntimeReady, onRequestEditorRuntime }: {
   pane: PaneId;
   onCloseTab: (pane: PaneId, tabId: string) => void;
   onActivateTab: (pane: PaneId, tabId: string) => void;
   onTabPointerDown: (pane: PaneId, tabId: string, event: React.PointerEvent<HTMLElement>) => void;
   onTabContextMenu: (menu: TabContextMenuState) => void;
   drag: TabDragView | null;
+  editorRuntimeReady: boolean;
+  onRequestEditorRuntime: (pane: PaneId) => void;
 }) {
   const { t } = useTranslation();
   const tabs = useAppStore((state) => state.tabs[pane]);
@@ -781,7 +783,7 @@ function EditorPane({ pane, onCloseTab, onActivateTab, onTabPointerDown, onTabCo
     <section className="editor-pane" data-pane-drop={pane} onPointerDown={() => setActivePane(pane)}>
       <TabBar pane={pane} onClose={onCloseTab} onActivate={onActivateTab} onPointerDown={onTabPointerDown} onContextMenu={onTabContextMenu} drag={drag} />
       {document ? <div className="editor-region">
-        <Suspense fallback={<div className="editor-loading" aria-busy="true">{t("loadingEditor")}</div>}>
+        {editorRuntimeReady ? <Suspense fallback={<div className="editor-loading" aria-busy="true">{t("loadingEditor")}</div>}>
           <TextEditor
             pane={pane}
             document={document}
@@ -793,7 +795,7 @@ function EditorPane({ pane, onCloseTab, onActivateTab, onTabPointerDown, onTabCo
             onUndo={() => undoDocument(document.id)}
             onRedo={() => redoDocument(document.id)}
           />
-        </Suspense>
+        </Suspense> : <button type="button" className="editor-loading editor-loading-button" aria-busy="true" onPointerDown={() => onRequestEditorRuntime(pane)}>{t("loadingEditor")}</button>}
       </div> : <div className="editor-empty"><span>{t("emptyPaneHint")}</span></div>}
       <StatusBar pane={pane} document={document} />
     </section>
@@ -1262,6 +1264,7 @@ export function App() {
   const [fileWatchListenerReady, setFileWatchListenerReady] = useState(false);
   const [contextMenuStatus, setContextMenuStatus] = useState<ContextMenuStatus>({ supported: false, enabled: false });
   const [contextMenuBusy, setContextMenuBusy] = useState(false);
+  const [editorRuntimeReady, setEditorRuntimeReady] = useState(false);
   const backupTimers = useRef<Record<string, number>>({});
   const idleSaveTimers = useRef<Record<string, { revision: number; timer: number }>>({});
   const saveInFlight = useRef(new Map<string, Promise<boolean>>());
@@ -1281,6 +1284,34 @@ export function App() {
   const splitResizePointerRef = useRef<number | null>(null);
   const updateCheckInFlight = useRef(false);
   const startupOpenPathsHandled = useRef(false);
+
+  useEffect(() => {
+    document.getElementById("startup-titlebar")?.remove();
+  }, []);
+
+  const requestEditorRuntime = useCallback((pane?: PaneId) => {
+    setEditorRuntimeReady(true);
+    if (!pane) return;
+    void loadTextEditor().then(() => {
+      window.setTimeout(() => focusEditor(pane), 0);
+    });
+  }, []);
+
+  useEffect(() => {
+    let idleHandle: number | undefined;
+    const delay = window.setTimeout(() => {
+      const activate = () => requestEditorRuntime();
+      if (window.requestIdleCallback) {
+        idleHandle = window.requestIdleCallback(activate, { timeout: 1_500 });
+      } else {
+        activate();
+      }
+    }, window.__TAURI_INTERNALS__ ? 800 : 0);
+    return () => {
+      window.clearTimeout(delay);
+      if (idleHandle !== undefined) window.cancelIdleCallback?.(idleHandle);
+    };
+  }, [requestEditorRuntime]);
 
   const activeDocumentId = tabs[activePane].find((tab) => tab.id === activeTab[activePane])?.documentId;
   const activeDocument = activeDocumentId ? documents[activeDocumentId] : undefined;
@@ -2301,7 +2332,7 @@ export function App() {
             onRecovery={() => setModal({ type: "recovery" })}
             onRestoreSession={() => void loadSession().then((session) => session && restoreSessionIntoStore(session))}
           />
-        ) : <EditorPane pane="left" onCloseTab={requestCloseTab} onActivateTab={activateTab} onTabPointerDown={beginTabDrag} onTabContextMenu={setTabContextMenu} drag={tabDrag} />}
+        ) : <EditorPane pane="left" onCloseTab={requestCloseTab} onActivateTab={activateTab} onTabPointerDown={beginTabDrag} onTabContextMenu={setTabContextMenu} drag={tabDrag} editorRuntimeReady={editorRuntimeReady} onRequestEditorRuntime={requestEditorRuntime} />}
         {split && (
           <>
             <div
@@ -2316,7 +2347,7 @@ export function App() {
               onPointerDown={onSplitPointerDown}
               onKeyDown={onSplitKeyDown}
             ><DotsThree size={20} weight="bold" /></div>
-            <EditorPane pane="right" onCloseTab={requestCloseTab} onActivateTab={activateTab} onTabPointerDown={beginTabDrag} onTabContextMenu={setTabContextMenu} drag={tabDrag} />
+            <EditorPane pane="right" onCloseTab={requestCloseTab} onActivateTab={activateTab} onTabPointerDown={beginTabDrag} onTabContextMenu={setTabContextMenu} drag={tabDrag} editorRuntimeReady={editorRuntimeReady} onRequestEditorRuntime={requestEditorRuntime} />
           </>
         )}
         {tabDrag?.dragging && tabDrag.rightEdge && <div className="split-drop-overlay" aria-hidden="true"><Columns size={28} /><span>{t("dropToSplit")}</span></div>}

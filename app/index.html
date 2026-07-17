@@ -7,8 +7,34 @@
     <meta name="description" content="PlainMint — Plain text, freshly simple." />
     <link rel="icon" type="image/png" href="/plainmint-icon-source.png" />
     <title>PlainMint</title>
+    <style>
+      html, body, #root { width: 100%; height: 100%; margin: 0; }
+      body { background: #f5f8f7; }
+      #startup-titlebar {
+        position: fixed;
+        inset: 0 0 auto;
+        z-index: 2147483647;
+        display: flex;
+        align-items: center;
+        height: 46px;
+        box-sizing: border-box;
+        padding-left: 16px;
+        gap: 9px;
+        border-bottom: 1px solid #dce5e2;
+        background: #f5f8f7;
+        color: #23302d;
+        font: 600 15px/1 "Segoe UI", system-ui, sans-serif;
+        letter-spacing: -0.02em;
+        user-select: none;
+      }
+      #startup-titlebar img { width: 26px; height: 26px; border-radius: 8px; }
+    </style>
   </head>
   <body>
+    <div id="startup-titlebar" data-tauri-drag-region aria-hidden="true">
+      <img src="/plainmint-icon-source.png" alt="" data-tauri-drag-region />
+      <span data-tauri-drag-region>PlainMint</span>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
