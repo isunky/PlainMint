@@ -110,8 +110,8 @@ describe("settings runtime controls", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "About" }));
     expect(screen.queryByRole("heading", { name: "Keyboard shortcuts" })).not.toBeInTheDocument();
-    expect(screen.getByText("Current version 0.1.0")).toBeInTheDocument();
-    expect(container.querySelector(".about-author")).toHaveTextContent("Author: Sunky");
+    expect(screen.getByLabelText("Current version")).toHaveTextContent("v0.1.0");
+    expect(screen.getByLabelText("Author")).toHaveTextContent("Sunky");
     const website = screen.getByRole("link", { name: "http://www.sunky.net" });
     expect(website).toHaveAttribute("href", "http://www.sunky.net");
     fireEvent.click(website);

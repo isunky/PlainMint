@@ -361,24 +361,42 @@ export function SettingsModal({
 
             {section === "about" && (
               <div className="about-panel">
-                <img src="/plainmint-icon-source.png" alt="" />
-                <h3>{t("productName")}</h3>
-                <p>{t("productDescription")}</p>
-                <p className="about-version">{t("currentVersion")} {currentVersion}</p>
-                <p className="about-author">{t("author")}: Sunky · <a href="http://www.sunky.net" onClick={(event) => { event.preventDefault(); onOpenAuthorWebsite(); }}>http://www.sunky.net</a></p>
-                <p className="privacy-copy">{t("privacy")}</p>
-                <div className="about-actions">
-                  <button type="button" className="button-secondary" onClick={onOpenSource}>{t("sourceCode")}</button>
-                  <span>{t("license")}</span>
+                <header className="about-hero">
+                  <img src="/plainmint-icon-source.png" alt="" />
+                  <div>
+                    <h3>{t("productName")}</h3>
+                    <p>{t("productDescription")}</p>
+                  </div>
+                </header>
+
+                <div className="about-meta-grid">
+                  <section className="about-meta-card" aria-label={t("currentVersion")}>
+                    <span>{t("currentVersion")}</span>
+                    <strong>v{currentVersion}</strong>
+                  </section>
+                  <section className="about-meta-card" aria-label={t("author")}>
+                    <span>{t("author")}</span>
+                    <strong>Sunky</strong>
+                    <a href="http://www.sunky.net" onClick={(event) => { event.preventDefault(); onOpenAuthorWebsite(); }}>http://www.sunky.net</a>
+                  </section>
                 </div>
+
                 <section className="about-update-card" aria-labelledby="about-update-title">
-                  <ArrowsClockwise size={30} color="var(--accent-primary)" />
+                  <div className="about-update-icon"><ArrowsClockwise size={22} /></div>
                   <div>
                     <h4 id="about-update-title">{t("updates")}</h4>
-                    <p>{checkingForUpdates ? t("checkingUpdates") : updateCheckStatus === "latest" ? t("latestVersion") : updateCheckStatus === "failed" ? t("updateCheckFailed") : t("updateReadyDescription")}</p>
+                    <p aria-live="polite">{checkingForUpdates ? t("checkingUpdates") : updateCheckStatus === "latest" ? t("latestVersion") : updateCheckStatus === "failed" ? t("updateCheckFailed") : t("updateReadyDescription")}</p>
                   </div>
                   <button type="button" className="button-secondary" disabled={checkingForUpdates} onClick={onCheckUpdates}>{checkingForUpdates ? t("checkingUpdates") : t("checkUpdates")}</button>
                 </section>
+
+                <div className="about-footer">
+                  <p>{t("privacy")}</p>
+                  <div>
+                    <button type="button" className="button-secondary" onClick={onOpenSource}>{t("sourceCode")}</button>
+                    <span>{t("license")}</span>
+                  </div>
+                </div>
               </div>
             )}
           </div>
