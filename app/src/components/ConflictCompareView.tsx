@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { EditorState, type Extension } from "@codemirror/state";
 import { MergeView } from "@codemirror/merge";
 import { EditorView, lineNumbers } from "@codemirror/view";
+import { codeMirrorCspExtension } from "../codeMirrorCsp";
 import { isSyntaxHighlightable, loadLanguage } from "../languageRegistry";
 import { plainMintSyntaxHighlighting } from "../syntaxHighlighting";
 import type { LanguageId } from "../types";
@@ -16,6 +17,7 @@ const comparisonTheme = EditorView.theme({
 
 function readOnlyExtensions(language: Extension) {
   return [
+    codeMirrorCspExtension(),
     lineNumbers(),
     EditorState.readOnly.of(true),
     EditorView.editable.of(false),

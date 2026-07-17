@@ -112,6 +112,9 @@
 
 ## 已完成记录
 
+- [x] **Tauri CSP 与 CodeMirror 样式兼容**：复用 Tauri 为打包样式注入的 CSP nonce，并传递给普通编辑器、冲突对比和分屏文件对比中的全部 CodeMirror 实例；发布版保留现有 CSP，恢复行号、正文、光标、选区、主题和语法高亮的完整布局。
+  PRD：§8.1、§8.1.4、§17.2；实现：本提交；验证：`npm run check`（108 tests）、`npm run build`、`cargo fmt --check`、`cargo test`（17 tests）、标准 CSP 的 Tauri Release 构建与实机布局验收。
+
 - [x] **启动交互性能与标题栏可靠性**：HTML 首帧提供独立的原生拖动标题栏；首屏优先加载可操作的窗口框架，CodeMirror 编辑器、语法高亮与对比视图在空闲期或用户点入编辑区时再加载；文件、会话、备份及注册表命令通过 Tauri 异步响应器离开原生窗口事件线程；系统右键菜单查询延迟到打开设置后，首次会话回写和备份清理移出启动关键窗口；自绘无边框标题栏保留原生拖动和双击最大化。
   PRD：§3.2、§7.2、§17.1；实现：`9761d80`、`8e10464`、本提交；验证：`npm run check`（105 tests）、`npm run build`、`cargo fmt --check`、`cargo test`（17 tests），并完成空配置及真实会话副本的 release 冷启动响应探测。
 

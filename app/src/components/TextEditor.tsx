@@ -27,6 +27,7 @@ import {
   selectNextOccurrence,
   setSearchQuery,
 } from "@codemirror/search";
+import { codeMirrorCspExtension } from "../codeMirrorCsp";
 import { effectiveLanguage, isSyntaxHighlightableStats, isTextLanguage, loadLanguage } from "../languageRegistry";
 import { getTextStats } from "../textStats";
 import { plainMintSyntaxHighlighting } from "../syntaxHighlighting";
@@ -193,6 +194,7 @@ export function TextEditor({
     const state = EditorState.create({
       doc: document.content,
       extensions: [
+        codeMirrorCspExtension(),
         highlightSpecialChars(),
         drawSelection(),
         dropCursor(),
