@@ -7,7 +7,6 @@ import {
   type ChangeSet,
 } from "@codemirror/state";
 import {
-  crosshairCursor,
   drawSelection,
   dropCursor,
   EditorView,
@@ -16,7 +15,6 @@ import {
   highlightSpecialChars,
   keymap,
   lineNumbers,
-  rectangularSelection,
 } from "@codemirror/view";
 import { defaultKeymap, indentWithTab } from "@codemirror/commands";
 import {
@@ -198,8 +196,6 @@ export function TextEditor({
         highlightSpecialChars(),
         drawSelection(),
         dropCursor(),
-        rectangularSelection(),
-        crosshairCursor(),
         EditorState.allowMultipleSelections.of(true),
         highlightActiveLine(),
         highlightActiveLineGutter(),
