@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 #[cfg(target_os = "windows")]
+use std::process::Command;
+#[cfg(target_os = "windows")]
 use std::{
     collections::{HashMap, HashSet},
     sync::{mpsc, Arc, RwLock},
@@ -109,6 +111,60 @@ struct FileWatchStatus {
 #[serde(rename_all = "camelCase")]
 struct FileWatchEventPayload {
     paths: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ContextMenuStatus {
+    supported: bool,
+    enabled: bool,
+}
+
+#[cfg(target_os = "windows")]
+const CONTEXT_MENU_KEY: &str = r"HKCU\Software\Classes\*\shell\PlainMint.Open";
+
+#[cfg(target_os = "windows")]
+fn context_menu_status() -> ContextMenuStatus {
+    let enabled = Command::new("reg")
+        .args(["query", CONTEXT_MENU_KEY])
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false);
+    ContextMenuStatus {
+        supported: true,
+        enabled,
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn context_menu_status() -> ContextMenuStatus {
+    ContextMenuStatus {
+        supported: false,
+        enabled: false,
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn run_registry_command(arguments: &[String]) -> CommandResult<()> {
+    let output = Command::new("reg")
+        .args(arguments)
+        .output()
+        .map_err(|error| {
+            AppError::new(
+                "context_menu_failed",
+                "contextMenuFailed",
+                Some(error.to_string()),
+            )
+        })?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(AppError::new(
+            "context_menu_failed",
+            "contextMenuFailed",
+            Some(String::from_utf8_lossy(&output.stderr).trim().to_string()),
+        ))
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -1028,6 +1084,83 @@ fn validate_directory(path: String, required_bytes: u64) -> DirectoryValidationR
 }
 
 #[tauri::command]
+fn get_context_menu_status() -> ContextMenuStatus {
+    context_menu_status()
+}
+
+#[tauri::command]
+fn set_context_menu_enabled(enabled: bool) -> CommandResult<ContextMenuStatus> {
+    #[cfg(target_os = "windows")]
+    {
+        if enabled {
+            let executable = std::env::current_exe().map_err(|error| {
+                AppError::new(
+                    "context_menu_failed",
+                    "contextMenuFailed",
+                    Some(error.to_string()),
+                )
+            })?;
+            let command = format!("\"{}\" \"%1\"", executable.to_string_lossy());
+            run_registry_command(&[
+                "add".into(),
+                CONTEXT_MENU_KEY.into(),
+                "/ve".into(),
+                "/d".into(),
+                "Open with PlainMint".into(),
+                "/f".into(),
+            ])?;
+            run_registry_command(&[
+                "add".into(),
+                format!("{}\\command", CONTEXT_MENU_KEY),
+                "/ve".into(),
+                "/d".into(),
+                command,
+                "/f".into(),
+            ])?;
+        } else {
+            let output = Command::new("reg")
+                .args(["delete", CONTEXT_MENU_KEY, "/f"])
+                .output()
+                .map_err(|error| {
+                    AppError::new(
+                        "context_menu_failed",
+                        "contextMenuFailed",
+                        Some(error.to_string()),
+                    )
+                })?;
+            if !output.status.success() && context_menu_status().enabled {
+                return Err(AppError::new(
+                    "context_menu_failed",
+                    "contextMenuFailed",
+                    Some(String::from_utf8_lossy(&output.stderr).trim().to_string()),
+                ));
+            }
+        }
+        Ok(context_menu_status())
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = enabled;
+        Ok(context_menu_status())
+    }
+}
+
+#[tauri::command]
+fn get_startup_open_paths() -> Vec<String> {
+    std::env::args_os()
+        .skip(1)
+        .map(PathBuf::from)
+        .filter(|path| {
+            fs::metadata(path)
+                .map(|metadata| metadata.is_file())
+                .unwrap_or(false)
+        })
+        .map(|path| path.to_string_lossy().to_string())
+        .collect()
+}
+
+#[tauri::command]
 fn open_file(request: OpenFileRequest) -> CommandResult<OpenedDocument> {
     let path = PathBuf::from(&request.path);
     let metadata = fs::metadata(&path).map_err(|error| AppError::io("file_missing", error))?;
@@ -1524,6 +1657,9 @@ pub fn run() {
             inspect_file_metadata,
             sync_file_watches,
             validate_directory,
+            get_context_menu_status,
+            set_context_menu_enabled,
+            get_startup_open_paths,
             open_file,
             save_file,
             load_settings,

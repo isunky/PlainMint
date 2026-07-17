@@ -142,6 +142,24 @@ describe("settings runtime controls", () => {
     expect(screen.getByRole("img", { name: "This changes the PlainMint interface language only; it does not change your document content." })).toBeInTheDocument();
   });
 
+  it("shows a removable Windows context-menu integration when supported", () => {
+    const onContextMenuChange = vi.fn();
+    render(<SettingsModal
+      settings={{ ...defaultSettings }}
+      directoryChecks={{ defaultSaveFolder: { status: "idle" }, cloudSyncFolder: { status: "idle" } }}
+      applying={false}
+      canApply
+      contextMenuStatus={{ supported: true, enabled: false }}
+      onContextMenuChange={onContextMenuChange}
+      {...handlers}
+    />);
+
+    const toggle = screen.getByRole("switch", { name: "File Explorer context menu" });
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+    fireEvent.click(toggle);
+    expect(onContextMenuChange).toHaveBeenCalledWith(true);
+  });
+
   it("shows update results inside the about page", () => {
     render(<SettingsModal
       settings={{ ...defaultSettings }}

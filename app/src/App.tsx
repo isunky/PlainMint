@@ -62,6 +62,8 @@ import {
   inspectFileMetadata,
   encodedByteLength,
   getAppVersion,
+  getContextMenuStatus,
+  getStartupOpenPaths,
   listenForWindowClose,
   listenForFileWatchChanges,
   listRecoveries,
@@ -79,6 +81,7 @@ import {
   revealFileInDirectory,
   restoreRecoveries,
   saveDocument,
+  setContextMenuEnabled,
   syncFileWatches,
   showSourceCode,
   showAuthorWebsite,
@@ -89,7 +92,7 @@ import {
 } from "./services/runtime";
 import type { UpdateCheckResult, UpdateInstallProgress } from "./services/runtime";
 import { useAppStore } from "./store";
-import type { DirectoryValidationResult, DocumentRecord, Encoding, FileFingerprint, LanguageMode, LineEnding, OpenedDocument, PaneId, RecoveryEntry, RecentlyClosedTab, UserSettings, WorkspaceSession } from "./types";
+import type { ContextMenuStatus, DirectoryValidationResult, DocumentRecord, Encoding, FileFingerprint, LanguageMode, LineEnding, OpenedDocument, PaneId, RecoveryEntry, RecentlyClosedTab, UserSettings, WorkspaceSession } from "./types";
 
 type ModalState =
   | { type: "none" }
@@ -1228,6 +1231,8 @@ export function App() {
   const [resizingSplit, setResizingSplit] = useState(false);
   const [autoSaveFailures, setAutoSaveFailures] = useState<Record<string, number>>({});
   const [fileWatchListenerReady, setFileWatchListenerReady] = useState(false);
+  const [contextMenuStatus, setContextMenuStatus] = useState<ContextMenuStatus>({ supported: false, enabled: false });
+  const [contextMenuBusy, setContextMenuBusy] = useState(false);
   const backupTimers = useRef<Record<string, number>>({});
   const idleSaveTimers = useRef<Record<string, { revision: number; timer: number }>>({});
   const saveInFlight = useRef(new Map<string, Promise<boolean>>());
@@ -1247,6 +1252,7 @@ export function App() {
   const splitResizePointerRef = useRef<number | null>(null);
   const updateCheckInFlight = useRef(false);
   const automaticUpdateCheckStarted = useRef(false);
+  const startupOpenPathsHandled = useRef(false);
 
   const activeDocumentId = tabs[activePane].find((tab) => tab.id === activeTab[activePane])?.documentId;
   const activeDocument = activeDocumentId ? documents[activeDocumentId] : undefined;
@@ -1337,6 +1343,17 @@ export function App() {
       return next;
     });
   }, []);
+
+  const changeContextMenu = useCallback(async (enabled: boolean) => {
+    setContextMenuBusy(true);
+    try {
+      setContextMenuStatus(await setContextMenuEnabled(enabled));
+    } catch {
+      flash(t("contextMenuFailed"));
+    } finally {
+      setContextMenuBusy(false);
+    }
+  }, [flash, t]);
 
   const clearRecent = useCallback(() => {
     setRecentFiles((current) => {
@@ -1514,6 +1531,20 @@ export function App() {
       flash(t("openFailed"));
     }
   }, [activePane, addOpenedDocument, flash, rememberRecent, t]);
+
+  useEffect(() => {
+    if (!hydrated || startupOpenPathsHandled.current) return;
+    startupOpenPathsHandled.current = true;
+    void getStartupOpenPaths().then(async (paths) => {
+      const opened = (await Promise.all(paths.map((path) => openDocumentPath(path).catch(() => null))))
+        .filter((document): document is OpenedDocument => Boolean(document));
+      opened.forEach((document) => addOpenedDocument(document, useAppStore.getState().activePane));
+      if (opened.length) {
+        rememberRecent(opened.map((document) => document.path));
+        flash(t("opened"));
+      }
+    }).catch(() => undefined);
+  }, [addOpenedDocument, flash, hydrated, rememberRecent, t]);
 
   const reopenClosedTab = useCallback(async () => {
     const entry = useAppStore.getState().recentlyClosedTabs[0];
@@ -1783,6 +1814,7 @@ export function App() {
 
   useEffect(() => {
     void getAppVersion().then(setAppVersion).catch(() => undefined);
+    void getContextMenuStatus().then(setContextMenuStatus).catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -2320,6 +2352,9 @@ export function App() {
           onCheckUpdates={() => void requestUpdateCheck(false)}
           onOpenSource={() => void showSourceCode()}
           onOpenAuthorWebsite={() => void showAuthorWebsite()}
+          contextMenuStatus={contextMenuStatus}
+          contextMenuBusy={contextMenuBusy}
+          onContextMenuChange={(enabled) => void changeContextMenu(enabled)}
         />
       )}
       {modal.type === "recovery" && <RecoveryModal onClose={() => setModal({ type: "none" })} />}

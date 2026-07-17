@@ -52,6 +52,11 @@ export interface FileWatchStatus {
   failedDirectories: string[];
 }
 
+export interface ContextMenuStatus {
+  supported: boolean;
+  enabled: boolean;
+}
+
 export interface DocumentRecord {
   id: string;
   filePath?: string;

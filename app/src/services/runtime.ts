@@ -11,6 +11,7 @@ import { check } from "@tauri-apps/plugin-updater";
 import { isUntitledDocument, untitledSaveFileName } from "../documentName";
 import type {
   BatchRecoveryResult,
+  ContextMenuStatus,
   DirectoryValidationResult,
   DocumentRecord,
   FileFingerprint,
@@ -380,6 +381,21 @@ export async function checkForUpdates(): Promise<UpdateCheckResult> {
 
 export async function showSourceCode() {
   await openUrl("https://github.com/isunky/PlainMint");
+}
+
+export async function getContextMenuStatus(): Promise<ContextMenuStatus> {
+  if (!isTauri()) return { supported: false, enabled: false };
+  return invoke<ContextMenuStatus>("get_context_menu_status");
+}
+
+export async function setContextMenuEnabled(enabled: boolean): Promise<ContextMenuStatus> {
+  if (!isTauri()) return { supported: false, enabled: false };
+  return invoke<ContextMenuStatus>("set_context_menu_enabled", { enabled });
+}
+
+export async function getStartupOpenPaths(): Promise<string[]> {
+  if (!isTauri()) return [];
+  return invoke<string[]>("get_startup_open_paths");
 }
 
 export async function showAuthorWebsite() {

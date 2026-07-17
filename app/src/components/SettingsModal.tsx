@@ -14,7 +14,7 @@ import {
   ShieldCheck,
   X,
 } from "@phosphor-icons/react";
-import type { AccentTheme, AppLocale, AppearanceMode, DirectoryValidationResult, Encoding, LineEnding, UserSettings } from "../types";
+import type { AccentTheme, AppLocale, AppearanceMode, ContextMenuStatus, DirectoryValidationResult, Encoding, LineEnding, UserSettings } from "../types";
 
 type SettingsSection = "general" | "editor" | "files" | "backup" | "appearance" | "shortcuts" | "about";
 
@@ -38,6 +38,9 @@ interface SettingsModalProps {
   onCheckUpdates: () => void;
   onOpenSource: () => void;
   onOpenAuthorWebsite: () => void;
+  contextMenuStatus?: ContextMenuStatus;
+  contextMenuBusy?: boolean;
+  onContextMenuChange?: (enabled: boolean) => void;
 }
 
 function formatBytes(bytes: number, locale: string) {
@@ -59,7 +62,7 @@ const accentValues: Record<AccentTheme, string> = {
   iris: "#8B6FD6",
 };
 
-function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (checked: boolean) => void; label: string }) {
+function Toggle({ checked, onChange, label, disabled = false }: { checked: boolean; onChange: (checked: boolean) => void; label: string; disabled?: boolean }) {
   return (
     <button
       type="button"
@@ -67,6 +70,7 @@ function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (che
       role="switch"
       aria-checked={checked}
       aria-label={label}
+      disabled={disabled}
       onClick={() => onChange(!checked)}
     >
       <span />
@@ -78,11 +82,13 @@ function SettingToggle({
   title,
   description,
   checked,
+  disabled,
   onChange,
 }: {
   title: string;
   description: string;
   checked: boolean;
+  disabled?: boolean;
   onChange: (checked: boolean) => void;
 }) {
   return (
@@ -91,7 +97,7 @@ function SettingToggle({
         <strong>{title}</strong>
         <p>{description}</p>
       </div>
-      <Toggle checked={checked} onChange={onChange} label={title} />
+      <Toggle checked={checked} onChange={onChange} label={title} disabled={disabled} />
     </div>
   );
 }
@@ -161,6 +167,9 @@ export function SettingsModal({
   onCheckUpdates,
   onOpenSource,
   onOpenAuthorWebsite,
+  contextMenuStatus = { supported: false, enabled: false },
+  contextMenuBusy = false,
+  onContextMenuChange,
 }: SettingsModalProps) {
   const { t, i18n } = useTranslation();
   const [section, setSection] = useState<SettingsSection>("general");
@@ -239,6 +248,15 @@ export function SettingsModal({
                     checked={settings.autoCheckUpdates}
                     onChange={(value) => onChange({ autoCheckUpdates: value })}
                   />
+                  {contextMenuStatus.supported && (
+                    <SettingToggle
+                      title={t("contextMenuIntegration")}
+                      description={t("contextMenuDescription")}
+                      checked={contextMenuStatus.enabled}
+                      disabled={contextMenuBusy}
+                      onChange={(value) => onContextMenuChange?.(value)}
+                    />
+                  )}
                 </section>
               </div>
             )}
