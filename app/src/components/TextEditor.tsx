@@ -252,6 +252,10 @@ export function TextEditor({
     });
     const view = new EditorView({ state, parent: hostRef.current });
     viewRef.current = view;
+    // The view starts from document.content, which already includes the latest patch.
+    // Treat that patch as consumed so a newly mounted split-pane editor never applies
+    // it a second time with the old document length.
+    lastPatchRef.current = document.patch?.sequence ?? 0;
     editors[pane] = view;
 
     return () => {

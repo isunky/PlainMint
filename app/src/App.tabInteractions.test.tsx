@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { ChangeSet } from "@codemirror/state";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "./i18n";
 import { defaultSettings, useAppStore } from "./store";
@@ -167,6 +168,48 @@ describe("tab and split interactions", () => {
     render(<App />);
     await settle();
     expect(screen.getByRole("button", { name: "Compare" })).toBeDisabled();
+  });
+
+  it("opens two unsaved documents in split view without losing either editor", async () => {
+    useAppStore.setState({
+      documents: {},
+      tabs: { left: [], right: [] },
+      activeTab: { left: null, right: null },
+      activePane: "left",
+      split: false,
+    });
+    render(<App />);
+    await settle();
+
+    const toolbar = within(screen.getByRole("toolbar", { name: "Toolbar" }));
+    fireEvent.click(toolbar.getByRole("button", { name: "New" }));
+    fireEvent.click(toolbar.getByRole("button", { name: "New" }));
+    act(() => {
+      const state = useAppStore.getState();
+      const activeTabId = state.activeTab.left;
+      const document = activeTabId
+        ? state.documents[state.tabs.left.find((tab) => tab.id === activeTabId)?.documentId ?? ""]
+        : undefined;
+      if (!document) throw new Error("Expected an active untitled document");
+      useAppStore.getState().applyChanges(
+        document.id,
+        ChangeSet.of({ from: 0, insert: "unsaved split content" }, document.content.length),
+        "test",
+      );
+    });
+    await settle();
+    fireEvent.click(toolbar.getByRole("button", { name: "Split" }));
+    await settle();
+
+    const state = useAppStore.getState();
+    expect(state.split).toBe(true);
+    expect(state.tabs.left).toHaveLength(2);
+    expect(state.tabs.right).toHaveLength(1);
+    expect(document.querySelectorAll(".editor-host")).toHaveLength(2);
+    expect([...document.querySelectorAll(".cm-content")].map((editor) => editor.textContent)).toEqual([
+      "unsaved split content",
+      "unsaved split content",
+    ]);
   });
 
   it("allows same-document split comparisons and reports no differences", async () => {
