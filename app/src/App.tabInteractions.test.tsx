@@ -305,6 +305,8 @@ describe("tab and split interactions", () => {
 
     fireEvent.click(screen.getByLabelText("Whole word"));
     expect(screen.getByText("1 of 2")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Next match" }));
+    expect(screen.getByText("2 of 2")).toBeVisible();
     fireEvent.click(screen.getByLabelText("Case sensitive"));
     expect(screen.getByText("1 of 1")).toBeVisible();
   });
@@ -406,12 +408,15 @@ describe("tab and split interactions", () => {
     expect(useAppStore.getState().documents.a.content).toBe("port: 80\nhost: localhost");
   });
 
-  it("adds selections for the next matching occurrence", async () => {
+  it("disables automatic matching highlights while keeping next-occurrence selections", async () => {
     useAppStore.setState({ documents: { ...useAppStore.getState().documents, a: { ...doc("a"), content: "alpha alpha" } } });
-    render(<App />);
+    const { container } = render(<App />);
     await settle();
 
+    expect(container.querySelector(".cm-selectionMatch")).not.toBeInTheDocument();
     expect(selectNextOccurrenceInPane("left")).toBe(1);
+    await settle();
+    expect(container.querySelector(".cm-selectionMatch")).not.toBeInTheDocument();
     expect(selectNextOccurrenceInPane("left")).toBe(2);
   });
 });

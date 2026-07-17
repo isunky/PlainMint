@@ -23,7 +23,6 @@ import {
   findNext,
   findPrevious,
   gotoLine,
-  highlightSelectionMatches,
   replaceAll as replaceAllSearch,
   replaceNext as replaceNextSearch,
   search,
@@ -204,7 +203,6 @@ export function TextEditor({
         EditorState.allowMultipleSelections.of(true),
         highlightActiveLine(),
         highlightActiveLineGutter(),
-        highlightSelectionMatches({ highlightWordAroundCursor: true, wholeWords: true }),
         search({ top: true }),
         keymap.of([
           { key: "Mod-d", run: selectNextOccurrence },
