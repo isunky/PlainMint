@@ -1928,7 +1928,7 @@ select:focus-visible {
 }
 
 .update-modal-backdrop {
-  z-index: 40;
+  z-index: 100;
 }
 
 .update-modal {
