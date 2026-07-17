@@ -118,6 +118,46 @@ describe("settings runtime controls", () => {
     expect(handlers.onOpenAuthorWebsite).toHaveBeenCalledOnce();
   });
 
+  it("opens hidden help from the title bar without adding it to the sidebar", () => {
+    const { container } = render(<SettingsModal
+      settings={{ ...defaultSettings }}
+      directoryChecks={{ defaultSaveFolder: { status: "idle" }, cloudSyncFolder: { status: "idle" } }}
+      applying={false}
+      canApply
+      {...handlers}
+    />);
+
+    expect(Array.from(container.querySelectorAll(".settings-sidebar nav button")).map((button) => button.textContent)).not.toContain("Help");
+    const help = screen.getByRole("button", { name: "Help" });
+    fireEvent.click(help);
+
+    expect(screen.getByRole("heading", { name: "Help" })).toBeInTheDocument();
+    expect(screen.getByText("Getting started")).toBeInTheDocument();
+    expect(screen.getByText("New documents are numbered until you choose a location with Save or Save as.")).toBeInTheDocument();
+    expect(screen.getByText("Troubleshooting")).toBeInTheDocument();
+
+    fireEvent.click(help);
+    expect(screen.getByRole("heading", { name: "General" })).toBeInTheDocument();
+  });
+
+  it("links hidden help to shortcuts and recovery", () => {
+    render(<SettingsModal
+      settings={{ ...defaultSettings }}
+      directoryChecks={{ defaultSaveFolder: { status: "idle" }, cloudSyncFolder: { status: "idle" } }}
+      applying={false}
+      canApply
+      {...handlers}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Help" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Keyboard shortcuts" })[1]);
+    expect(screen.getAllByRole("heading", { name: "Keyboard shortcuts" })).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole("button", { name: "Help" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open recovery center" }));
+    expect(handlers.onOpenRecovery).toHaveBeenCalledOnce();
+  });
+
   it("shows update results inside the about page", () => {
     render(<SettingsModal
       settings={{ ...defaultSettings }}
