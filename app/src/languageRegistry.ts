@@ -1,6 +1,7 @@
 import type { LanguageSupport } from "@codemirror/language";
 import { LanguageDescription, LanguageSupport as CodeMirrorLanguageSupport, StreamLanguage } from "@codemirror/language";
 import type { DocumentRecord, LanguageId } from "./types";
+import type { TextStats } from "./textStats";
 
 export const MAX_SYNTAX_HIGHLIGHT_BYTES = 5 * 1024 * 1024;
 export const MAX_SYNTAX_HIGHLIGHT_LINES = 50_000;
@@ -154,9 +155,16 @@ export function isTextLanguage(id: LanguageId) {
   return id === "plain" || id === "markdown";
 }
 
+export function isSyntaxHighlightableStats(stats: Pick<TextStats, "utf8Bytes" | "lines">) {
+  return stats.utf8Bytes <= MAX_SYNTAX_HIGHLIGHT_BYTES
+    && stats.lines <= MAX_SYNTAX_HIGHLIGHT_LINES;
+}
+
 export function isSyntaxHighlightable(content: string) {
-  return new TextEncoder().encode(content).byteLength <= MAX_SYNTAX_HIGHLIGHT_BYTES
-    && content.split("\n").length <= MAX_SYNTAX_HIGHLIGHT_LINES;
+  return isSyntaxHighlightableStats({
+    utf8Bytes: new TextEncoder().encode(content).byteLength,
+    lines: content.length === 0 ? 1 : content.split("\n").length,
+  });
 }
 
 export function isReadyForUntitledLanguageDetection(content: string) {

@@ -30,7 +30,8 @@ import {
   selectNextOccurrence,
   setSearchQuery,
 } from "@codemirror/search";
-import { effectiveLanguage, isSyntaxHighlightable, isTextLanguage, loadLanguage } from "../languageRegistry";
+import { effectiveLanguage, isSyntaxHighlightableStats, isTextLanguage, loadLanguage } from "../languageRegistry";
+import { getTextStats } from "../textStats";
 import { plainMintSyntaxHighlighting } from "../syntaxHighlighting";
 import type { DocumentRecord, PaneId, SearchState, UserSettings } from "../types";
 import { createSearchQuery } from "../searchPolicy";
@@ -186,7 +187,7 @@ export function TextEditor({
   callbacks.current = { onChange, onCursor, onFocus, onUndo, onRedo };
   const viewId = pane + "-" + document.id;
   const resolvedLanguage = effectiveLanguage(document);
-  const canHighlight = isSyntaxHighlightable(document.content);
+  const canHighlight = isSyntaxHighlightableStats(document.textStats ?? getTextStats(document.content));
   const spellcheckEnabled = settings.spellCheckEnabled && isTextLanguage(resolvedLanguage);
 
   useLayoutEffect(() => {

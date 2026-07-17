@@ -36,7 +36,8 @@ import { displayDocumentName } from "./documentName";
 import { createWorkspaceSession, decideStartupRecovery } from "./recoveryPolicy";
 import { resolveInitialSaveFolder } from "./saveFolderPolicy";
 import { findSearchMatches } from "./searchPolicy";
-import { effectiveLanguage, isSyntaxHighlightable, languageLabelKey, languageOptionIds } from "./languageRegistry";
+import { effectiveLanguage, isSyntaxHighlightableStats, languageLabelKey, languageOptionIds } from "./languageRegistry";
+import { getTextStats } from "./textStats";
 import { ConflictCompareView, type ComparisonSide } from "./components/ConflictCompareView";
 import { SettingsModal } from "./components/SettingsModal";
 import {
@@ -48,6 +49,7 @@ import {
   replaceCurrentSearchMatchInPane,
   TextEditor,
 } from "./components/TextEditor";
+
 import {
   beginAppSession,
   appErrorCode,
@@ -673,10 +675,11 @@ function StatusBar({ pane, document }: { pane: PaneId; document?: DocumentRecord
   const updateDocumentFormat = useAppStore((state) => state.updateDocumentFormat);
   const setDocumentLanguageMode = useAppStore((state) => state.setDocumentLanguageMode);
   if (!document) return <div className="statusbar" />;
-  const characters = Array.from(document.content).length;
-  const lines = document.content.split("\n").length;
+  const textStats = document.textStats ?? getTextStats(document.content);
+  const characters = textStats.characters;
+  const lines = textStats.lines;
   const resolvedLanguage = effectiveLanguage(document);
-  const syntaxHighlightable = isSyntaxHighlightable(document.content);
+  const syntaxHighlightable = isSyntaxHighlightableStats(textStats);
   const languageTitle = syntaxHighlightable
     ? t(languageLabelKey(resolvedLanguage))
     : t("syntaxHighlightPaused");
@@ -1256,8 +1259,10 @@ export function App() {
   const rightComparisonDocument = paneActiveDocumentIds.right ? documents[paneActiveDocumentIds.right] : undefined;
   const canCompareSplitPanes = split && Boolean(leftComparisonDocument && rightComparisonDocument);
   const searchResult = useMemo(
-    () => findSearchMatches(activeDocument?.content ?? "", search),
-    [activeDocument?.content, search.query, search.replacement, search.caseSensitive, search.wholeWord, search.regexp],
+    () => !search.open || !search.query
+      ? { valid: true, matches: [] }
+      : findSearchMatches(activeDocument?.content ?? "", search),
+    [activeDocument?.content, search.open, search.query, search.replacement, search.caseSensitive, search.wholeWord, search.regexp],
   );
   const matches = searchResult.matches;
   const history = activeDocument ? histories[activeDocument.id] : undefined;
@@ -1755,9 +1760,7 @@ export function App() {
       beginAppSession(),
       loadSettings().catch(() => null),
       loadSession().catch(() => null),
-      loadRecentFiles().catch(() => []),
-      loadRecentlyClosedTabs().catch(() => []),
-    ]).then(([startupStatus, storedSettings, storedSession, storedRecent, storedClosedTabs]) => {
+    ]).then(([startupStatus, storedSettings, storedSession]) => {
       if (storedSettings) loadSettingsIntoStore(storedSettings);
       const effectiveSettings = useAppStore.getState().settings;
       const explicitPreviewState = new URLSearchParams(window.location.search).has("state");
@@ -1769,10 +1772,12 @@ export function App() {
       );
       if (decision === "restore" && storedSession) restoreSessionIntoStore(storedSession);
       if (decision === "ask" && storedSession) setModal({ type: "startup-recovery", session: storedSession });
-      setRecentFiles(storedRecent);
-      loadRecentlyClosedTabsIntoStore(storedClosedTabs);
-      void pruneRecoveries(effectiveSettings).catch(() => undefined);
       if (decision !== "ask") setHydrated(true);
+      window.setTimeout(() => {
+        void loadRecentFiles().then(setRecentFiles).catch(() => undefined);
+        void loadRecentlyClosedTabs().then(loadRecentlyClosedTabsIntoStore).catch(() => undefined);
+        void pruneRecoveries(effectiveSettings).catch(() => undefined);
+      }, 0);
     }).catch(() => setHydrated(true));
   }, [loadRecentlyClosedTabsIntoStore, loadSettingsIntoStore, restoreSessionIntoStore]);
 

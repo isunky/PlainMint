@@ -58,6 +58,12 @@ export interface DocumentRecord {
   fileName: string;
   untitledNumber?: number;
   content: string;
+  /** Cached at document creation and updated from edits; old sessions may omit it. */
+  textStats?: {
+    characters: number;
+    lines: number;
+    utf8Bytes: number;
+  };
   encoding: Encoding;
   lineEnding: LineEnding;
   languageMode: LanguageMode;

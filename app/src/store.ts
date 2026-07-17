@@ -1,7 +1,8 @@
-import { ChangeSet, Text } from "@codemirror/state";
+import { ChangeSet } from "@codemirror/state";
 import { create } from "zustand";
 import { isUntitledDocument, untitledDocumentFileName } from "./documentName";
 import { detectLanguage, isReadyForUntitledLanguageDetection } from "./languageRegistry";
+import { applyChangesToString, applyTextStats, getTextStats } from "./textStats";
 import type {
   CursorStats,
   DocumentRecord,
@@ -151,6 +152,7 @@ function makeDocument(id: string, fileName: string, content: string, dirty = fal
     fileName,
     untitledNumber,
     content,
+    textStats: getTextStats(content),
     encoding,
     lineEnding,
     languageMode: "auto",
@@ -457,16 +459,16 @@ export const useAppStore = create<AppState>((set, get) => ({
   applyChanges: (documentId, changes, origin) => set((state) => {
     const document = state.documents[documentId];
     if (!document || document.readOnly || changes.empty) return state;
-    const before = Text.of(document.content.split("\n"));
-    const inverse = changes.invert(before);
-    const content = changes.apply(before).toString();
+    const result = applyChangesToString(document.content, changes);
+    const inverse = ChangeSet.of(result.inverseSpecs, result.content.length);
     const history = state.histories[documentId] ?? { undo: [], redo: [] };
     return {
       documents: {
         ...state.documents,
         [documentId]: {
           ...document,
-          content,
+          content: result.content,
+          textStats: applyTextStats(document.textStats ?? getTextStats(document.content), result.statsDelta),
           encoding: document.revision === 0 && isUntitledDocument(document) && document.content.length === 0
             ? state.settings.defaultEncoding
             : document.encoding,
@@ -493,14 +495,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     const history = state.histories[documentId];
     const entry = history?.undo.at(-1);
     if (!document || !history || !entry) return state;
-    const before = Text.of(document.content.split("\n"));
-    const content = entry.inverse.apply(before).toString();
+    const result = applyChangesToString(document.content, entry.inverse);
     return {
       documents: {
         ...state.documents,
         [documentId]: {
           ...document,
-          content,
+          content: result.content,
+          textStats: applyTextStats(document.textStats ?? getTextStats(document.content), result.statsDelta),
           dirty: true,
           revision: document.revision + 1,
           patch: { sequence: ++sequence, origin: "history", changes: entry.inverse },
@@ -521,14 +523,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     const history = state.histories[documentId];
     const entry = history?.redo.at(-1);
     if (!document || !history || !entry) return state;
-    const before = Text.of(document.content.split("\n"));
-    const content = entry.forward.apply(before).toString();
+    const result = applyChangesToString(document.content, entry.forward);
     return {
       documents: {
         ...state.documents,
         [documentId]: {
           ...document,
-          content,
+          content: result.content,
+          textStats: applyTextStats(document.textStats ?? getTextStats(document.content), result.statsDelta),
           dirty: true,
           revision: document.revision + 1,
           patch: { sequence: ++sequence, origin: "history", changes: entry.forward },
@@ -584,6 +586,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             fileName: opened.name,
             untitledNumber: undefined,
             content: opened.content,
+            textStats: getTextStats(opened.content),
             encoding: opened.encoding,
             lineEnding: opened.lineEnding,
             detectedLanguage: document.languageMode === "auto"
@@ -752,6 +755,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           languageMode,
           detectedLanguage: document.detectedLanguage ?? detectLanguage(document.fileName, document.content),
           autoLanguageDetectionComplete: document.autoLanguageDetectionComplete ?? Boolean(document.filePath),
+          textStats: document.textStats ?? getTextStats(document.content),
           revision: document.revision ?? 0,
           patch: undefined,
         },

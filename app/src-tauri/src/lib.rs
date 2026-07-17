@@ -137,6 +137,8 @@ struct FileWatchState {
     inner: Mutex<WindowsFileWatchState>,
     #[cfg(target_os = "windows")]
     targets: Arc<RwLock<WatchTargets>>,
+    #[cfg(target_os = "windows")]
+    app: AppHandle,
 }
 
 #[cfg(target_os = "windows")]
@@ -502,8 +504,10 @@ fn run_file_watch_debounce(rx: mpsc::Receiver<Vec<String>>, app: AppHandle) {
 }
 
 #[cfg(target_os = "windows")]
-fn create_file_watch_state(app: AppHandle) -> FileWatchState {
-    let targets = Arc::new(RwLock::new(WatchTargets::default()));
+fn start_file_watcher(
+    app: AppHandle,
+    targets: Arc<RwLock<WatchTargets>>,
+) -> Option<RecommendedWatcher> {
     let callback_targets = Arc::clone(&targets);
     let (tx, rx) = mpsc::channel::<Vec<String>>();
     let watcher = notify::recommended_watcher(move |result: notify::Result<Event>| {
@@ -518,16 +522,21 @@ fn create_file_watch_state(app: AppHandle) -> FileWatchState {
             let _ = tx.send(affected);
         }
     })
-    .ok();
-    if watcher.is_some() {
-        thread::spawn(move || run_file_watch_debounce(rx, app));
-    }
+    .ok()?;
+    thread::spawn(move || run_file_watch_debounce(rx, app));
+    Some(watcher)
+}
+
+#[cfg(target_os = "windows")]
+fn create_file_watch_state(app: AppHandle) -> FileWatchState {
+    let targets = Arc::new(RwLock::new(WatchTargets::default()));
     FileWatchState {
         inner: Mutex::new(WindowsFileWatchState {
-            watcher,
+            watcher: None,
             watched_directories: HashMap::new(),
         }),
         targets,
+        app,
     }
 }
 
@@ -949,6 +958,19 @@ fn sync_file_watches(
                     .collect(),
             };
         };
+        if desired_directories.is_empty() {
+            inner.watched_directories.clear();
+            inner.watcher.take();
+            return FileWatchStatus {
+                available: false,
+                watched_files: 0,
+                watched_directories: 0,
+                failed_directories: Vec::new(),
+            };
+        }
+        if inner.watcher.is_none() {
+            inner.watcher = start_file_watcher(state.app.clone(), Arc::clone(&state.targets));
+        }
         let available = inner.watcher.is_some();
         let removed = inner
             .watched_directories
