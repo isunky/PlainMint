@@ -11,6 +11,9 @@ function documentRecord(id: string): DocumentRecord {
     content: id,
     encoding: "utf-8",
     lineEnding: "lf",
+    languageMode: "auto",
+    detectedLanguage: "plain",
+    autoLanguageDetectionComplete: true,
     dirty: false,
     readOnly: false,
     missing: false,
@@ -99,6 +102,9 @@ describe("workspace session", () => {
         content: "safe content",
         encoding: "utf-8",
         lineEnding: "lf",
+        languageMode: "auto",
+        detectedLanguage: "plain",
+        autoLanguageDetectionComplete: true,
         dirty: true,
         readOnly: false,
         missing: false,
@@ -119,6 +125,57 @@ describe("workspace session", () => {
     expect(state.activeTab.left).toBe("restored-tab");
     expect(state.tabs.right).toHaveLength(0);
     expect(state.split).toBe(false);
+  });
+});
+
+describe("document language state", () => {
+  it("changes the display mode without touching content history or dirty state", () => {
+    const id = "language-mode";
+    useAppStore.setState((state) => ({
+      documents: {
+        ...state.documents,
+        [id]: {
+          ...documentRecord(id),
+          fileName: "language-mode.ts",
+          dirty: true,
+          revision: 6,
+          languageMode: "auto",
+          detectedLanguage: "typescript",
+        },
+      },
+      histories: { ...state.histories, [id]: { undo: [], redo: [] } },
+    }));
+    const history = useAppStore.getState().histories[id];
+
+    useAppStore.getState().setDocumentLanguageMode(id, "python");
+    expect(useAppStore.getState().documents[id]).toMatchObject({ languageMode: "python", detectedLanguage: "typescript", dirty: true, revision: 6 });
+    expect(useAppStore.getState().histories[id]).toBe(history);
+
+    useAppStore.getState().setDocumentLanguageMode(id, "auto");
+    expect(useAppStore.getState().documents[id]).toMatchObject({ languageMode: "auto", detectedLanguage: "typescript", dirty: true, revision: 6 });
+  });
+
+  it("runs untitled content detection once without creating an edit", () => {
+    const id = "untitled-language";
+    useAppStore.setState((state) => ({
+      documents: {
+        ...state.documents,
+        [id]: {
+          ...documentRecord(id),
+          filePath: undefined,
+          fileName: "Untitled",
+          content: "# Heading\n\n- item",
+          dirty: true,
+          revision: 4,
+          languageMode: "auto",
+          detectedLanguage: "plain",
+          autoLanguageDetectionComplete: false,
+        },
+      },
+    }));
+
+    useAppStore.getState().completeUntitledLanguageDetection(id);
+    expect(useAppStore.getState().documents[id]).toMatchObject({ detectedLanguage: "markdown", autoLanguageDetectionComplete: true, dirty: true, revision: 4 });
   });
 });
 

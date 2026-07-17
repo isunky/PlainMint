@@ -6,6 +6,31 @@ export type LineEnding = "lf" | "crlf" | "cr";
 export type AppearanceMode = "system" | "light" | "dark";
 export type AccentTheme = "tiffany" | "graphite" | "amber" | "coral" | "iris";
 export type AppLocale = "system" | "zh-CN" | "en";
+export type LanguageId =
+  | "plain"
+  | "markdown"
+  | "json"
+  | "yaml"
+  | "xml"
+  | "html"
+  | "css"
+  | "scss"
+  | "less"
+  | "javascript"
+  | "jsx"
+  | "typescript"
+  | "tsx"
+  | "python"
+  | "sql"
+  | "shell"
+  | "powershell"
+  | "cpp"
+  | "csharp"
+  | "java"
+  | "go"
+  | "rust"
+  | "php";
+export type LanguageMode = "auto" | LanguageId;
 
 export interface FileFingerprint {
   modifiedAt: number;
@@ -34,6 +59,9 @@ export interface DocumentRecord {
   content: string;
   encoding: Encoding;
   lineEnding: LineEnding;
+  languageMode: LanguageMode;
+  detectedLanguage: LanguageId;
+  autoLanguageDetectionComplete: boolean;
   dirty: boolean;
   readOnly: boolean;
   missing: boolean;

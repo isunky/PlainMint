@@ -34,6 +34,7 @@ import { needsSaveConfirmation } from "./closePolicy";
 import { createWorkspaceSession, decideStartupRecovery } from "./recoveryPolicy";
 import { resolveInitialSaveFolder } from "./saveFolderPolicy";
 import { findSearchMatches } from "./searchPolicy";
+import { effectiveLanguage, isSyntaxHighlightable, languageLabelKey, languageOptionIds } from "./languageRegistry";
 import { ConflictCompareView, type ComparisonSide } from "./components/ConflictCompareView";
 import { SettingsModal } from "./components/SettingsModal";
 import {
@@ -84,7 +85,7 @@ import {
 } from "./services/runtime";
 import type { UpdateCheckResult, UpdateInstallProgress } from "./services/runtime";
 import { useAppStore } from "./store";
-import type { DirectoryValidationResult, DocumentRecord, Encoding, FileFingerprint, LineEnding, OpenedDocument, PaneId, RecoveryEntry, RecentlyClosedTab, UserSettings, WorkspaceSession } from "./types";
+import type { DirectoryValidationResult, DocumentRecord, Encoding, FileFingerprint, LanguageMode, LineEnding, OpenedDocument, PaneId, RecoveryEntry, RecentlyClosedTab, UserSettings, WorkspaceSession } from "./types";
 
 type ModalState =
   | { type: "none" }
@@ -106,7 +107,7 @@ type ModalState =
   };
 
 type TabCloseTarget = { pane: PaneId; tabId: string };
-type ComparisonDocument = Pick<DocumentRecord, "filePath" | "fileName" | "content" | "encoding" | "lineEnding">;
+type ComparisonDocument = Pick<DocumentRecord, "filePath" | "fileName" | "content" | "encoding" | "lineEnding" | "languageMode" | "detectedLanguage">;
 
 type TabDragView = {
   tabId: string;
@@ -159,6 +160,8 @@ function comparisonSnapshot(document: DocumentRecord): ComparisonDocument {
     content: document.content,
     encoding: document.encoding,
     lineEnding: document.lineEnding,
+    languageMode: document.languageMode,
+    detectedLanguage: document.detectedLanguage,
   };
 }
 
@@ -661,9 +664,15 @@ function StatusBar({ pane, document }: { pane: PaneId; document?: DocumentRecord
   const { t } = useTranslation();
   const cursor = useAppStore((state) => state.cursor[pane]);
   const updateDocumentFormat = useAppStore((state) => state.updateDocumentFormat);
+  const setDocumentLanguageMode = useAppStore((state) => state.setDocumentLanguageMode);
   if (!document) return <div className="statusbar" />;
   const characters = Array.from(document.content).length;
   const lines = document.content.split("\n").length;
+  const resolvedLanguage = effectiveLanguage(document);
+  const syntaxHighlightable = isSyntaxHighlightable(document.content);
+  const languageTitle = syntaxHighlightable
+    ? t(languageLabelKey(resolvedLanguage))
+    : t("syntaxHighlightPaused");
   return (
     <div className="statusbar" aria-label={t("statusbar")}>
       <div className="statusbar-group statusbar-position">
@@ -685,7 +694,16 @@ function StatusBar({ pane, document }: { pane: PaneId; document?: DocumentRecord
           <option value="crlf">CRLF</option>
           <option value="cr">CR</option>
         </select>
-        <span className="status-file-type">{document.fileName.endsWith(".md") ? t("markdown") : t("plainText")}</span>
+        <select
+          className="status-format-select status-language-select"
+          aria-label={t("syntaxLanguage")}
+          title={languageTitle}
+          value={document.languageMode}
+          onChange={(event) => setDocumentLanguageMode(document.id, event.target.value as LanguageMode)}
+        >
+          <option value="auto">{t("syntaxLanguageAuto", { language: t(languageLabelKey(resolvedLanguage)) })}</option>
+          {languageOptionIds.map((language) => <option key={language} value={language}>{t(languageLabelKey(language))}</option>)}
+        </select>
       </div>
     </div>
   );
@@ -710,8 +728,19 @@ function EditorPane({ pane, onCloseTab, onActivateTab, onTabPointerDown, onTabCo
   const setActivePane = useAppStore((state) => state.setActivePane);
   const undoDocument = useAppStore((state) => state.undoDocument);
   const redoDocument = useAppStore((state) => state.redoDocument);
+  const completeUntitledLanguageDetection = useAppStore((state) => state.completeUntitledLanguageDetection);
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
   const document = activeTab ? documents[activeTab.documentId] : undefined;
+  useEffect(() => {
+    if (
+      !document
+      || document.filePath
+      || document.languageMode !== "auto"
+      || document.autoLanguageDetectionComplete
+    ) return;
+    const timer = window.setTimeout(() => completeUntitledLanguageDetection(document.id), 1_000);
+    return () => window.clearTimeout(timer);
+  }, [completeUntitledLanguageDetection, document?.autoLanguageDetectionComplete, document?.content, document?.filePath, document?.id, document?.languageMode]);
   return (
     <section className="editor-pane" data-pane-drop={pane} onPointerDown={() => setActivePane(pane)}>
       <TabBar pane={pane} onClose={onCloseTab} onActivate={onActivateTab} onPointerDown={onTabPointerDown} onContextMenu={onTabContextMenu} drag={drag} />
@@ -1024,6 +1053,8 @@ function ConflictModal({
         <ConflictCompareView
           localContent={document.content}
           diskContent={modal.disk.content}
+          localLanguage={effectiveLanguage(document)}
+          diskLanguage={effectiveLanguage(document)}
           localLabel={{ label: t("conflictLocalVersion") }}
           diskLabel={{ label: t("conflictDiskVersion") }}
           largeFileMessage={t("conflictLargeFile")}
@@ -1057,6 +1088,8 @@ function CompareModal({ modal, onClose }: { modal: Extract<ModalState, { type: "
         <ConflictCompareView
           localContent={modal.left.content}
           diskContent={modal.right.content}
+          localLanguage={effectiveLanguage(modal.left)}
+          diskLanguage={effectiveLanguage(modal.right)}
           localLabel={comparisonSide(modal.left, t("compareUnsavedDocument"))}
           diskLabel={comparisonSide(modal.right, t("compareUnsavedDocument"))}
           largeFileMessage={t("compareLargeFile")}

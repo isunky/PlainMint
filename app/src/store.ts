@@ -1,11 +1,13 @@
 import { ChangeSet, Text } from "@codemirror/state";
 import { create } from "zustand";
+import { detectLanguage, isReadyForUntitledLanguageDetection } from "./languageRegistry";
 import type {
   CursorStats,
   DocumentRecord,
   Encoding,
   EditorTab,
   LineEnding,
+  LanguageMode,
   OpenedDocument,
   PaneId,
   RecentlyClosedTab,
@@ -51,6 +53,8 @@ interface AppState {
   refreshDocumentDiskState: (documentId: string, filePath: string, fingerprint: DocumentRecord["fingerprint"], readOnly: boolean) => void;
   updateDocumentFlags: (documentId: string, flags: Partial<Pick<DocumentRecord, "readOnly" | "missing" | "externalModified">>) => void;
   updateDocumentFormat: (documentId: string, patch: Partial<Pick<DocumentRecord, "encoding" | "lineEnding">>) => void;
+  setDocumentLanguageMode: (documentId: string, languageMode: LanguageMode) => void;
+  completeUntitledLanguageDetection: (documentId: string) => void;
   setSearch: (patch: Partial<SearchState>) => void;
   replaceCurrent: (documentId: string, from: number, to: number, value: string) => void;
   replaceAll: (documentId: string, ranges: Array<{ from: number; to: number }>, value: string) => void;
@@ -147,6 +151,9 @@ function makeDocument(id: string, fileName: string, content: string, dirty = fal
     content,
     encoding,
     lineEnding,
+    languageMode: "auto",
+    detectedLanguage: detectLanguage(fileName, content),
+    autoLanguageDetectionComplete: false,
     dirty,
     readOnly: false,
     missing: false,
@@ -287,6 +294,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       content: opened.content,
       encoding: opened.encoding,
       lineEnding: opened.lineEnding,
+      languageMode: "auto",
+      detectedLanguage: detectLanguage(opened.name, opened.content),
+      autoLanguageDetectionComplete: true,
       dirty: Boolean(opened.recovered),
       readOnly: opened.readOnly,
       missing: false,
@@ -527,6 +537,10 @@ export const useAppStore = create<AppState>((set, get) => ({
           ...document,
           filePath,
           fileName,
+          detectedLanguage: document.languageMode === "auto"
+            ? detectLanguage(fileName, document.content)
+            : document.detectedLanguage,
+          autoLanguageDetectionComplete: true,
           fingerprint,
           dirty: document.revision !== savedRevision,
           externalModified: false,
@@ -552,6 +566,10 @@ export const useAppStore = create<AppState>((set, get) => ({
             content: opened.content,
             encoding: opened.encoding,
             lineEnding: opened.lineEnding,
+            detectedLanguage: document.languageMode === "auto"
+              ? detectLanguage(opened.name, opened.content)
+              : document.detectedLanguage,
+            autoLanguageDetectionComplete: true,
             readOnly: opened.readOnly,
             missing: false,
             externalModified: false,
@@ -613,6 +631,54 @@ export const useAppStore = create<AppState>((set, get) => ({
     };
   }),
 
+  setDocumentLanguageMode: (documentId, languageMode) => set((state) => {
+    const document = state.documents[documentId];
+    if (!document) return state;
+    const detectedLanguage = languageMode === "auto"
+      ? detectLanguage(document.fileName, document.content)
+      : document.detectedLanguage;
+    const autoLanguageDetectionComplete = languageMode === "auto"
+      ? Boolean(document.filePath) || isReadyForUntitledLanguageDetection(document.content)
+      : document.autoLanguageDetectionComplete;
+    if (
+      document.languageMode === languageMode
+      && document.detectedLanguage === detectedLanguage
+      && document.autoLanguageDetectionComplete === autoLanguageDetectionComplete
+    ) return state;
+    return {
+      documents: {
+        ...state.documents,
+        [documentId]: {
+          ...document,
+          languageMode,
+          detectedLanguage,
+          autoLanguageDetectionComplete,
+        },
+      },
+    };
+  }),
+
+  completeUntitledLanguageDetection: (documentId) => set((state) => {
+    const document = state.documents[documentId];
+    if (
+      !document
+      || document.filePath
+      || document.languageMode !== "auto"
+      || document.autoLanguageDetectionComplete
+      || !isReadyForUntitledLanguageDetection(document.content)
+    ) return state;
+    return {
+      documents: {
+        ...state.documents,
+        [documentId]: {
+          ...document,
+          detectedLanguage: detectLanguage(document.fileName, document.content),
+          autoLanguageDetectionComplete: true,
+        },
+      },
+    };
+  }),
+
   setSearch: (patch) => set((state) => ({ search: { ...state.search, ...patch } })),
 
   replaceCurrent: (documentId, from, to, value) => {
@@ -633,10 +699,20 @@ export const useAppStore = create<AppState>((set, get) => ({
   updateSettings: (patch) => set((state) => ({ settings: normalizeSettings({ ...state.settings, ...patch }) })),
   loadSettings: (settings) => set({ settings: normalizeSettings(settings) }),
   restoreSession: (session) => set(() => {
-    const documents = Object.fromEntries(session.documents.map(({ patch: _patch, ...document }) => [
-      document.id,
-      { ...document, revision: document.revision ?? 0, patch: undefined },
-    ]));
+    const documents = Object.fromEntries(session.documents.map(({ patch: _patch, ...document }) => {
+      const languageMode = document.languageMode ?? "auto";
+      return [
+        document.id,
+        {
+          ...document,
+          languageMode,
+          detectedLanguage: document.detectedLanguage ?? detectLanguage(document.fileName, document.content),
+          autoLanguageDetectionComplete: document.autoLanguageDetectionComplete ?? Boolean(document.filePath),
+          revision: document.revision ?? 0,
+          patch: undefined,
+        },
+      ];
+    }));
     const validTabs = (pane: PaneId) => normalizeTabs(
       (session.tabs[pane] ?? []).filter((tab) => Boolean(documents[tab.documentId])),
       pane,

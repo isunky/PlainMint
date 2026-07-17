@@ -1,10 +1,10 @@
-import { useLayoutEffect, useRef, useState } from "react";
-import { EditorState } from "@codemirror/state";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { EditorState, type Extension } from "@codemirror/state";
 import { MergeView } from "@codemirror/merge";
 import { EditorView, lineNumbers } from "@codemirror/view";
-
-const MAX_HIGHLIGHT_BYTES = 5 * 1024 * 1024;
-const MAX_HIGHLIGHT_LINES = 50_000;
+import { isSyntaxHighlightable, loadLanguage } from "../languageRegistry";
+import { plainMintSyntaxHighlighting } from "../syntaxHighlighting";
+import type { LanguageId } from "../types";
 
 const comparisonTheme = EditorView.theme({
   "&": { height: "100%", color: "var(--text-primary)", backgroundColor: "var(--surface-editor)" },
@@ -14,24 +14,23 @@ const comparisonTheme = EditorView.theme({
   ".cm-gutters": { backgroundColor: "var(--surface-editor)", color: "var(--text-tertiary)", borderRight: "1px solid var(--border-subtle)" },
 });
 
-function readOnlyExtensions() {
+function readOnlyExtensions(language: Extension) {
   return [
     lineNumbers(),
     EditorState.readOnly.of(true),
     EditorView.editable.of(false),
     EditorView.lineWrapping,
     comparisonTheme,
+    plainMintSyntaxHighlighting,
+    language,
   ];
-}
-
-function isHighlightable(content: string) {
-  return new TextEncoder().encode(content).byteLength <= MAX_HIGHLIGHT_BYTES
-    && content.split("\n").length <= MAX_HIGHLIGHT_LINES;
 }
 
 interface ConflictCompareViewProps {
   localContent: string;
   diskContent: string;
+  localLanguage: LanguageId;
+  diskLanguage: LanguageId;
   localLabel: ComparisonSide;
   diskLabel: ComparisonSide;
   largeFileMessage: string;
@@ -64,6 +63,8 @@ function scrollToChunk(view: MergeView, chunkIndex: number) {
 export function ConflictCompareView({
   localContent,
   diskContent,
+  localLanguage,
+  diskLanguage,
   localLabel,
   diskLabel,
   largeFileMessage,
@@ -78,14 +79,30 @@ export function ConflictCompareView({
   const mergeViewRef = useRef<MergeView | null>(null);
   const [chunkCount, setChunkCount] = useState(0);
   const [activeChunk, setActiveChunk] = useState<number | null>(null);
-  const highlighted = isHighlightable(localContent) && isHighlightable(diskContent);
+  const [languageExtensions, setLanguageExtensions] = useState<[Extension, Extension]>([[], []]);
+  const highlighted = isSyntaxHighlightable(localContent) && isSyntaxHighlightable(diskContent);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!highlighted) {
+      setLanguageExtensions([[], []]);
+      return () => { cancelled = true; };
+    }
+    void Promise.all([loadLanguage(localLanguage), loadLanguage(diskLanguage)]).then(([local, disk]) => {
+      if (!cancelled) setLanguageExtensions([local ?? [], disk ?? []]);
+    }).catch(() => {
+      if (!cancelled) setLanguageExtensions([[], []]);
+    });
+    return () => { cancelled = true; };
+  }, [diskLanguage, highlighted, localLanguage]);
 
   useLayoutEffect(() => {
-    const extensions = readOnlyExtensions();
+    const localExtensions = readOnlyExtensions(languageExtensions[0]);
+    const diskExtensions = readOnlyExtensions(languageExtensions[1]);
     if (highlighted && mergeHostRef.current) {
       const view = new MergeView({
-        a: { doc: localContent, extensions },
-        b: { doc: diskContent, extensions },
+        a: { doc: localContent, extensions: localExtensions },
+        b: { doc: diskContent, extensions: diskExtensions },
         parent: mergeHostRef.current,
         highlightChanges: true,
         collapseUnchanged: { margin: 3, minSize: 8 },
@@ -105,18 +122,18 @@ export function ConflictCompareView({
     setActiveChunk(null);
     if (!localHostRef.current || !diskHostRef.current) return;
     const localView = new EditorView({
-      state: EditorState.create({ doc: localContent, extensions }),
+      state: EditorState.create({ doc: localContent, extensions: localExtensions }),
       parent: localHostRef.current,
     });
     const diskView = new EditorView({
-      state: EditorState.create({ doc: diskContent, extensions }),
+      state: EditorState.create({ doc: diskContent, extensions: diskExtensions }),
       parent: diskHostRef.current,
     });
     return () => {
       localView.destroy();
       diskView.destroy();
     };
-  }, [diskContent, highlighted, localContent]);
+  }, [diskContent, highlighted, languageExtensions, localContent]);
 
   const navigate = (direction: -1 | 1) => {
     const view = mergeViewRef.current;

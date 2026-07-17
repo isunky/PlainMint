@@ -31,6 +31,16 @@
   --border-strong: #cfd6d8;
   --danger: #d94b45;
   --warning: #b87913;
+  --syntax-comment: #7c858a;
+  --syntax-keyword: #7b4bb7;
+  --syntax-string: #18785f;
+  --syntax-number: #b66516;
+  --syntax-type: #087b9e;
+  --syntax-function: #1767a8;
+  --syntax-property: #9a4d27;
+  --syntax-operator: #59656a;
+  --syntax-heading: #168e85;
+  --syntax-link: #1767a8;
   --shadow-window: 0 16px 42px rgba(58, 91, 91, 0.21), 0 2px 7px rgba(35, 68, 68, 0.12);
   --shadow-modal: 0 24px 70px rgba(31, 54, 55, 0.24), 0 4px 16px rgba(31, 54, 55, 0.14);
   --shadow-popup: 0 14px 36px rgba(31, 54, 55, 0.18), 0 2px 8px rgba(31, 54, 55, 0.08);
@@ -90,6 +100,16 @@
   --border-subtle: #2d3533;
   --border-soft: #343d3a;
   --border-strong: #424c49;
+  --syntax-comment: #84918f;
+  --syntax-keyword: #c59bff;
+  --syntax-string: #8fd6a9;
+  --syntax-number: #f1ba72;
+  --syntax-type: #72d4ec;
+  --syntax-function: #8cbcff;
+  --syntax-property: #f0a77c;
+  --syntax-operator: #b6c1bf;
+  --syntax-heading: #6dd9cf;
+  --syntax-link: #8cbcff;
   --accent-soft: color-mix(in srgb, var(--accent-primary) 15%, transparent);
   --accent-border: color-mix(in srgb, var(--accent-primary) 36%, transparent);
   --accent-line: color-mix(in srgb, var(--accent-primary) 8%, transparent);
@@ -116,6 +136,16 @@
     --border-subtle: #2d3533;
     --border-soft: #343d3a;
     --border-strong: #424c49;
+    --syntax-comment: #84918f;
+    --syntax-keyword: #c59bff;
+    --syntax-string: #8fd6a9;
+    --syntax-number: #f1ba72;
+    --syntax-type: #72d4ec;
+    --syntax-function: #8cbcff;
+    --syntax-property: #f0a77c;
+    --syntax-operator: #b6c1bf;
+    --syntax-heading: #6dd9cf;
+    --syntax-link: #8cbcff;
     --accent-soft: color-mix(in srgb, var(--accent-primary) 15%, transparent);
     --accent-border: color-mix(in srgb, var(--accent-primary) 36%, transparent);
     --accent-line: color-mix(in srgb, var(--accent-primary) 8%, transparent);
@@ -877,6 +907,11 @@ select:focus-visible {
 .status-format-select:disabled {
   cursor: default;
   opacity: 0.58;
+}
+
+.status-language-select {
+  max-width: 170px;
+  text-overflow: ellipsis;
 }
 
 .searchbar {
@@ -2119,9 +2154,12 @@ select:focus-visible {
 @container (max-width: 520px) {
   .status-selection,
   .status-characters,
-  .status-lines,
-  .status-file-type {
+  .status-lines {
     display: none;
+  }
+
+  .status-language-select {
+    max-width: 138px;
   }
 
   .statusbar {

@@ -36,6 +36,9 @@ function doc(id: string): DocumentRecord {
     content: id,
     encoding: "utf-8",
     lineEnding: "lf",
+    languageMode: "auto",
+    detectedLanguage: "plain",
+    autoLanguageDetectionComplete: true,
     dirty: false,
     readOnly: false,
     missing: false,
@@ -80,6 +83,9 @@ beforeEach(async () => {
     content: "recent",
     encoding: "utf-8",
     lineEnding: "lf",
+    languageMode: "auto",
+    detectedLanguage: "plain",
+    autoLanguageDetectionComplete: true,
     readOnly: false,
     fingerprint: { modifiedAt: 1, size: 6, hash: "recent" },
   }));
@@ -268,6 +274,18 @@ describe("tab and split interactions", () => {
     fireEvent.change(screen.getByLabelText("File line ending"), { target: { value: "crlf" } });
 
     expect(useAppStore.getState().documents.a).toMatchObject({ encoding: "utf-16be", lineEnding: "crlf", dirty: true, revision: 2 });
+  });
+
+  it("selects a syntax language from the status bar without marking the document dirty", async () => {
+    render(<App />);
+    await settle();
+    const beforeRevision = useAppStore.getState().documents.a.revision;
+
+    fireEvent.change(screen.getByLabelText("Syntax language"), { target: { value: "python" } });
+    expect(useAppStore.getState().documents.a).toMatchObject({ languageMode: "python", detectedLanguage: "plain", dirty: false, revision: beforeRevision });
+
+    fireEvent.change(screen.getByLabelText("Syntax language"), { target: { value: "auto" } });
+    expect(useAppStore.getState().documents.a).toMatchObject({ languageMode: "auto", detectedLanguage: "plain", dirty: false, revision: beforeRevision });
   });
 
   it("removes and clears recent files without opening them", async () => {

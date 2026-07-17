@@ -30,6 +30,8 @@ import {
   selectNextOccurrence,
   setSearchQuery,
 } from "@codemirror/search";
+import { effectiveLanguage, isSyntaxHighlightable, isTextLanguage, loadLanguage } from "../languageRegistry";
+import { plainMintSyntaxHighlighting } from "../syntaxHighlighting";
 import type { DocumentRecord, PaneId, SearchState, UserSettings } from "../types";
 import { createSearchQuery } from "../searchPolicy";
 
@@ -89,7 +91,7 @@ interface TextEditorProps {
 }
 
 function editorTheme(settings: UserSettings) {
-  return EditorView.theme({
+  return [EditorView.theme({
     "&": {
       height: "100%",
       fontSize: settings.fontSize + "px",
@@ -151,7 +153,7 @@ function editorTheme(settings: UserSettings) {
       borderLeftWidth: "2px",
     },
     "&.cm-focused": { outline: "none" },
-  });
+  }), plainMintSyntaxHighlighting];
 }
 
 export function TextEditor({
@@ -169,6 +171,7 @@ export function TextEditor({
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const lastPatchRef = useRef(0);
+  const languageRequestRef = useRef(0);
   const compartments = useRef({
     wrap: new Compartment(),
     gutter: new Compartment(),
@@ -177,14 +180,18 @@ export function TextEditor({
     tabSize: new Compartment(),
     spellcheck: new Compartment(),
     phrases: new Compartment(),
+    language: new Compartment(),
   });
   const callbacks = useRef({ onChange, onCursor, onFocus, onUndo, onRedo });
   callbacks.current = { onChange, onCursor, onFocus, onUndo, onRedo };
   const viewId = pane + "-" + document.id;
+  const resolvedLanguage = effectiveLanguage(document);
+  const canHighlight = isSyntaxHighlightable(document.content);
+  const spellcheckEnabled = settings.spellCheckEnabled && isTextLanguage(resolvedLanguage);
 
   useLayoutEffect(() => {
     if (!hostRef.current) return;
-    const { wrap, gutter, theme, readOnly, tabSize, spellcheck, phrases } = compartments.current;
+    const { wrap, gutter, theme, readOnly, tabSize, spellcheck, phrases, language } = compartments.current;
     const state = EditorState.create({
       doc: document.content,
       extensions: [
@@ -223,8 +230,9 @@ export function TextEditor({
         theme.of(editorTheme(settings)),
         readOnly.of(EditorState.readOnly.of(document.readOnly)),
         tabSize.of(EditorState.tabSize.of(settings.tabSize)),
-        spellcheck.of(EditorView.contentAttributes.of({ spellcheck: settings.spellCheckEnabled ? "true" : "false" })),
+        spellcheck.of(EditorView.contentAttributes.of({ spellcheck: spellcheckEnabled ? "true" : "false" })),
         phrases.of(EditorState.phrases.of({ "Go to line": t("goToLine"), go: t("go") })),
+        language.of([]),
         EditorView.updateListener.of((update) => {
           if (update.focusChanged && update.view.hasFocus) callbacks.current.onFocus();
           if (update.docChanged && !update.transactions.some((transaction) => transaction.annotation(externalSync))) {
@@ -252,6 +260,22 @@ export function TextEditor({
       viewRef.current = null;
     };
   }, [document.id, pane]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const request = languageRequestRef.current + 1;
+    languageRequestRef.current = request;
+    const reconfigure = (extension: Awaited<ReturnType<typeof loadLanguage>>) => {
+      if (languageRequestRef.current !== request || viewRef.current !== view) return;
+      view.dispatch({ effects: compartments.current.language.reconfigure(extension ?? []) });
+    };
+    if (!canHighlight) {
+      reconfigure(null);
+      return;
+    }
+    void loadLanguage(resolvedLanguage).then(reconfigure).catch(() => reconfigure(null));
+  }, [canHighlight, document.id, resolvedLanguage]);
 
   useEffect(() => {
     const view = viewRef.current;
@@ -292,7 +316,7 @@ export function TextEditor({
         theme.reconfigure(editorTheme(settings)),
         readOnly.reconfigure(EditorState.readOnly.of(document.readOnly)),
         tabSize.reconfigure(EditorState.tabSize.of(settings.tabSize)),
-        spellcheck.reconfigure(EditorView.contentAttributes.of({ spellcheck: settings.spellCheckEnabled ? "true" : "false" })),
+        spellcheck.reconfigure(EditorView.contentAttributes.of({ spellcheck: spellcheckEnabled ? "true" : "false" })),
         phrases.reconfigure(EditorState.phrases.of({ "Go to line": t("goToLine"), go: t("go") })),
       ],
     });
@@ -303,7 +327,7 @@ export function TextEditor({
     settings.lineHeight,
     settings.highlightCurrentLine,
     settings.tabSize,
-    settings.spellCheckEnabled,
+    spellcheckEnabled,
     document.readOnly,
     t,
   ]);
