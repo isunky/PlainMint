@@ -1276,6 +1276,12 @@ select:focus-visible {
   gap: 7px;
 }
 
+.settings-reset-button {
+  min-height: 32px;
+  padding-inline: 12px;
+  font-size: 12px;
+}
+
 .settings-scroll {
   min-height: 0;
   flex: 1 1 auto;

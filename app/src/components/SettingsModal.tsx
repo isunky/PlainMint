@@ -15,8 +15,32 @@ import {
   X,
 } from "@phosphor-icons/react";
 import type { AccentTheme, AppLocale, AppearanceMode, ContextMenuStatus, DirectoryValidationResult, Encoding, LineEnding, UserSettings } from "../types";
+import { defaultSettings } from "../store";
 
 type SettingsSection = "general" | "editor" | "files" | "backup" | "appearance" | "shortcuts" | "about";
+
+const resettableSections = new Set<SettingsSection>(["general", "editor", "files", "backup", "appearance"]);
+
+function defaultsForSection(section: SettingsSection): Partial<UserSettings> {
+  switch (section) {
+    case "general":
+      return pickDefaults("autoBackupEnabled", "sessionRecoveryMode", "wordWrapByDefault", "showLineNumbers", "autoCheckUpdates");
+    case "editor":
+      return pickDefaults("fontFamily", "fontSize", "lineHeight", "tabSize", "highlightCurrentLine", "spellCheckEnabled");
+    case "files":
+      return pickDefaults("defaultSaveFolder", "cloudSyncFolder", "defaultEncoding", "defaultLineEnding", "recentFileLimit");
+    case "backup":
+      return pickDefaults("backupDebounceSeconds", "backupRetentionDays", "maxBackupVersionsPerFile", "autoSaveMode", "sessionRecoveryMode");
+    case "appearance":
+      return pickDefaults("appearanceMode", "accentTheme", "locale");
+    default:
+      return {};
+  }
+}
+
+function pickDefaults<K extends keyof UserSettings>(...keys: K[]): Pick<UserSettings, K> {
+  return Object.fromEntries(keys.map((key) => [key, defaultSettings[key]])) as Pick<UserSettings, K>;
+}
 
 interface SettingsModalProps {
   settings: UserSettings;
@@ -207,6 +231,9 @@ export function SettingsModal({
           <header>
             <h3>{sectionTitle}</h3>
             <div className="settings-header-actions">
+              {resettableSections.has(section) && (
+                <button type="button" className="button-secondary settings-reset-button" disabled={applying} onClick={() => onChange(defaultsForSection(section))}>{t("restoreDefaults")}</button>
+              )}
               <button type="button" className="icon-button close-settings" disabled={applying} onClick={onCancel} aria-label={t("close")}>
                 <X size={19} />
               </button>

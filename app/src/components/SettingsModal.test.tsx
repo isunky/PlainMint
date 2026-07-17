@@ -160,6 +160,26 @@ describe("settings runtime controls", () => {
     expect(onContextMenuChange).toHaveBeenCalledWith(true);
   });
 
+  it("restores only the active settings page to its defaults before applying", () => {
+    const onChange = vi.fn();
+    render(<SettingsModal
+      settings={{ ...defaultSettings, fontSize: 20, defaultEncoding: "utf-16le", recentFileLimit: 8 }}
+      directoryChecks={{ defaultSaveFolder: { status: "idle" }, cloudSyncFolder: { status: "idle" } }}
+      applying={false}
+      canApply
+      {...handlers}
+      onChange={onChange}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Restore defaults" }));
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ autoBackupEnabled: true, wordWrapByDefault: true, autoCheckUpdates: true }));
+    expect(onChange).not.toHaveBeenCalledWith(expect.objectContaining({ fontSize: 14 }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Files & folders" }));
+    fireEvent.click(screen.getByRole("button", { name: "Restore defaults" }));
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ defaultEncoding: "utf-8", defaultLineEnding: "lf", recentFileLimit: 20 }));
+  });
+
   it("shows update results inside the about page", () => {
     render(<SettingsModal
       settings={{ ...defaultSettings }}
