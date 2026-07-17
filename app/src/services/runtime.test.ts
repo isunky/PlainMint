@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   getVersion: vi.fn(),
   listen: vi.fn(),
   unlisten: vi.fn(),
+  startDragging: vi.fn(),
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
@@ -24,8 +25,11 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({ open: mocks.open, save: mocks.save
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn(), revealItemInDir: mocks.revealItemInDir }));
 vi.mock("@tauri-apps/plugin-process", () => ({ relaunch: mocks.relaunch }));
 vi.mock("@tauri-apps/plugin-updater", () => ({ check: mocks.check }));
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => ({ startDragging: mocks.startDragging }),
+}));
 
-import { checkForUpdates, encodedByteLength, getAppVersion, inspectFileMetadata, listenForFileWatchChanges, revealFileInDirectory, saveDocument, syncFileWatches, writeSafetyRecovery } from "./runtime";
+import { checkForUpdates, encodedByteLength, getAppVersion, inspectFileMetadata, listenForFileWatchChanges, revealFileInDirectory, saveDocument, startDraggingWindow, syncFileWatches, writeSafetyRecovery } from "./runtime";
 
 function document(patch: Partial<DocumentRecord> = {}): DocumentRecord {
   return {
@@ -215,5 +219,13 @@ describe("signed application updates", () => {
 
     await expect(checkForUpdates()).resolves.toEqual({ available: false, error: true });
     expect(mocks.relaunch).not.toHaveBeenCalled();
+  });
+});
+
+describe("custom title bar", () => {
+  it("starts dragging through the native window API", async () => {
+    await startDraggingWindow();
+
+    expect(mocks.startDragging).toHaveBeenCalledOnce();
   });
 });

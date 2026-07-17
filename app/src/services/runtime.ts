@@ -410,6 +410,10 @@ export async function toggleMaximizeWindow() {
   if (isTauri()) await getCurrentWindow().toggleMaximize();
 }
 
+export async function startDraggingWindow() {
+  if (isTauri()) await getCurrentWindow().startDragging();
+}
+
 export async function listenForWindowClose(handler: () => void): Promise<() => void> {
   if (!isTauri()) return () => undefined;
   return getCurrentWindow().onCloseRequested((event) => {

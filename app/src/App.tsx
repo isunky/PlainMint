@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import {
@@ -83,6 +83,7 @@ import {
   restoreRecoveries,
   saveDocument,
   setContextMenuEnabled,
+  startDraggingWindow,
   syncFileWatches,
   showSourceCode,
   showAuthorWebsite,
@@ -255,24 +256,35 @@ function IconButton({
   );
 }
 
-function AppLogo({ dragRegion = false }: { dragRegion?: boolean }) {
+function AppLogo() {
   return (
     <img
       className="app-logo"
       src="/plainmint-icon-source.png"
       alt=""
-      data-tauri-drag-region={dragRegion ? "" : undefined}
     />
   );
 }
 
+function isTitlebarControl(target: EventTarget | null) {
+  return target instanceof Element && Boolean(target.closest("button, input, select, textarea, a"));
+}
+
 function TitleBar({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation();
+  const handleMouseDown = (event: ReactMouseEvent<HTMLElement>) => {
+    if (event.button !== 0 || isTitlebarControl(event.target)) return;
+    void startDraggingWindow();
+  };
+  const handleDoubleClick = (event: ReactMouseEvent<HTMLElement>) => {
+    if (isTitlebarControl(event.target)) return;
+    void toggleMaximizeWindow();
+  };
   return (
-    <header className="titlebar" data-tauri-drag-region>
-      <div className="brand" data-tauri-drag-region>
-        <AppLogo dragRegion />
-        <span data-tauri-drag-region>{t("appName")}</span>
+    <header className="titlebar" onMouseDown={handleMouseDown} onDoubleClick={handleDoubleClick}>
+      <div className="brand">
+        <AppLogo />
+        <span>{t("appName")}</span>
       </div>
       <div className="window-controls">
         <IconButton label={t("minimize")} onClick={() => void minimizeWindow()}><Minus size={18} /></IconButton>
