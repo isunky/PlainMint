@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import {
   ArrowsClockwise,
@@ -96,12 +97,49 @@ function SettingToggle({
 }
 
 function HelpTip({ text }: { text: string }) {
+  const triggerRef = useRef<HTMLSpanElement>(null);
+  const tooltipId = useId();
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [position, setPosition] = useState<{ left: number; top: number; placement: "above" | "below" } | null>(null);
+  const visible = hovered || focused;
+
+  const updatePosition = () => {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const horizontalInset = 168;
+    const left = Math.min(Math.max(rect.left + rect.width / 2, horizontalInset), window.innerWidth - horizontalInset);
+    const placement = rect.bottom + 96 > window.innerHeight ? "above" : "below";
+    setPosition({ left, top: placement === "above" ? rect.top - 8 : rect.bottom + 8, placement });
+  };
+
+  useEffect(() => {
+    if (!visible) return;
+    updatePosition();
+    const reposition = () => updatePosition();
+    window.addEventListener("resize", reposition);
+    document.addEventListener("scroll", reposition, true);
+    return () => {
+      window.removeEventListener("resize", reposition);
+      document.removeEventListener("scroll", reposition, true);
+    };
+  }, [visible]);
+
   return (
-    <span className="setting-help">
-      <button type="button" aria-label={text}>
+    <span className="setting-help" onPointerEnter={() => { setHovered(true); updatePosition(); }} onPointerLeave={() => setHovered(false)}>
+      <span ref={triggerRef} className="setting-help-trigger" role="img" tabIndex={0} aria-label={text} aria-describedby={visible ? tooltipId : undefined} onFocus={() => { setFocused(true); updatePosition(); }} onBlur={() => setFocused(false)}>
         <Question size={14} weight="bold" />
-      </button>
-      <span className="setting-help-tooltip" role="tooltip">{text}</span>
+      </span>
+      {visible && position && createPortal(
+        <span
+          id={tooltipId}
+          className="setting-help-tooltip"
+          data-placement={position.placement}
+          role="tooltip"
+          style={{ left: position.left, top: position.top }}
+        >{text}</span>,
+        document.body,
+      )}
     </span>
   );
 }

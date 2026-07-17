@@ -128,14 +128,18 @@ describe("settings runtime controls", () => {
     />);
 
     fireEvent.click(screen.getByRole("button", { name: "Files & folders" }));
-    expect(screen.getAllByRole("button", { name: "These defaults apply only to new files. Opened files keep their original encoding and line ending." })).toHaveLength(2);
-    expect(screen.getByRole("button", { name: "Preferred location for the first save of new files. OneDrive, iCloud, or Dropbox performs the actual sync." })).toBeInTheDocument();
+    expect(screen.getAllByRole("img", { name: "These defaults apply only to new files. Opened files keep their original encoding and line ending." })).toHaveLength(2);
+    expect(screen.getByRole("img", { name: "Preferred location for the first save of new files. OneDrive, iCloud, or Dropbox performs the actual sync." })).toBeInTheDocument();
+    const helpIcon = screen.getByRole("img", { name: "Preferred location for the first save of new files. OneDrive, iCloud, or Dropbox performs the actual sync." });
+    fireEvent.pointerEnter(helpIcon);
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Preferred location for the first save of new files. OneDrive, iCloud, or Dropbox performs the actual sync.");
+    expect(screen.getByRole("tooltip").parentElement).toBe(document.body);
 
     fireEvent.click(screen.getByRole("button", { name: "Backup & recovery" }));
-    expect(screen.getByRole("button", { name: "Recovery copies protect unsaved work. Open the recovery center to inspect or restore available copies." })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Recovery copies protect unsaved work. Open the recovery center to inspect or restore available copies." })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
-    expect(screen.getByRole("button", { name: "This changes the PlainMint interface language only; it does not change your document content." })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "This changes the PlainMint interface language only; it does not change your document content." })).toBeInTheDocument();
   });
 
   it("shows update results inside the about page", () => {
@@ -184,7 +188,7 @@ describe("settings runtime controls", () => {
     />);
 
     fireEvent.click(screen.getByRole("button", { name: "Files & folders" }));
-    expect(screen.getByRole("button", { name: "Preferred location for the first save of new files. OneDrive, iCloud, or Dropbox performs the actual sync." })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Used when no available cloud-synced folder is configured." })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Preferred location for the first save of new files. OneDrive, iCloud, or Dropbox performs the actual sync." })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Used when no available cloud-synced folder is configured." })).toBeInTheDocument();
   });
 });

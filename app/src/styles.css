@@ -1601,12 +1601,11 @@ select:focus-visible {
 }
 
 .setting-help {
-  position: relative;
   display: inline-flex;
   align-items: center;
 }
 
-.setting-help button {
+.setting-help-trigger {
   display: inline-grid;
   width: 18px;
   height: 18px;
@@ -1619,18 +1618,16 @@ select:focus-visible {
   cursor: help;
 }
 
-.setting-help button:hover,
-.setting-help button:focus-visible {
+.setting-help-trigger:hover,
+.setting-help-trigger:focus-visible {
   outline: none;
   color: var(--accent-primary);
   background: var(--accent-soft);
 }
 
 .setting-help-tooltip {
-  position: absolute;
-  z-index: 5;
-  top: calc(100% + 7px);
-  left: 50%;
+  position: fixed;
+  z-index: 100;
   width: max-content;
   max-width: min(300px, 60vw);
   padding: 8px 10px;
@@ -1642,18 +1639,18 @@ select:focus-visible {
   font-size: 12px;
   font-weight: 400;
   line-height: 1.45;
-  opacity: 0;
   pointer-events: none;
-  transform: translate(-50%, -3px);
-  transition: opacity 120ms ease, transform 120ms ease;
-  visibility: hidden;
+  transform: translate(-50%, 0);
+  animation: tooltip-enter 120ms ease-out;
 }
 
-.setting-help:hover .setting-help-tooltip,
-.setting-help:focus-within .setting-help-tooltip {
-  opacity: 1;
-  transform: translate(-50%, 0);
-  visibility: visible;
+.setting-help-tooltip[data-placement="above"] {
+  transform: translate(-50%, -100%);
+}
+
+@keyframes tooltip-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .about-footer {
