@@ -1393,11 +1393,6 @@ select:focus-visible {
   padding: 0 12px;
 }
 
-.directory-hint {
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
 .directory-status {
   min-height: 18px;
   font-size: 12px;
@@ -1564,11 +1559,67 @@ select:focus-visible {
   white-space: nowrap;
 }
 
-.settings-section-hint {
-  margin: 12px 0 0;
+.field-label-title,
+.settings-card h4 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.setting-help {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.setting-help button {
+  display: inline-grid;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
   color: var(--text-muted);
+  cursor: help;
+}
+
+.setting-help button:hover,
+.setting-help button:focus-visible {
+  outline: none;
+  color: var(--accent-primary);
+  background: var(--accent-soft);
+}
+
+.setting-help-tooltip {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 7px);
+  left: 50%;
+  width: max-content;
+  max-width: min(300px, 60vw);
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-popup);
+  color: var(--text-primary);
   font-size: 12px;
-  line-height: 1.55;
+  font-weight: 400;
+  line-height: 1.45;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -3px);
+  transition: opacity 120ms ease, transform 120ms ease;
+  visibility: hidden;
+}
+
+.setting-help:hover .setting-help-tooltip,
+.setting-help:focus-within .setting-help-tooltip {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  visibility: visible;
 }
 
 .about-actions {

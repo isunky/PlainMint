@@ -118,7 +118,7 @@ describe("settings runtime controls", () => {
     expect(handlers.onOpenAuthorWebsite).toHaveBeenCalledOnce();
   });
 
-  it("shows contextual help beside related settings", () => {
+  it("keeps contextual help in hoverable setting icons", () => {
     render(<SettingsModal
       settings={{ ...defaultSettings }}
       directoryChecks={{ defaultSaveFolder: { status: "idle" }, cloudSyncFolder: { status: "idle" } }}
@@ -128,14 +128,14 @@ describe("settings runtime controls", () => {
     />);
 
     fireEvent.click(screen.getByRole("button", { name: "Files & folders" }));
-    expect(screen.getByText("These defaults apply only to new files. Opened files keep their original encoding and line ending.")).toBeInTheDocument();
-    expect(screen.getByText("Preferred location for the first save of new files. OneDrive, iCloud, or Dropbox performs the actual sync.")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "These defaults apply only to new files. Opened files keep their original encoding and line ending." })).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Preferred location for the first save of new files. OneDrive, iCloud, or Dropbox performs the actual sync." })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Backup & recovery" }));
-    expect(screen.getByText("Recovery copies protect unsaved work. Open the recovery center to inspect or restore available copies.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Recovery copies protect unsaved work. Open the recovery center to inspect or restore available copies." })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
-    expect(screen.getByText("This changes the PlainMint interface language only; it does not change your document content.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "This changes the PlainMint interface language only; it does not change your document content." })).toBeInTheDocument();
   });
 
   it("shows update results inside the about page", () => {
@@ -174,7 +174,7 @@ describe("settings runtime controls", () => {
     expect(screen.getByRole("button", { name: "Apply" })).toBeDisabled();
   });
 
-  it("explains that the cloud-synced folder is preferred for new files", () => {
+  it("attaches cloud and default folder help to their setting labels", () => {
     render(<SettingsModal
       settings={{ ...defaultSettings }}
       directoryChecks={{ defaultSaveFolder: { status: "idle" }, cloudSyncFolder: { status: "idle" } }}
@@ -184,7 +184,7 @@ describe("settings runtime controls", () => {
     />);
 
     fireEvent.click(screen.getByRole("button", { name: "Files & folders" }));
-    expect(screen.getByText("Preferred location for the first save of new files. OneDrive, iCloud, or Dropbox performs the actual sync.")).toBeInTheDocument();
-    expect(screen.getByText("Used when no available cloud-synced folder is configured.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Preferred location for the first save of new files. OneDrive, iCloud, or Dropbox performs the actual sync." })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Used when no available cloud-synced folder is configured." })).toBeInTheDocument();
   });
 });

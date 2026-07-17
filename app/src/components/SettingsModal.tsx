@@ -9,6 +9,7 @@ import {
   Keyboard,
   PaintBrush,
   PencilSimple,
+  Question,
   ShieldCheck,
   X,
 } from "@phosphor-icons/react";
@@ -91,6 +92,17 @@ function SettingToggle({
       </div>
       <Toggle checked={checked} onChange={onChange} label={title} />
     </div>
+  );
+}
+
+function HelpTip({ text }: { text: string }) {
+  return (
+    <span className="setting-help">
+      <button type="button" aria-label={text}>
+        <Question size={14} weight="bold" />
+      </button>
+      <span className="setting-help-tooltip" role="tooltip">{text}</span>
+    </span>
   );
 }
 
@@ -242,13 +254,15 @@ export function SettingsModal({
                   <h4>{t("filesFolders")}</h4>
                   {(["defaultSaveFolder", "cloudSyncFolder"] as const).map((field) => (
                     <div className="field-label" key={field}>
-                      <span>{t(field === "defaultSaveFolder" ? "defaultFolder" : "cloudFolder")}</span>
+                      <span className="field-label-title">
+                        {t(field === "defaultSaveFolder" ? "defaultFolder" : "cloudFolder")}
+                        <HelpTip text={t(field === "defaultSaveFolder" ? "defaultFolderHint" : "cloudFolderHint")} />
+                      </span>
                       <div className="path-field">
                         <input aria-label={t(field === "defaultSaveFolder" ? "defaultFolder" : "cloudFolder")} value={settings[field] ?? ""} readOnly />
                         <button type="button" className="button-secondary" disabled={applying} aria-label={t("chooseFolder")} onClick={() => onChooseDirectory(field)}>…</button>
                         {settings[field] && <button type="button" className="button-secondary clear-path" disabled={applying} onClick={() => onClearDirectory(field)}>{t("clear")}</button>}
                       </div>
-                      <small className="directory-hint">{t(field === "defaultSaveFolder" ? "defaultFolderHint" : "cloudFolderHint")}</small>
                       {directoryChecks[field].status === "checking" && <small className="directory-status checking">{t("directoryChecking")}</small>}
                       {directoryChecks[field].status === "valid" && directoryChecks[field].result && (
                         <small className="directory-status valid">{t("directoryAvailable", { space: formatBytes(directoryChecks[field].result.availableBytes, i18n.language) })}</small>
@@ -260,19 +274,18 @@ export function SettingsModal({
                   ))}
                   <div className="field-grid">
                     <label className="field-label">
-                      <span>{t("encoding")}</span>
-                      <select value={settings.defaultEncoding} onChange={(event) => onChange({ defaultEncoding: event.target.value as Encoding })}><option value="utf-8">UTF-8</option><option value="utf-8-bom">UTF-8 BOM</option><option value="utf-16le">UTF-16 LE</option><option value="utf-16be">UTF-16 BE</option></select>
+                      <span className="field-label-title">{t("encoding")}<HelpTip text={t("newFileDefaultsHint")} /></span>
+                      <select aria-label={t("encoding")} value={settings.defaultEncoding} onChange={(event) => onChange({ defaultEncoding: event.target.value as Encoding })}><option value="utf-8">UTF-8</option><option value="utf-8-bom">UTF-8 BOM</option><option value="utf-16le">UTF-16 LE</option><option value="utf-16be">UTF-16 BE</option></select>
                     </label>
                     <label className="field-label">
-                      <span>{t("lineEnding")}</span>
-                      <select value={settings.defaultLineEnding} onChange={(event) => onChange({ defaultLineEnding: event.target.value as LineEnding })}><option value="lf">LF</option><option value="crlf">CRLF</option><option value="cr">CR</option></select>
+                      <span className="field-label-title">{t("lineEnding")}<HelpTip text={t("newFileDefaultsHint")} /></span>
+                      <select aria-label={t("lineEnding")} value={settings.defaultLineEnding} onChange={(event) => onChange({ defaultLineEnding: event.target.value as LineEnding })}><option value="lf">LF</option><option value="crlf">CRLF</option><option value="cr">CR</option></select>
                     </label>
                     <label className="field-label">
                       <span>{t("recentFiles")}</span>
                       <input type="number" min={5} max={50} value={settings.recentFileLimit} onChange={(event) => onChange({ recentFileLimit: Number(event.target.value) })} />
                     </label>
                   </div>
-                  <p className="settings-section-hint">{t("newFileDefaultsHint")}</p>
                 </section>
               </div>
             )}
@@ -280,7 +293,7 @@ export function SettingsModal({
             {section === "backup" && (
               <div className="settings-grid">
                 <section className="settings-card settings-card-wide">
-                  <h4>{t("backupRecovery")}</h4>
+                  <h4>{t("backupRecovery")}<HelpTip text={t("backupRecoveryHint")} /></h4>
                   <div className="field-grid">
                     <label className="field-label"><span>{t("backupDelay")}</span><input type="number" min={1} max={60} value={settings.backupDebounceSeconds} onChange={(event) => onChange({ backupDebounceSeconds: Number(event.target.value) })} /></label>
                     <label className="field-label"><span>{t("backupRetention")}</span><input type="number" min={1} max={365} value={settings.backupRetentionDays} onChange={(event) => onChange({ backupRetentionDays: Number(event.target.value) })} /></label>
@@ -288,7 +301,6 @@ export function SettingsModal({
                     <label className="field-label"><span>{t("autoSave")}</span><select value={settings.autoSaveMode} onChange={(event) => onChange({ autoSaveMode: event.target.value as UserSettings["autoSaveMode"] })}><option value="off">{t("autoSaveOff")}</option><option value="idle">{t("autoSaveIdle")}</option><option value="interval">{t("autoSaveInterval")}</option><option value="blur">{t("autoSaveBlur")}</option><option value="tab-switch">{t("autoSaveTab")}</option></select></label>
                     <label className="field-label"><span>{t("recoveryBehavior")}</span><select value={settings.sessionRecoveryMode} onChange={(event) => onChange({ sessionRecoveryMode: event.target.value as UserSettings["sessionRecoveryMode"] })}><option value="ask">{t("recoveryAsk")}</option><option value="auto">{t("recoveryAuto")}</option><option value="empty">{t("recoveryOpenEmpty")}</option></select></label>
                   </div>
-                  <p className="settings-section-hint">{t("backupRecoveryHint")}</p>
                   <button type="button" className="button-secondary" onClick={onOpenRecovery}>{t("openRecovery")}</button>
                 </section>
               </div>
@@ -315,8 +327,9 @@ export function SettingsModal({
                 <section className="settings-card settings-card-wide">
                   <h4>{t("language")}</h4>
                   <label className="field-label">
-                    <span>{t("language")}</span>
+                    <span className="field-label-title">{t("language")}<HelpTip text={t("languageHint")} /></span>
                     <select
+                      aria-label={t("language")}
                       value={settings.locale}
                       onChange={(event) => onChange({ locale: event.target.value as AppLocale })}
                     >
@@ -325,7 +338,6 @@ export function SettingsModal({
                       <option value="en">{t("english")}</option>
                     </select>
                   </label>
-                  <p className="settings-section-hint">{t("languageHint")}</p>
                 </section>
               </div>
             )}
