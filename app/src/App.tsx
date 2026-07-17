@@ -1268,7 +1268,6 @@ export function App() {
   const suppressTabClickRef = useRef<{ tabId: string; until: number } | null>(null);
   const splitResizePointerRef = useRef<number | null>(null);
   const updateCheckInFlight = useRef(false);
-  const automaticUpdateCheckStarted = useRef(false);
   const startupOpenPathsHandled = useRef(false);
 
   const activeDocumentId = tabs[activePane].find((tab) => tab.id === activeTab[activePane])?.documentId;
@@ -1303,11 +1302,11 @@ export function App() {
     window.setTimeout(() => setToast(""), 2200);
   }, []);
 
-  const requestUpdateCheck = useCallback(async (automatic = false) => {
+  const requestUpdateCheck = useCallback(async () => {
     if (updateCheckInFlight.current) return;
     updateCheckInFlight.current = true;
     setCheckingForUpdates(true);
-    if (!automatic) setUpdateCheckStatus("idle");
+    setUpdateCheckStatus("idle");
     try {
       const result = await checkForUpdates();
       if (result.available) {
@@ -1835,13 +1834,6 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (!hydrated || !settings.autoCheckUpdates || automaticUpdateCheckStarted.current) return;
-    automaticUpdateCheckStarted.current = true;
-    const timer = window.setTimeout(() => void requestUpdateCheck(true), 1_500);
-    return () => window.clearTimeout(timer);
-  }, [hydrated, requestUpdateCheck, settings.autoCheckUpdates]);
-
-  useEffect(() => {
     const resolved = resolveLocale(settings.locale);
     void i18n.changeLanguage(resolved);
     document.documentElement.dataset.appearance = settings.appearanceMode;
@@ -2364,7 +2356,7 @@ export function App() {
           })}
           onClearDirectory={(field) => updateSettings({ [field]: undefined })}
           onOpenRecovery={() => setModal({ type: "recovery" })}
-          onCheckUpdates={() => void requestUpdateCheck(false)}
+          onCheckUpdates={() => void requestUpdateCheck()}
           onOpenSource={() => void showSourceCode()}
           onOpenAuthorWebsite={() => void showAuthorWebsite()}
           contextMenuStatus={contextMenuStatus}

@@ -144,7 +144,6 @@ export interface UserSettings {
   defaultSaveFolder?: string;
   cloudSyncFolder?: string;
   recentFileLimit: number;
-  autoCheckUpdates: boolean;
 }
 
 export interface OpenedDocument {

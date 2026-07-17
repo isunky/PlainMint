@@ -106,7 +106,7 @@ beforeEach(() => {
     activePane: "left",
     split: false,
     histories: { alpha: { undo: [], redo: [] } },
-    settings: { ...defaultSettings, autoBackupEnabled: false, autoCheckUpdates: false },
+    settings: { ...defaultSettings, autoBackupEnabled: false },
   });
 });
 

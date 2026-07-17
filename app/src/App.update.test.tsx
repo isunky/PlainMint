@@ -76,7 +76,7 @@ beforeEach(async () => {
     activePane: "left",
     split: false,
     histories: {},
-    settings: { ...defaultSettings, autoBackupEnabled: false, autoCheckUpdates: true },
+    settings: { ...defaultSettings, autoBackupEnabled: false },
   });
 });
 
@@ -86,11 +86,16 @@ afterEach(() => {
 });
 
 describe("application updates", () => {
-  it("checks after startup and installs an available update", async () => {
+  it("only checks when requested from the about page and installs an available update", async () => {
     render(<App />);
     await settle();
     await act(async () => vi.advanceTimersByTimeAsync(1_500));
 
+    expect(runtimeMocks.checkForUpdates).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "About" }));
+    fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
+    await settle();
     expect(screen.getByRole("dialog", { name: /PlainMint 0\.1\.5 is ready/ })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Download and install/ }));
     await settle();
@@ -108,7 +113,10 @@ describe("application updates", () => {
     });
     render(<App />);
     await settle();
-    await act(async () => vi.advanceTimersByTimeAsync(1_500));
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "About" }));
+    fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
+    await settle();
 
     fireEvent.click(screen.getByRole("button", { name: /Download and install/ }));
 
@@ -118,7 +126,6 @@ describe("application updates", () => {
 
   it("shows a no-update result in the about page without a toast", async () => {
     runtimeMocks.checkForUpdates.mockResolvedValue({ available: false });
-    useAppStore.setState((state) => ({ settings: { ...state.settings, autoCheckUpdates: false } }));
 
     render(<App />);
     await settle();

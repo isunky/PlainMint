@@ -89,7 +89,6 @@ export const defaultSettings: UserSettings = {
   defaultLineEnding: "lf",
   sessionRecoveryMode: "ask",
   recentFileLimit: 20,
-  autoCheckUpdates: true,
 };
 
 const todoContent = [

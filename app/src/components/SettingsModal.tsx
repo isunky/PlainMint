@@ -25,7 +25,7 @@ const resettableSections = new Set<SettingsSection>(["general", "editor", "files
 function defaultsForSection(section: SettingsSection): Partial<UserSettings> {
   switch (section) {
     case "general":
-      return pickDefaults("autoBackupEnabled", "sessionRecoveryMode", "wordWrapByDefault", "showLineNumbers", "autoCheckUpdates");
+      return pickDefaults("autoBackupEnabled", "sessionRecoveryMode", "wordWrapByDefault", "showLineNumbers");
     case "editor":
       return pickDefaults("fontFamily", "latinFontFamily", "cjkFontFamily", "fontSize", "lineHeight", "tabSize", "highlightCurrentLine", "spellCheckEnabled");
     case "files":
@@ -266,12 +266,6 @@ export function SettingsModal({
                     description={t("lineNumbersDescription")}
                     checked={settings.showLineNumbers}
                     onChange={(value) => onChange({ showLineNumbers: value })}
-                  />
-                  <SettingToggle
-                    title={t("autoCheckUpdates")}
-                    description={t("autoCheckDescription")}
-                    checked={settings.autoCheckUpdates}
-                    onChange={(value) => onChange({ autoCheckUpdates: value })}
                   />
                   {contextMenuStatus.supported && (
                     <SettingToggle

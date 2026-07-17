@@ -194,7 +194,7 @@ describe("settings runtime controls", () => {
     />);
 
     fireEvent.click(screen.getByRole("button", { name: "Reset this page" }));
-    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ autoBackupEnabled: true, wordWrapByDefault: true, autoCheckUpdates: true }));
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ autoBackupEnabled: true, wordWrapByDefault: true }));
     expect(onChange).not.toHaveBeenCalledWith(expect.objectContaining({ fontSize: 14 }));
     expect(screen.getByRole("button", { name: "Reset this page" }).closest("footer")).not.toBeNull();
 
