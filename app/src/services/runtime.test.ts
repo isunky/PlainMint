@@ -30,7 +30,8 @@ import { checkForUpdates, encodedByteLength, getAppVersion, inspectFileMetadata,
 function document(patch: Partial<DocumentRecord> = {}): DocumentRecord {
   return {
     id: "doc-1",
-    fileName: "Untitled",
+    fileName: "Untitled 1",
+    untitledNumber: 1,
     content: "PlainMint",
     encoding: "utf-8",
     lineEnding: "lf",
@@ -51,12 +52,12 @@ beforeEach(() => {
   vi.clearAllMocks();
   Object.defineProperty(window, "__TAURI_INTERNALS__", { configurable: true, value: {} });
   mocks.documentDir.mockResolvedValue("C:\\Users\\PlainMint\\Documents");
-  mocks.join.mockResolvedValue("C:\\Default\\untitled.txt");
-  mocks.save.mockResolvedValue("C:\\Default\\untitled.txt");
+  mocks.join.mockResolvedValue("C:\\Default\\untitled-1.txt");
+  mocks.save.mockResolvedValue("C:\\Default\\untitled-1.txt");
   mocks.getVersion.mockResolvedValue("1.2.3");
   mocks.listen.mockResolvedValue(mocks.unlisten);
   mocks.invoke.mockResolvedValue({
-    path: "C:\\Default\\untitled.txt",
+    path: "C:\\Default\\untitled-1.txt",
     fingerprint: { modifiedAt: 1, size: 9, hash: "hash" },
     savedAt: 1,
   });
@@ -102,18 +103,18 @@ describe("save dialog defaults", () => {
   it("uses the configured folder for an untitled document's first save", async () => {
     await saveDocument(document(), { defaultSaveFolder: "C:\\Default" });
 
-    expect(mocks.join).toHaveBeenCalledWith("C:\\Default", "untitled.txt");
-    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ defaultPath: "C:\\Default\\untitled.txt" }));
+    expect(mocks.join).toHaveBeenCalledWith("C:\\Default", "untitled-1.txt");
+    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ defaultPath: "C:\\Default\\untitled-1.txt" }));
   });
 
   it("uses the user's Documents folder when no save folder is configured", async () => {
-    mocks.join.mockResolvedValue("C:\\Users\\PlainMint\\Documents\\untitled.txt");
+    mocks.join.mockResolvedValue("C:\\Users\\PlainMint\\Documents\\untitled-1.txt");
 
     await saveDocument(document());
 
     expect(mocks.documentDir).toHaveBeenCalledOnce();
-    expect(mocks.join).toHaveBeenCalledWith("C:\\Users\\PlainMint\\Documents", "untitled.txt");
-    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ defaultPath: "C:\\Users\\PlainMint\\Documents\\untitled.txt" }));
+    expect(mocks.join).toHaveBeenCalledWith("C:\\Users\\PlainMint\\Documents", "untitled-1.txt");
+    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ defaultPath: "C:\\Users\\PlainMint\\Documents\\untitled-1.txt" }));
   });
 
   it("keeps an existing file path as the Save As starting point", async () => {
@@ -146,7 +147,7 @@ describe("save dialog defaults", () => {
   });
 
   it("sends a fallback file name so a selected directory can be saved into", async () => {
-    await saveDocument(document({ fileName: "draft.txt" }));
+    await saveDocument(document({ fileName: "draft.txt", untitledNumber: undefined }));
 
     expect(mocks.invoke).toHaveBeenCalledWith("save_file", expect.objectContaining({
       request: expect.objectContaining({ fallbackFileName: "draft.txt" }),

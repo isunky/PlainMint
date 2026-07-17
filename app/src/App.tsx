@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import {
   ArrowClockwise,
   ArrowCounterClockwise,
@@ -31,6 +32,7 @@ import type { Icon } from "@phosphor-icons/react";
 import i18n, { resolveLocale } from "./i18n";
 import { isAutoSaveEligible, isAutoSaveRevisionSuppressed } from "./autoSavePolicy";
 import { needsSaveConfirmation } from "./closePolicy";
+import { displayDocumentName } from "./documentName";
 import { createWorkspaceSession, decideStartupRecovery } from "./recoveryPolicy";
 import { resolveInitialSaveFolder } from "./saveFolderPolicy";
 import { findSearchMatches } from "./searchPolicy";
@@ -107,7 +109,7 @@ type ModalState =
   };
 
 type TabCloseTarget = { pane: PaneId; tabId: string };
-type ComparisonDocument = Pick<DocumentRecord, "filePath" | "fileName" | "content" | "encoding" | "lineEnding" | "languageMode" | "detectedLanguage">;
+type ComparisonDocument = Pick<DocumentRecord, "filePath" | "fileName" | "untitledNumber" | "content" | "encoding" | "lineEnding" | "languageMode" | "detectedLanguage">;
 
 type TabDragView = {
   tabId: string;
@@ -153,10 +155,15 @@ interface SaveIntent {
   notifySuccess?: boolean;
 }
 
+function localizedDocumentName(document: Pick<DocumentRecord, "fileName" | "filePath" | "untitledNumber">, t: TFunction) {
+  return displayDocumentName(document, (number) => t("untitledNumbered", { number }));
+}
+
 function comparisonSnapshot(document: DocumentRecord): ComparisonDocument {
   return {
     filePath: document.filePath,
     fileName: document.fileName,
+    untitledNumber: document.untitledNumber,
     content: document.content,
     encoding: document.encoding,
     lineEnding: document.lineEnding,
@@ -165,14 +172,14 @@ function comparisonSnapshot(document: DocumentRecord): ComparisonDocument {
   };
 }
 
-function comparisonSide(document: ComparisonDocument, unsavedLabel: string): ComparisonSide {
+function comparisonSide(document: ComparisonDocument, label: string, unsavedLabel: string): ComparisonSide {
   const encoding = document.encoding === "utf-8-bom" ? "UTF-8 BOM"
     : document.encoding === "utf-16le" ? "UTF-16 LE"
       : document.encoding === "utf-16be" ? "UTF-16 BE"
         : "UTF-8";
   return {
-    label: document.fileName ?? unsavedLabel,
-    detail: `${document.filePath ?? unsavedLabel} · ${encoding} · ${document.lineEnding.toUpperCase()}`,
+    label,
+    detail: `${document.filePath ?? label ?? unsavedLabel} · ${encoding} · ${document.lineEnding.toUpperCase()}`,
   };
 }
 
@@ -559,7 +566,7 @@ function TabBar({
               role="tab"
               tabIndex={activeTab === tab.id ? 0 : -1}
               aria-selected={activeTab === tab.id}
-              aria-label={[document.fileName === "Untitled" ? t("untitled") : document.fileName, document.dirty ? t("tabUnsaved") : "", statusLabel ?? ""].filter(Boolean).join(", ")}
+              aria-label={[localizedDocumentName(document, t), document.dirty ? t("tabUnsaved") : "", statusLabel ?? ""].filter(Boolean).join(", ")}
               className={"tab " + (activeTab === tab.id ? "active " : "") + (drag?.dragging && drag.tabId === tab.id ? "dragging " : "") + (drag?.dragging && drag.targetPane === pane && drag.beforeTabId === tab.id ? "drop-before" : "")}
               key={tab.id}
               data-tab-id={tab.id}
@@ -583,9 +590,9 @@ function TabBar({
               }}
             >
               <span className="tab-status-icon" title={statusLabel}><StatusIcon size={18} /></span>
-              <span className="tab-name">{document.fileName === "Untitled" ? t("untitled") : document.fileName}</span>
+              <span className="tab-name">{localizedDocumentName(document, t)}</span>
               {document.dirty && <span className="dirty-dot" aria-label={t("tabUnsaved")} />}
-              <button type="button" className="tab-close" aria-label={t("closeTab", { name: document.fileName })} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onClose(pane, tab.id); }}>
+              <button type="button" className="tab-close" aria-label={t("closeTab", { name: localizedDocumentName(document, t) })} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onClose(pane, tab.id); }}>
                 <X size={16} />
               </button>
             </div>
@@ -877,7 +884,7 @@ function StartupRecoveryModal({ session, onRestore, onStartFresh }: {
         <p>{t("unexpectedExitBody", { count: session.documents.length, dirty: dirtyDocuments.length })}</p>
         {dirtyDocuments.length > 0 && (
           <div className="unsaved-file-list">
-            {dirtyDocuments.slice(0, 6).map((document) => <span key={document.id}><FileText size={16} />{document.fileName}</span>)}
+            {dirtyDocuments.slice(0, 6).map((document) => <span key={document.id}><FileText size={16} />{localizedDocumentName(document, t)}</span>)}
           </div>
         )}
         <div className="modal-actions">
@@ -900,7 +907,7 @@ function CloseTabModal({ modal, onCancel, onDiscard, onSave }: {
     <div className="modal-backdrop">
       <section className="confirm-modal" role="alertdialog" aria-modal="true">
         <h2>{t("unsavedTitle")}</h2>
-        <p>{t("unsavedBody", { name: modal.document.fileName })}</p>
+        <p>{t("unsavedBody", { name: localizedDocumentName(modal.document, t) })}</p>
         <div className="modal-actions">
           <button type="button" className="button-secondary" onClick={onCancel}>{t("cancel")}</button>
           <button type="button" className="button-danger" onClick={onDiscard}>{t("discardAndClose")}</button>
@@ -923,7 +930,7 @@ function ExitModal({ documents, onCancel, onDiscard, onSave }: {
       <section className="confirm-modal" role="alertdialog" aria-modal="true">
         <h2>{t("unsavedTitle")}</h2>
         <p>{t("unsavedExitBody", { count: documents.length })}</p>
-        <div className="unsaved-file-list">{documents.map((document) => <span key={document.id}><FileText size={16} />{document.fileName}</span>)}</div>
+        <div className="unsaved-file-list">{documents.map((document) => <span key={document.id}><FileText size={16} />{localizedDocumentName(document, t)}</span>)}</div>
         <div className="modal-actions">
           <button type="button" className="button-secondary" onClick={onCancel}>{t("cancel")}</button>
           <button type="button" className="button-danger" onClick={onDiscard}>{t("discardAndExit")}</button>
@@ -946,7 +953,7 @@ function BulkCloseModal({ documents, onCancel, onDiscard, onSave }: {
       <section className="confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="bulk-close-title">
         <h2 id="bulk-close-title">{t("bulkCloseTitle")}</h2>
         <p>{t("bulkCloseBody", { count: documents.length })}</p>
-        <div className="unsaved-file-list">{documents.map((document) => <span key={document.id}><FileText size={16} />{document.fileName}</span>)}</div>
+        <div className="unsaved-file-list">{documents.map((document) => <span key={document.id}><FileText size={16} />{localizedDocumentName(document, t)}</span>)}</div>
         <div className="modal-actions">
           <button type="button" className="button-secondary" onClick={onCancel}>{t("cancel")}</button>
           <button type="button" className="button-danger" onClick={onDiscard}>{t("discardAllAndClose")}</button>
@@ -1029,7 +1036,7 @@ function ConflictModal({
       <div className="modal-backdrop">
         <section className="confirm-modal conflict-confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="conflict-overwrite-title">
           <h2 id="conflict-overwrite-title">{t("conflictOverwriteTitle")}</h2>
-          <p>{t("conflictOverwriteBody", { name: document.fileName })}</p>
+          <p>{t("conflictOverwriteBody", { name: localizedDocumentName(document, t) })}</p>
           <div className="modal-actions">
             <button type="button" className="button-secondary" disabled={busy} onClick={onCancelOverwrite}>{t("cancel")}</button>
             <button type="button" className="button-danger" disabled={busy} onClick={onConfirmOverwrite}>{t("conflictOverwrite")}</button>
@@ -1046,7 +1053,7 @@ function ConflictModal({
         <header>
           <div>
             <h2 id="conflict-title">{t("conflictTitle")}</h2>
-            <p>{t("conflictBody", { name: document.fileName })}</p>
+            <p>{t("conflictBody", { name: localizedDocumentName(document, t) })}</p>
           </div>
         </header>
         {message && <p className="conflict-message" role="status">{message}</p>}
@@ -1090,8 +1097,8 @@ function CompareModal({ modal, onClose }: { modal: Extract<ModalState, { type: "
           diskContent={modal.right.content}
           localLanguage={effectiveLanguage(modal.left)}
           diskLanguage={effectiveLanguage(modal.right)}
-          localLabel={comparisonSide(modal.left, t("compareUnsavedDocument"))}
-          diskLabel={comparisonSide(modal.right, t("compareUnsavedDocument"))}
+          localLabel={comparisonSide(modal.left, localizedDocumentName(modal.left, t), t("compareUnsavedDocument"))}
+          diskLabel={comparisonSide(modal.right, localizedDocumentName(modal.right, t), t("compareUnsavedDocument"))}
           largeFileMessage={t("compareLargeFile")}
           noDifferencesLabel={t("compareNoDifferences")}
           differencePositionLabel={(current, total) => t("compareDifferencePosition", { current, total })}
@@ -2259,7 +2266,7 @@ export function App() {
         {tabDrag?.dragging && tabDrag.rightEdge && <div className="split-drop-overlay" aria-hidden="true"><Columns size={28} /><span>{t("dropToSplit")}</span></div>}
       </div>
 
-      {tabDrag?.dragging && dragDocument && <div className="tab-drag-ghost" style={{ left: tabDrag.x + 12, top: tabDrag.y + 12 }}><FileText size={16} /><span>{dragDocument.fileName === "Untitled" ? t("untitled") : dragDocument.fileName}</span></div>}
+      {tabDrag?.dragging && dragDocument && <div className="tab-drag-ghost" style={{ left: tabDrag.x + 12, top: tabDrag.y + 12 }}><FileText size={16} /><span>{localizedDocumentName(dragDocument, t)}</span></div>}
 
       {tabContextMenu && (
         <TabContextMenu

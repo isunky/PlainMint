@@ -56,6 +56,7 @@ export interface DocumentRecord {
   id: string;
   filePath?: string;
   fileName: string;
+  untitledNumber?: number;
   content: string;
   encoding: Encoding;
   lineEnding: LineEnding;

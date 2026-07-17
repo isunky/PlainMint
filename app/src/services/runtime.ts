@@ -8,6 +8,7 @@ import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
+import { isUntitledDocument, untitledSaveFileName } from "../documentName";
 import type {
   BatchRecoveryResult,
   DirectoryValidationResult,
@@ -113,7 +114,9 @@ export function encodedByteLength(document: Pick<DocumentRecord, "content" | "en
 
 export async function saveDocument(document: DocumentRecord, options: SaveDocumentOptions = {}): Promise<SaveResult | null> {
   const { forceSaveAs = false, defaultSaveFolder, acceptedExternalFingerprint, requireDifferentPath } = options;
-  const fallbackFileName = document.fileName === "Untitled" ? "untitled.txt" : document.fileName;
+  const fallbackFileName = isUntitledDocument(document)
+    ? untitledSaveFileName(document.untitledNumber!)
+    : document.fileName;
   let path = forceSaveAs ? undefined : document.filePath;
   if (isTauri() && !path) {
     const initialSaveFolder = defaultSaveFolder ?? await documentDir().catch(() => undefined);

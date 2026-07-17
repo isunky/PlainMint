@@ -1,5 +1,6 @@
 import { ChangeSet, Text } from "@codemirror/state";
 import { create } from "zustand";
+import { isUntitledDocument, untitledDocumentFileName } from "./documentName";
 import { detectLanguage, isReadyForUntitledLanguageDetection } from "./languageRegistry";
 import type {
   CursorStats,
@@ -144,10 +145,11 @@ export function normalizeSettings(settings: Partial<UserSettings>): UserSettings
   };
 }
 
-function makeDocument(id: string, fileName: string, content: string, dirty = false, encoding: Encoding = "utf-8", lineEnding: LineEnding = "lf"): DocumentRecord {
+function makeDocument(id: string, fileName: string, content: string, dirty = false, encoding: Encoding = "utf-8", lineEnding: LineEnding = "lf", untitledNumber?: number): DocumentRecord {
   return {
     id,
     fileName,
+    untitledNumber,
     content,
     encoding,
     lineEnding,
@@ -166,7 +168,7 @@ function makeDocument(id: string, fileName: string, content: string, dirty = fal
 function createInitialState() {
   const webPreview = !window.__TAURI_INTERNALS__;
   if (!webPreview) {
-    const document = makeDocument("doc-untitled-1", "Untitled", "");
+    const document = makeDocument("doc-untitled-1", untitledDocumentFileName(1), "", false, "utf-8", "lf", 1);
     const tab: EditorTab = { id: "tab-untitled-1", documentId: document.id, pane: "left", order: 0 };
     return {
       documents: { [document.id]: document },
@@ -206,6 +208,13 @@ function activeDocumentId(state: AppState, pane: PaneId) {
 
 function normalizeTabs(tabs: EditorTab[], pane: PaneId) {
   return tabs.map((tab, order) => ({ ...tab, pane, order }));
+}
+
+function nextUntitledNumber(documents: Record<string, DocumentRecord>) {
+  return Object.values(documents).reduce(
+    (highest, document) => isUntitledDocument(document) ? Math.max(highest, document.untitledNumber!) : highest,
+    0,
+  ) + 1;
 }
 
 function normalizeSplitRatio(value: unknown) {
@@ -258,7 +267,16 @@ export const useAppStore = create<AppState>((set, get) => ({
   createDocument: (pane = get().activePane) => {
     const id = uniqueId("doc");
     const tabId = uniqueId("tab");
-    const document = makeDocument(id, "Untitled", "", true, get().settings.defaultEncoding, get().settings.defaultLineEnding);
+    const untitledNumber = nextUntitledNumber(get().documents);
+    const document = makeDocument(
+      id,
+      untitledDocumentFileName(untitledNumber),
+      "",
+      true,
+      get().settings.defaultEncoding,
+      get().settings.defaultLineEnding,
+      untitledNumber,
+    );
     set((state) => ({
       documents: { ...state.documents, [id]: document },
       tabs: {
@@ -449,10 +467,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         [documentId]: {
           ...document,
           content,
-          encoding: document.revision === 0 && !document.filePath && document.fileName === "Untitled" && document.content.length === 0
+          encoding: document.revision === 0 && isUntitledDocument(document) && document.content.length === 0
             ? state.settings.defaultEncoding
             : document.encoding,
-          lineEnding: document.revision === 0 && !document.filePath && document.fileName === "Untitled" && document.content.length === 0
+          lineEnding: document.revision === 0 && isUntitledDocument(document) && document.content.length === 0
             ? state.settings.defaultLineEnding
             : document.lineEnding,
           dirty: true,
@@ -537,6 +555,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           ...document,
           filePath,
           fileName,
+          untitledNumber: undefined,
           detectedLanguage: document.languageMode === "auto"
             ? detectLanguage(fileName, document.content)
             : document.detectedLanguage,
@@ -563,6 +582,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             ...document,
             filePath: opened.path || document.filePath,
             fileName: opened.name,
+            untitledNumber: undefined,
             content: opened.content,
             encoding: opened.encoding,
             lineEnding: opened.lineEnding,
@@ -699,12 +719,36 @@ export const useAppStore = create<AppState>((set, get) => ({
   updateSettings: (patch) => set((state) => ({ settings: normalizeSettings({ ...state.settings, ...patch }) })),
   loadSettings: (settings) => set({ settings: normalizeSettings(settings) }),
   restoreSession: (session) => set(() => {
+    const restoredUntitledNumbers = new Map<string, number>();
+    const untitledCandidates = session.documents
+      .map((document, index) => ({ document, index }))
+      .filter(({ document }) => !document.filePath && (document.fileName === "Untitled" || Number.isInteger(document.untitledNumber)))
+      .sort((left, right) => left.document.createdAt - right.document.createdAt || left.index - right.index);
+    const usedUntitledNumbers = new Set<number>();
+    for (const { document } of untitledCandidates) {
+      const number = document.untitledNumber;
+      if (Number.isInteger(number) && number! > 0 && !usedUntitledNumbers.has(number!)) {
+        usedUntitledNumbers.add(number!);
+        restoredUntitledNumbers.set(document.id, number!);
+      }
+    }
+    let nextRestoredUntitledNumber = 1;
+    for (const { document } of untitledCandidates) {
+      if (restoredUntitledNumbers.has(document.id)) continue;
+      while (usedUntitledNumbers.has(nextRestoredUntitledNumber)) nextRestoredUntitledNumber += 1;
+      restoredUntitledNumbers.set(document.id, nextRestoredUntitledNumber);
+      usedUntitledNumbers.add(nextRestoredUntitledNumber);
+      nextRestoredUntitledNumber += 1;
+    }
     const documents = Object.fromEntries(session.documents.map(({ patch: _patch, ...document }) => {
+      const untitledNumber = restoredUntitledNumbers.get(document.id);
       const languageMode = document.languageMode ?? "auto";
       return [
         document.id,
         {
           ...document,
+          fileName: untitledNumber ? untitledDocumentFileName(untitledNumber) : document.fileName,
+          untitledNumber,
           languageMode,
           detectedLanguage: document.detectedLanguage ?? detectLanguage(document.fileName, document.content),
           autoLanguageDetectionComplete: document.autoLanguageDetectionComplete ?? Boolean(document.filePath),

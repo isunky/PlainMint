@@ -177,6 +177,64 @@ describe("document language state", () => {
     useAppStore.getState().completeUntitledLanguageDetection(id);
     expect(useAppStore.getState().documents[id]).toMatchObject({ detectedLanguage: "markdown", autoLanguageDetectionComplete: true, dirty: true, revision: 4 });
   });
+
+  it("assigns stable numbers to legacy untitled documents when restoring a session", () => {
+    const legacyDocument = (id: string, createdAt: number, untitledNumber?: number): DocumentRecord => ({
+      ...documentRecord(id),
+      filePath: undefined,
+      fileName: "Untitled",
+      untitledNumber,
+      createdAt,
+    });
+    const session: WorkspaceSession = {
+      savedAt: Date.now(),
+      split: false,
+      documents: [
+        legacyDocument("legacy-first", 1),
+        legacyDocument("numbered", 2, 2),
+        legacyDocument("duplicate", 3, 2),
+      ],
+      tabs: {
+        left: [
+          { id: "legacy-first-tab", documentId: "legacy-first", pane: "left", order: 0 },
+          { id: "numbered-tab", documentId: "numbered", pane: "left", order: 1 },
+          { id: "duplicate-tab", documentId: "duplicate", pane: "left", order: 2 },
+        ],
+        right: [],
+      },
+      activeTab: { left: "legacy-first-tab", right: null },
+    };
+
+    useAppStore.getState().restoreSession(session);
+
+    expect(useAppStore.getState().documents).toMatchObject({
+      "legacy-first": { fileName: "Untitled 1", untitledNumber: 1 },
+      numbered: { fileName: "Untitled 2", untitledNumber: 2 },
+      duplicate: { fileName: "Untitled 3", untitledNumber: 3 },
+    });
+  });
+});
+
+describe("untitled document naming", () => {
+  it("numbers new documents across panes and clears the number after the first save", () => {
+    useAppStore.setState({
+      documents: {},
+      tabs: { left: [], right: [] },
+      activeTab: { left: null, right: null },
+      activePane: "left",
+    });
+
+    const firstId = useAppStore.getState().createDocument("left");
+    const secondId = useAppStore.getState().createDocument("right");
+    const first = useAppStore.getState().documents[firstId];
+    const second = useAppStore.getState().documents[secondId];
+
+    expect(first).toMatchObject({ fileName: "Untitled 1", untitledNumber: 1 });
+    expect(second).toMatchObject({ fileName: "Untitled 2", untitledNumber: 2 });
+
+    useAppStore.getState().markSaved(firstId, "C:\\Notes\\saved.txt", first.revision);
+    expect(useAppStore.getState().documents[firstId]).toMatchObject({ fileName: "saved.txt", untitledNumber: undefined });
+  });
 });
 
 describe("recovered documents", () => {
