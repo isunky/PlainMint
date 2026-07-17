@@ -118,29 +118,7 @@ describe("settings runtime controls", () => {
     expect(handlers.onOpenAuthorWebsite).toHaveBeenCalledOnce();
   });
 
-  it("opens hidden help from the title bar without adding it to the sidebar", () => {
-    const { container } = render(<SettingsModal
-      settings={{ ...defaultSettings }}
-      directoryChecks={{ defaultSaveFolder: { status: "idle" }, cloudSyncFolder: { status: "idle" } }}
-      applying={false}
-      canApply
-      {...handlers}
-    />);
-
-    expect(Array.from(container.querySelectorAll(".settings-sidebar nav button")).map((button) => button.textContent)).not.toContain("Help");
-    const help = screen.getByRole("button", { name: "Help" });
-    fireEvent.click(help);
-
-    expect(screen.getByRole("heading", { name: "Help" })).toBeInTheDocument();
-    expect(screen.getByText("Getting started")).toBeInTheDocument();
-    expect(screen.getByText("New documents are numbered until you choose a location with Save or Save as.")).toBeInTheDocument();
-    expect(screen.getByText("Troubleshooting")).toBeInTheDocument();
-
-    fireEvent.click(help);
-    expect(screen.getByRole("heading", { name: "General" })).toBeInTheDocument();
-  });
-
-  it("links hidden help to shortcuts and recovery", () => {
+  it("shows contextual help beside related settings", () => {
     render(<SettingsModal
       settings={{ ...defaultSettings }}
       directoryChecks={{ defaultSaveFolder: { status: "idle" }, cloudSyncFolder: { status: "idle" } }}
@@ -149,13 +127,15 @@ describe("settings runtime controls", () => {
       {...handlers}
     />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Help" }));
-    fireEvent.click(screen.getAllByRole("button", { name: "Keyboard shortcuts" })[1]);
-    expect(screen.getAllByRole("heading", { name: "Keyboard shortcuts" })).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "Files & folders" }));
+    expect(screen.getByText("These defaults apply only to new files. Opened files keep their original encoding and line ending.")).toBeInTheDocument();
+    expect(screen.getByText("Preferred location for the first save of new files. OneDrive, iCloud, or Dropbox performs the actual sync.")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Help" }));
-    fireEvent.click(screen.getByRole("button", { name: "Open recovery center" }));
-    expect(handlers.onOpenRecovery).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "Backup & recovery" }));
+    expect(screen.getByText("Recovery copies protect unsaved work. Open the recovery center to inspect or restore available copies.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
+    expect(screen.getByText("This changes the PlainMint interface language only; it does not change your document content.")).toBeInTheDocument();
   });
 
   it("shows update results inside the about page", () => {
@@ -204,7 +184,7 @@ describe("settings runtime controls", () => {
     />);
 
     fireEvent.click(screen.getByRole("button", { name: "Files & folders" }));
-    expect(screen.getByText("Preferred location for the first save of new files.")).toBeInTheDocument();
+    expect(screen.getByText("Preferred location for the first save of new files. OneDrive, iCloud, or Dropbox performs the actual sync.")).toBeInTheDocument();
     expect(screen.getByText("Used when no available cloud-synced folder is configured.")).toBeInTheDocument();
   });
 });

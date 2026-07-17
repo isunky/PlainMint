@@ -9,14 +9,12 @@ import {
   Keyboard,
   PaintBrush,
   PencilSimple,
-  Question,
   ShieldCheck,
   X,
 } from "@phosphor-icons/react";
 import type { AccentTheme, AppLocale, AppearanceMode, DirectoryValidationResult, Encoding, LineEnding, UserSettings } from "../types";
 
-type MainSettingsSection = "general" | "editor" | "files" | "backup" | "appearance" | "shortcuts" | "about";
-type SettingsSection = MainSettingsSection | "help";
+type SettingsSection = "general" | "editor" | "files" | "backup" | "appearance" | "shortcuts" | "about";
 
 interface SettingsModalProps {
   settings: UserSettings;
@@ -116,8 +114,7 @@ export function SettingsModal({
 }: SettingsModalProps) {
   const { t, i18n } = useTranslation();
   const [section, setSection] = useState<SettingsSection>("general");
-  const [previousSection, setPreviousSection] = useState<MainSettingsSection>("general");
-  const navigation: Array<{ id: MainSettingsSection; label: string; icon: typeof GearSix }> = [
+  const navigation: Array<{ id: SettingsSection; label: string; icon: typeof GearSix }> = [
     { id: "general", label: t("general"), icon: GearSix },
     { id: "editor", label: t("editor"), icon: PencilSimple },
     { id: "files", label: t("filesFolders"), icon: FolderSimple },
@@ -126,21 +123,7 @@ export function SettingsModal({
     { id: "shortcuts", label: t("keyboardShortcuts"), icon: Keyboard },
     { id: "about", label: t("about"), icon: Info },
   ];
-  const selectSection = (nextSection: MainSettingsSection) => {
-    setPreviousSection(nextSection);
-    setSection(nextSection);
-  };
-  const toggleHelp = () => {
-    if (section === "help") {
-      setSection(previousSection);
-      return;
-    }
-    setPreviousSection(section);
-    setSection("help");
-  };
-  const sectionTitle = section === "help"
-    ? t("help")
-    : navigation.find((item) => item.id === section)?.label;
+  const sectionTitle = navigation.find((item) => item.id === section)?.label;
 
   return (
     <div className="modal-backdrop" role="presentation">
@@ -153,7 +136,7 @@ export function SettingsModal({
                 type="button"
                 key={id}
                 className={section === id ? "active" : ""}
-                onClick={() => selectSection(id)}
+                onClick={() => setSection(id)}
               >
                 <Icon size={20} weight="regular" />
                 <span>{label}</span>
@@ -165,9 +148,6 @@ export function SettingsModal({
           <header>
             <h3>{sectionTitle}</h3>
             <div className="settings-header-actions">
-              <button type="button" className={"icon-button settings-help-trigger " + (section === "help" ? "active" : "")} onClick={toggleHelp} aria-label={t("help")} aria-pressed={section === "help"} title={t("help")}>
-                <Question size={19} />
-              </button>
               <button type="button" className="icon-button close-settings" disabled={applying} onClick={onCancel} aria-label={t("close")}>
                 <X size={19} />
               </button>
@@ -292,6 +272,7 @@ export function SettingsModal({
                       <input type="number" min={5} max={50} value={settings.recentFileLimit} onChange={(event) => onChange({ recentFileLimit: Number(event.target.value) })} />
                     </label>
                   </div>
+                  <p className="settings-section-hint">{t("newFileDefaultsHint")}</p>
                 </section>
               </div>
             )}
@@ -307,6 +288,7 @@ export function SettingsModal({
                     <label className="field-label"><span>{t("autoSave")}</span><select value={settings.autoSaveMode} onChange={(event) => onChange({ autoSaveMode: event.target.value as UserSettings["autoSaveMode"] })}><option value="off">{t("autoSaveOff")}</option><option value="idle">{t("autoSaveIdle")}</option><option value="interval">{t("autoSaveInterval")}</option><option value="blur">{t("autoSaveBlur")}</option><option value="tab-switch">{t("autoSaveTab")}</option></select></label>
                     <label className="field-label"><span>{t("recoveryBehavior")}</span><select value={settings.sessionRecoveryMode} onChange={(event) => onChange({ sessionRecoveryMode: event.target.value as UserSettings["sessionRecoveryMode"] })}><option value="ask">{t("recoveryAsk")}</option><option value="auto">{t("recoveryAuto")}</option><option value="empty">{t("recoveryOpenEmpty")}</option></select></label>
                   </div>
+                  <p className="settings-section-hint">{t("backupRecoveryHint")}</p>
                   <button type="button" className="button-secondary" onClick={onOpenRecovery}>{t("openRecovery")}</button>
                 </section>
               </div>
@@ -343,6 +325,7 @@ export function SettingsModal({
                       <option value="en">{t("english")}</option>
                     </select>
                   </label>
+                  <p className="settings-section-hint">{t("languageHint")}</p>
                 </section>
               </div>
             )}
@@ -361,34 +344,6 @@ export function SettingsModal({
                     ].map(([label, keys]) => <div className="shortcut-row" key={String(label)}><span>{label}</span><kbd>{keys}</kbd></div>)}
                   </div>
                 </section>
-              </div>
-            )}
-
-            {section === "help" && (
-              <div className="help-panel">
-                <section className="help-card" aria-labelledby="help-start-title">
-                  <h4 id="help-start-title">{t("helpQuickStart")}</h4>
-                  <div className="help-list">
-                    <article><strong>{t("helpCreateSave")}</strong><p>{t("helpCreateSaveBody")}</p></article>
-                    <article><strong>{t("helpFindCompare")}</strong><p>{t("helpFindCompareBody")}</p></article>
-                    <article><strong>{t("helpLanguageMode")}</strong><p>{t("helpLanguageModeBody")}</p></article>
-                    <article><strong>{t("helpCloudFolder")}</strong><p>{t("helpCloudFolderBody")}</p></article>
-                    <article><strong>{t("helpRecovery")}</strong><p>{t("helpRecoveryBody")}</p></article>
-                  </div>
-                  <div className="help-actions">
-                    <button type="button" className="button-secondary" onClick={() => selectSection("shortcuts")}>{t("keyboardShortcuts")}</button>
-                    <button type="button" className="button-secondary" onClick={onOpenRecovery}>{t("openRecovery")}</button>
-                  </div>
-                </section>
-                <details className="help-troubleshooting">
-                  <summary>{t("helpTroubleshooting")}</summary>
-                  <div className="help-list">
-                    <article><strong>{t("helpSaveFailed")}</strong><p>{t("helpSaveFailedBody")}</p></article>
-                    <article><strong>{t("helpExternalChange")}</strong><p>{t("helpExternalChangeBody")}</p></article>
-                    <article><strong>{t("helpMissingFile")}</strong><p>{t("helpMissingFileBody")}</p></article>
-                    <article><strong>{t("helpCloudAvailability")}</strong><p>{t("helpCloudAvailabilityBody")}</p></article>
-                  </div>
-                </details>
               </div>
             )}
 

@@ -1252,16 +1252,6 @@ select:focus-visible {
   gap: 7px;
 }
 
-.settings-help-trigger {
-  color: var(--text-tertiary);
-}
-
-.settings-help-trigger:hover,
-.settings-help-trigger.active {
-  color: var(--accent-pressed);
-  background: var(--accent-soft);
-}
-
 .settings-scroll {
   min-height: 0;
   flex: 1 1 auto;
@@ -1574,70 +1564,11 @@ select:focus-visible {
   white-space: nowrap;
 }
 
-.help-panel {
-  max-width: 760px;
-  margin: 24px auto;
-}
-
-.help-card,
-.help-troubleshooting {
-  padding: 18px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  background: var(--surface-elevated);
-}
-
-.help-card h4 {
-  margin: 0 0 13px;
-  font-size: 15px;
-}
-
-.help-list {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.help-list article {
-  min-width: 0;
-  padding: 12px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  background: var(--surface-toolbar);
-}
-
-.help-list strong {
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.help-list p {
-  margin: 5px 0 0;
-  color: var(--text-secondary);
-  font-size: 13px;
+.settings-section-hint {
+  margin: 12px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
   line-height: 1.55;
-}
-
-.help-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 16px;
-}
-
-.help-troubleshooting {
-  margin-top: 14px;
-}
-
-.help-troubleshooting summary {
-  color: var(--text-primary);
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.help-troubleshooting .help-list {
-  margin-top: 15px;
 }
 
 .about-actions {
@@ -2285,10 +2216,6 @@ select:focus-visible {
 
   .accent-options {
     grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .help-list {
-    grid-template-columns: 1fr;
   }
 
   .about-update-card {
