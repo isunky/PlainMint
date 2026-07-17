@@ -420,71 +420,6 @@ function RecentFilesToolbarMenu({
   );
 }
 
-function LanguageToolbarMenu({ document, onSelect }: { document?: DocumentRecord; onSelect: (languageMode: LanguageMode) => void }) {
-  const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const resolvedLanguage = document ? effectiveLanguage(document) : "plain";
-  const syntaxHighlightable = document ? isSyntaxHighlightable(document.content) : true;
-
-  const dismiss = useCallback((restoreFocus = false) => {
-    setOpen(false);
-    if (restoreFocus) triggerRef.current?.focus();
-  }, []);
-
-  useEffect(() => {
-    if (!open) return;
-    const dismissOutside = (event: PointerEvent) => {
-      if (!menuRef.current?.contains(event.target as Node)) dismiss();
-    };
-    window.setTimeout(() => menuRef.current?.querySelector<HTMLSelectElement>("select")?.focus(), 0);
-    window.addEventListener("pointerdown", dismissOutside);
-    return () => window.removeEventListener("pointerdown", dismissOutside);
-  }, [dismiss, open]);
-
-  return (
-    <div className="toolbar-action-wrap language-menu-trigger toolbar-more" ref={menuRef}>
-      <button
-        ref={triggerRef}
-        type="button"
-        className="toolbar-action toolbar-icon-action"
-        aria-label={t("more")}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        disabled={!document}
-        onClick={() => setOpen((current) => !current)}
-        title={t("more")}
-      >
-        <DotsThree size={20} weight="bold" />
-        <span className="toolbar-action-label">{t("more")}</span>
-      </button>
-      {open && document && (
-        <div className="recent-files-menu language-menu" role="dialog" aria-label={t("more")} onKeyDown={(event) => {
-          if (event.key === "Escape") { event.preventDefault(); dismiss(true); }
-        }}>
-          <label className="language-menu-label" htmlFor="toolbar-language-mode">{t("syntaxLanguage")}</label>
-          <select
-            id="toolbar-language-mode"
-            className="language-menu-select"
-            aria-label={t("syntaxLanguage")}
-            title={syntaxHighlightable ? t(languageLabelKey(resolvedLanguage)) : t("syntaxHighlightPaused")}
-            value={document.languageMode}
-            onChange={(event) => {
-              onSelect(event.target.value as LanguageMode);
-              dismiss(true);
-            }}
-          >
-            <option value="auto">{t("syntaxLanguageAuto", { language: t(languageLabelKey(resolvedLanguage)) })}</option>
-            {languageOptionIds.map((language) => <option key={language} value={language}>{t(languageLabelKey(language))}</option>)}
-          </select>
-          {!syntaxHighlightable && <p className="language-menu-hint" role="status">{t("syntaxHighlightPaused")}</p>}
-        </div>
-      )}
-    </div>
-  );
-}
-
 interface ToolbarProps {
   canUndo: boolean;
   canRedo: boolean;
@@ -492,7 +427,6 @@ interface ToolbarProps {
   wrap: boolean;
   canCompare: boolean;
   recentFiles: string[];
-  activeDocument?: DocumentRecord;
   onNew: () => void;
   onOpen: () => void;
   onOpenRecent: (path: string) => void;
@@ -506,7 +440,6 @@ interface ToolbarProps {
   onWrap: () => void;
   onSplit: () => void;
   onSettings: () => void;
-  onSetLanguageMode: (languageMode: LanguageMode) => void;
 }
 
 type ToolbarAction =
@@ -561,8 +494,7 @@ function Toolbar(props: ToolbarProps) {
           </div>
         );
       })}
-      <LanguageToolbarMenu document={props.activeDocument} onSelect={props.onSetLanguageMode} />
-      <button type="button" className="toolbar-action toolbar-icon-action" aria-label={t("settings")} onClick={props.onSettings} title={t("settings")}>
+      <button type="button" className="toolbar-action toolbar-icon-action toolbar-more" aria-label={t("settings")} onClick={props.onSettings} title={t("settings")}>
         <GearSix size={20} />
         <span className="toolbar-action-label">{t("settings")}</span>
       </button>
@@ -732,9 +664,15 @@ function StatusBar({ pane, document }: { pane: PaneId; document?: DocumentRecord
   const { t } = useTranslation();
   const cursor = useAppStore((state) => state.cursor[pane]);
   const updateDocumentFormat = useAppStore((state) => state.updateDocumentFormat);
+  const setDocumentLanguageMode = useAppStore((state) => state.setDocumentLanguageMode);
   if (!document) return <div className="statusbar" />;
   const characters = Array.from(document.content).length;
   const lines = document.content.split("\n").length;
+  const resolvedLanguage = effectiveLanguage(document);
+  const syntaxHighlightable = isSyntaxHighlightable(document.content);
+  const languageTitle = syntaxHighlightable
+    ? t(languageLabelKey(resolvedLanguage))
+    : t("syntaxHighlightPaused");
   return (
     <div className="statusbar" aria-label={t("statusbar")}>
       <div className="statusbar-group statusbar-position">
@@ -755,6 +693,16 @@ function StatusBar({ pane, document }: { pane: PaneId; document?: DocumentRecord
           <option value="lf">LF</option>
           <option value="crlf">CRLF</option>
           <option value="cr">CR</option>
+        </select>
+        <select
+          className="status-format-select status-language-select"
+          aria-label={t("syntaxLanguage")}
+          title={languageTitle}
+          value={document.languageMode}
+          onChange={(event) => setDocumentLanguageMode(document.id, event.target.value as LanguageMode)}
+        >
+          <option value="auto">{t("syntaxLanguageAuto", { language: t(languageLabelKey(resolvedLanguage)) })}</option>
+          {languageOptionIds.map((language) => <option key={language} value={language}>{t(languageLabelKey(language))}</option>)}
         </select>
       </div>
     </div>
@@ -1254,7 +1202,6 @@ export function App() {
   const loadSettingsIntoStore = useAppStore((state) => state.loadSettings);
   const restoreSessionIntoStore = useAppStore((state) => state.restoreSession);
   const updateDocumentFlags = useAppStore((state) => state.updateDocumentFlags);
-  const setDocumentLanguageMode = useAppStore((state) => state.setDocumentLanguageMode);
   const [modal, setModal] = useState<ModalState>(() => new URLSearchParams(window.location.search).get("state") === "settings" ? { type: "settings", snapshot: settings } : { type: "none" });
   const [toast, setToast] = useState("");
   const [matchIndex, setMatchIndex] = useState(0);
@@ -2240,7 +2187,6 @@ export function App() {
         wrap={settings.wordWrapByDefault}
         canCompare={canCompareSplitPanes}
         recentFiles={recentFiles}
-        activeDocument={activeDocument}
         onNew={() => createDocument(activePane)}
         onOpen={() => void openFiles()}
         onOpenRecent={(path) => void openRecent(path)}
@@ -2254,9 +2200,6 @@ export function App() {
         onWrap={() => updateSettings({ wordWrapByDefault: !settings.wordWrapByDefault })}
         onSplit={toggleSplit}
         onSettings={() => setModal({ type: "settings", snapshot: settings })}
-        onSetLanguageMode={(languageMode) => {
-          if (activeDocument) setDocumentLanguageMode(activeDocument.id, languageMode);
-        }}
       />
 
       {search.open && <SearchBar pane={activePane} matches={matches} searchValid={searchResult.valid} matchIndex={matchIndex} onMatchIndex={setMatchIndex} />}

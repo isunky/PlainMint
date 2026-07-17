@@ -103,7 +103,7 @@ describe("tab and split interactions", () => {
     for (const label of ["New", "Open", "Save"]) {
       expect(toolbar.getByRole("button", { name: label })).toHaveClass("toolbar-labeled-action");
     }
-    for (const label of ["Recent files", "Undo", "Redo", "Find", "Compare", "Wrap", "Split", "More", "Settings"]) {
+    for (const label of ["Recent files", "Undo", "Redo", "Find", "Compare", "Wrap", "Split", "Settings"]) {
       expect(toolbar.getByRole("button", { name: label })).toHaveClass("toolbar-icon-action");
     }
 
@@ -276,16 +276,14 @@ describe("tab and split interactions", () => {
     expect(useAppStore.getState().documents.a).toMatchObject({ encoding: "utf-16be", lineEnding: "crlf", dirty: true, revision: 2 });
   });
 
-  it("selects a syntax language from the More menu without marking the document dirty", async () => {
+  it("selects a syntax language from the status bar without marking the document dirty", async () => {
     render(<App />);
     await settle();
     const beforeRevision = useAppStore.getState().documents.a.revision;
 
-    fireEvent.click(screen.getByRole("button", { name: "More" }));
     fireEvent.change(screen.getByLabelText("Syntax language"), { target: { value: "python" } });
     expect(useAppStore.getState().documents.a).toMatchObject({ languageMode: "python", detectedLanguage: "plain", dirty: false, revision: beforeRevision });
 
-    fireEvent.click(screen.getByRole("button", { name: "More" }));
     fireEvent.change(screen.getByLabelText("Syntax language"), { target: { value: "auto" } });
     expect(useAppStore.getState().documents.a).toMatchObject({ languageMode: "auto", detectedLanguage: "plain", dirty: false, revision: beforeRevision });
   });
