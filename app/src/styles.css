@@ -843,6 +843,22 @@ select:focus-visible {
   overflow: hidden;
 }
 
+.editor-loading,
+.compare-loading {
+  display: grid;
+  place-items: center;
+  min-height: 100%;
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+.compare-loading {
+  min-height: 360px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--surface-editor);
+}
+
 .editor-host,
 .editor-host .cm-editor {
   width: 100%;

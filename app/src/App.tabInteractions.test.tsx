@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { ChangeSet } from "@codemirror/state";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "./i18n";
@@ -131,12 +131,14 @@ describe("tab and split interactions", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Compare" }));
     expect(screen.getByRole("dialog", { name: "Compare split panes" })).toBeInTheDocument();
-    expect(container.textContent).toContain("alpha");
-    expect(container.textContent).toContain("C:\\a.txt");
-    expect(container.textContent).toContain("C:\\b.txt");
-    expect(container.textContent).toContain("UTF-8 · LF");
-    expect(container.textContent).toContain("UTF-8 · CRLF");
-    expect(screen.getByText("Difference 1 of 2")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(container.textContent).toContain("alpha");
+      expect(container.textContent).toContain("C:\\a.txt");
+      expect(container.textContent).toContain("C:\\b.txt");
+      expect(container.textContent).toContain("UTF-8 · LF");
+      expect(container.textContent).toContain("UTF-8 · CRLF");
+      expect(screen.getByText("Difference 1 of 2")).toBeInTheDocument();
+    });
 
     fireEvent.click(screen.getByRole("button", { name: "Next difference" }));
     expect(screen.getByText("Difference 2 of 2")).toBeInTheDocument();

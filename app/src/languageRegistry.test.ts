@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectLanguage, effectiveLanguage, isReadyForUntitledLanguageDetection, isSyntaxHighlightable } from "./languageRegistry";
+import { detectLanguage, effectiveLanguage, isReadyForUntitledLanguageDetection, isSyntaxHighlightable } from "./languageMetadata";
 
 describe("language detection", () => {
   it("uses filename extensions and special shell filenames before content", () => {

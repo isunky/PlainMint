@@ -1,7 +1,7 @@
 import { ChangeSet } from "@codemirror/state";
 import { create } from "zustand";
 import { isUntitledDocument, untitledDocumentFileName } from "./documentName";
-import { detectLanguage, isReadyForUntitledLanguageDetection } from "./languageRegistry";
+import { detectLanguage, isReadyForUntitledLanguageDetection } from "./languageMetadata";
 import { applyChangesToString, applyTextStats, getTextStats } from "./textStats";
 import type {
   CursorStats,

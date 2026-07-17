@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findSearchMatches } from "./searchPolicy";
+import { findSearchMatches } from "./searchMatcher";
 
 const defaults = {
   query: "",

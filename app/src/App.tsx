@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import {
@@ -36,20 +36,20 @@ import { displayDocumentName } from "./documentName";
 import { buildEditorFontFamily } from "./fontSettings";
 import { createWorkspaceSession, decideStartupRecovery } from "./recoveryPolicy";
 import { resolveInitialSaveFolder } from "./saveFolderPolicy";
-import { findSearchMatches } from "./searchPolicy";
-import { effectiveLanguage, isSyntaxHighlightableStats, languageLabelKey, languageOptionIds } from "./languageRegistry";
+import { findSearchMatches } from "./searchMatcher";
+import { effectiveLanguage, isSyntaxHighlightableStats, languageLabelKey, languageOptionIds } from "./languageMetadata";
 import { getTextStats } from "./textStats";
-import { ConflictCompareView, type ComparisonSide } from "./components/ConflictCompareView";
+import type { ComparisonSide } from "./components/ConflictCompareView";
 import { SettingsModal } from "./components/SettingsModal";
 import {
   findNextInPane,
   findPreviousInPane,
   focusEditor,
   goToLineInPane,
+  loadTextEditor,
   replaceAllSearchMatchesInPane,
   replaceCurrentSearchMatchInPane,
-  TextEditor,
-} from "./components/TextEditor";
+} from "./editorRuntime";
 
 import {
   beginAppSession,
@@ -91,6 +91,16 @@ import {
   writeRecovery,
   writeSafetyRecovery,
 } from "./services/runtime";
+
+const TextEditor = lazy(async () => {
+  const { TextEditor: Component } = await loadTextEditor();
+  return { default: Component };
+});
+
+const ConflictCompareView = lazy(async () => {
+  const { ConflictCompareView: Component } = await import("./components/ConflictCompareView");
+  return { default: Component };
+});
 import type { UpdateCheckResult, UpdateInstallProgress } from "./services/runtime";
 import { useAppStore } from "./store";
 import type { ContextMenuStatus, DirectoryValidationResult, DocumentRecord, Encoding, FileFingerprint, LanguageMode, LineEnding, OpenedDocument, PaneId, RecoveryEntry, RecentlyClosedTab, UserSettings, WorkspaceSession } from "./types";
@@ -759,17 +769,19 @@ function EditorPane({ pane, onCloseTab, onActivateTab, onTabPointerDown, onTabCo
     <section className="editor-pane" data-pane-drop={pane} onPointerDown={() => setActivePane(pane)}>
       <TabBar pane={pane} onClose={onCloseTab} onActivate={onActivateTab} onPointerDown={onTabPointerDown} onContextMenu={onTabContextMenu} drag={drag} />
       {document ? <div className="editor-region">
-        <TextEditor
-          pane={pane}
-          document={document}
-          settings={settings}
-          searchState={search}
-          onChange={(changes, origin) => applyChanges(document.id, changes, origin)}
-          onCursor={(line, column, selected) => setCursor(pane, { line, column, selected })}
-          onFocus={() => setActivePane(pane)}
-          onUndo={() => undoDocument(document.id)}
-          onRedo={() => redoDocument(document.id)}
-        />
+        <Suspense fallback={<div className="editor-loading" aria-busy="true">{t("loadingEditor")}</div>}>
+          <TextEditor
+            pane={pane}
+            document={document}
+            settings={settings}
+            searchState={search}
+            onChange={(changes, origin) => applyChanges(document.id, changes, origin)}
+            onCursor={(line, column, selected) => setCursor(pane, { line, column, selected })}
+            onFocus={() => setActivePane(pane)}
+            onUndo={() => undoDocument(document.id)}
+            onRedo={() => redoDocument(document.id)}
+          />
+        </Suspense>
       </div> : <div className="editor-empty"><span>{t("emptyPaneHint")}</span></div>}
       <StatusBar pane={pane} document={document} />
     </section>
@@ -1064,19 +1076,21 @@ function ConflictModal({
           </div>
         </header>
         {message && <p className="conflict-message" role="status">{message}</p>}
-        <ConflictCompareView
-          localContent={document.content}
-          diskContent={modal.disk.content}
-          localLanguage={effectiveLanguage(document)}
-          diskLanguage={effectiveLanguage(document)}
-          localLabel={{ label: t("conflictLocalVersion") }}
-          diskLabel={{ label: t("conflictDiskVersion") }}
-          largeFileMessage={t("conflictLargeFile")}
-          noDifferencesLabel={t("compareNoDifferences")}
-          differencePositionLabel={(current, total) => t("compareDifferencePosition", { current, total })}
-          previousDifferenceLabel={t("comparePreviousDifference")}
-          nextDifferenceLabel={t("compareNextDifference")}
-        />
+        <Suspense fallback={<div className="compare-loading" aria-busy="true">{t("loadingComparison")}</div>}>
+          <ConflictCompareView
+            localContent={document.content}
+            diskContent={modal.disk.content}
+            localLanguage={effectiveLanguage(document)}
+            diskLanguage={effectiveLanguage(document)}
+            localLabel={{ label: t("conflictLocalVersion") }}
+            diskLabel={{ label: t("conflictDiskVersion") }}
+            largeFileMessage={t("conflictLargeFile")}
+            noDifferencesLabel={t("compareNoDifferences")}
+            differencePositionLabel={(current, total) => t("compareDifferencePosition", { current, total })}
+            previousDifferenceLabel={t("comparePreviousDifference")}
+            nextDifferenceLabel={t("compareNextDifference")}
+          />
+        </Suspense>
         <div className="modal-actions conflict-actions">
           <button type="button" className="button-secondary" disabled={busy} onClick={onLater}>{t("conflictLater")}</button>
           <button type="button" className="button-secondary" disabled={busy} onClick={onSaveCopy}>{t("conflictSaveCopy")}</button>
@@ -1099,19 +1113,21 @@ function CompareModal({ modal, onClose }: { modal: Extract<ModalState, { type: "
             <p>{t("compareBody")}</p>
           </div>
         </header>
-        <ConflictCompareView
-          localContent={modal.left.content}
-          diskContent={modal.right.content}
-          localLanguage={effectiveLanguage(modal.left)}
-          diskLanguage={effectiveLanguage(modal.right)}
-          localLabel={comparisonSide(modal.left, localizedDocumentName(modal.left, t), t("compareUnsavedDocument"))}
-          diskLabel={comparisonSide(modal.right, localizedDocumentName(modal.right, t), t("compareUnsavedDocument"))}
-          largeFileMessage={t("compareLargeFile")}
-          noDifferencesLabel={t("compareNoDifferences")}
-          differencePositionLabel={(current, total) => t("compareDifferencePosition", { current, total })}
-          previousDifferenceLabel={t("comparePreviousDifference")}
-          nextDifferenceLabel={t("compareNextDifference")}
-        />
+        <Suspense fallback={<div className="compare-loading" aria-busy="true">{t("loadingComparison")}</div>}>
+          <ConflictCompareView
+            localContent={modal.left.content}
+            diskContent={modal.right.content}
+            localLanguage={effectiveLanguage(modal.left)}
+            diskLanguage={effectiveLanguage(modal.right)}
+            localLabel={comparisonSide(modal.left, localizedDocumentName(modal.left, t), t("compareUnsavedDocument"))}
+            diskLabel={comparisonSide(modal.right, localizedDocumentName(modal.right, t), t("compareUnsavedDocument"))}
+            largeFileMessage={t("compareLargeFile")}
+            noDifferencesLabel={t("compareNoDifferences")}
+            differencePositionLabel={(current, total) => t("compareDifferencePosition", { current, total })}
+            previousDifferenceLabel={t("comparePreviousDifference")}
+            nextDifferenceLabel={t("compareNextDifference")}
+          />
+        </Suspense>
         <div className="modal-actions">
           <button type="button" className="button-primary" onClick={onClose}>{t("close")}</button>
         </div>
