@@ -1,9 +1,9 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { ChangeSet } from "@codemirror/state";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "./i18n";
 import { defaultSettings, useAppStore } from "./store";
 import type { DocumentRecord } from "./types";
+import { createTextChangeSet } from "./textChanges";
 
 vi.mock("./services/runtime", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./services/runtime")>();
@@ -195,7 +195,7 @@ describe("tab and split interactions", () => {
       if (!document) throw new Error("Expected an active untitled document");
       useAppStore.getState().applyChanges(
         document.id,
-        ChangeSet.of({ from: 0, insert: "unsaved split content" }, document.content.length),
+        createTextChangeSet(document.content.length, { from: 0, to: 0, insert: "unsaved split content" }),
         "test",
       );
     });

@@ -1,4 +1,4 @@
-import type { ChangeSet } from "@codemirror/state";
+import type { TextChangeSet } from "./textChanges";
 
 export type PaneId = "left" | "right";
 export type Encoding = "utf-8" | "utf-8-bom" | "utf-16le" | "utf-16be";
@@ -85,7 +85,7 @@ export interface DocumentRecord {
   patch?: {
     sequence: number;
     origin: string;
-    changes: ChangeSet;
+    changes: TextChangeSet;
   };
 }
 

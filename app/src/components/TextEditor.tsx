@@ -2,9 +2,9 @@ import { useEffect, useLayoutEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Annotation,
+  ChangeSet,
   Compartment,
   EditorState,
-  type ChangeSet,
 } from "@codemirror/state";
 import {
   crosshairCursor,
@@ -33,10 +33,19 @@ import { effectiveLanguage, isSyntaxHighlightableStats, isTextLanguage, loadLang
 import { getTextStats } from "../textStats";
 import { plainMintSyntaxHighlighting } from "../syntaxHighlighting";
 import type { DocumentRecord, PaneId, SearchState, UserSettings } from "../types";
+import { createTextChangeSet, type TextChangeSet } from "../textChanges";
 import { createSearchQuery } from "../searchPolicy";
 
 const externalSync = Annotation.define<boolean>();
 const editors: Partial<Record<PaneId, EditorView>> = {};
+
+function serializeChanges(changes: ChangeSet) {
+  const specs: Array<{ from: number; to: number; insert: string }> = [];
+  changes.iterChanges((from, to, _fromAfter, _toAfter, inserted) => {
+    specs.push({ from, to, insert: inserted.toString() });
+  });
+  return createTextChangeSet(changes.length, specs);
+}
 
 export function findNextInPane(pane: PaneId) {
   const view = editors[pane];
@@ -83,7 +92,7 @@ interface TextEditorProps {
   document: DocumentRecord;
   settings: UserSettings;
   searchState: SearchState;
-  onChange: (changes: ChangeSet, origin: string) => void;
+  onChange: (changes: TextChangeSet, origin: string) => void;
   onCursor: (line: number, column: number, selected: number) => void;
   onFocus: () => void;
   onUndo: () => void;
@@ -235,7 +244,7 @@ export function TextEditor({
         EditorView.updateListener.of((update) => {
           if (update.focusChanged && update.view.hasFocus) callbacks.current.onFocus();
           if (update.docChanged && !update.transactions.some((transaction) => transaction.annotation(externalSync))) {
-            callbacks.current.onChange(update.changes, viewId);
+            callbacks.current.onChange(serializeChanges(update.changes), viewId);
           }
           if (update.selectionSet || update.docChanged || update.focusChanged) {
             const selection = update.state.selection.main;
@@ -288,7 +297,13 @@ export function TextEditor({
     if (patch && patch.sequence !== lastPatchRef.current) {
       lastPatchRef.current = patch.sequence;
       if (patch.origin !== viewId) {
-        view.dispatch({ changes: patch.changes, annotations: externalSync.of(true) });
+        view.dispatch({
+          changes: ChangeSet.of(
+            patch.changes.changes.map((change) => ({ ...change })),
+            patch.changes.length,
+          ),
+          annotations: externalSync.of(true),
+        });
       }
       return;
     }

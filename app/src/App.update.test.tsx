@@ -6,7 +6,10 @@ import type { DocumentRecord } from "./types";
 
 const runtimeMocks = vi.hoisted(() => ({
   checkForUpdates: vi.fn(),
+  getContextMenuStatus: vi.fn(),
   install: vi.fn(),
+  persistSession: vi.fn(),
+  pruneRecoveries: vi.fn(),
 }));
 
 vi.mock("./services/runtime", async (importOriginal) => {
@@ -18,13 +21,14 @@ vi.mock("./services/runtime", async (importOriginal) => {
     loadSession: vi.fn().mockResolvedValue(null),
     loadRecentFiles: vi.fn().mockResolvedValue([]),
     loadRecentlyClosedTabs: vi.fn().mockResolvedValue([]),
-    persistSession: vi.fn().mockResolvedValue(undefined),
+    persistSession: runtimeMocks.persistSession,
     persistRecentFiles: vi.fn().mockResolvedValue(undefined),
     persistRecentlyClosedTabs: vi.fn().mockResolvedValue(undefined),
-    pruneRecoveries: vi.fn().mockResolvedValue(undefined),
+    pruneRecoveries: runtimeMocks.pruneRecoveries,
     writeRecovery: vi.fn().mockResolvedValue(undefined),
     listenForWindowClose: vi.fn().mockResolvedValue(() => undefined),
     getAppVersion: vi.fn().mockResolvedValue("0.1.4"),
+    getContextMenuStatus: runtimeMocks.getContextMenuStatus,
     checkForUpdates: runtimeMocks.checkForUpdates,
   };
 });
@@ -63,6 +67,9 @@ beforeEach(async () => {
   localStorage.clear();
   await i18n.changeLanguage("en");
   runtimeMocks.install.mockReset().mockResolvedValue(undefined);
+  runtimeMocks.getContextMenuStatus.mockReset().mockResolvedValue({ supported: true, enabled: false });
+  runtimeMocks.persistSession.mockReset().mockResolvedValue(undefined);
+  runtimeMocks.pruneRecoveries.mockReset().mockResolvedValue(undefined);
   runtimeMocks.checkForUpdates.mockReset().mockResolvedValue({
     available: true,
     version: "0.1.5",
@@ -86,6 +93,27 @@ afterEach(() => {
 });
 
 describe("application updates", () => {
+  it("defers noncritical persistence, maintenance, and registry work during startup", async () => {
+    render(<App />);
+    await settle();
+    await act(async () => vi.advanceTimersByTimeAsync(4_999));
+
+    expect(runtimeMocks.persistSession).not.toHaveBeenCalled();
+    expect(runtimeMocks.pruneRecoveries).not.toHaveBeenCalled();
+    expect(runtimeMocks.getContextMenuStatus).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    await settle();
+    expect(runtimeMocks.getContextMenuStatus).toHaveBeenCalledOnce();
+
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(runtimeMocks.persistSession).toHaveBeenCalledOnce();
+    expect(runtimeMocks.pruneRecoveries).not.toHaveBeenCalled();
+
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    expect(runtimeMocks.pruneRecoveries).toHaveBeenCalledOnce();
+  });
+
   it("only checks when requested from the about page and installs an available update", async () => {
     render(<App />);
     await settle();

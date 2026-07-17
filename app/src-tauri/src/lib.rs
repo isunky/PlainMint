@@ -949,7 +949,9 @@ fn complete_lifecycle(path: &Path, now: u64) -> CommandResult<()> {
     atomic_write(path, &bytes)
 }
 
-#[tauri::command]
+// Keep synchronous filesystem and registry work off Tauri's native window event loop.
+// `command(async)` dispatches these command bodies through Tauri's async responder.
+#[tauri::command(async)]
 fn begin_app_session(app: AppHandle) -> CommandResult<StartupStatus> {
     let slot = STARTUP_STATUS.get_or_init(|| Mutex::new(None));
     let mut stored = slot.lock().map_err(|error| {
@@ -967,7 +969,7 @@ fn begin_app_session(app: AppHandle) -> CommandResult<StartupStatus> {
     Ok(status)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn close_app_window(app: AppHandle, window: tauri::WebviewWindow) -> CommandResult<()> {
     complete_lifecycle(&app_data_file(&app, "lifecycle.json")?, now_millis())?;
     window
@@ -975,12 +977,12 @@ fn close_app_window(app: AppHandle, window: tauri::WebviewWindow) -> CommandResu
         .map_err(|error| AppError::new("window_close_failed", "close", Some(error.to_string())))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn inspect_file_metadata(path: String) -> CommandResult<FileMetadataSnapshot> {
     file_metadata_snapshot(Path::new(&path))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn sync_file_watches(
     state: tauri::State<'_, FileWatchState>,
     paths: Vec<String>,
@@ -1078,17 +1080,17 @@ fn sync_file_watches(
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn validate_directory(path: String, required_bytes: u64) -> DirectoryValidationResult {
     validate_directory_path(Path::new(&path), required_bytes)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_context_menu_status() -> ContextMenuStatus {
     context_menu_status()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn set_context_menu_enabled(enabled: bool) -> CommandResult<ContextMenuStatus> {
     #[cfg(target_os = "windows")]
     {
@@ -1146,7 +1148,7 @@ fn set_context_menu_enabled(enabled: bool) -> CommandResult<ContextMenuStatus> {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_startup_open_paths() -> Vec<String> {
     std::env::args_os()
         .skip(1)
@@ -1160,7 +1162,7 @@ fn get_startup_open_paths() -> Vec<String> {
         .collect()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn open_file(request: OpenFileRequest) -> CommandResult<OpenedDocument> {
     let path = PathBuf::from(&request.path);
     let metadata = fs::metadata(&path).map_err(|error| AppError::io("file_missing", error))?;
@@ -1193,7 +1195,7 @@ fn open_file(request: OpenFileRequest) -> CommandResult<OpenedDocument> {
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn save_file(request: SaveFileRequest) -> CommandResult<SaveResult> {
     let path = resolve_save_target(Path::new(&request.path), &request.fallback_file_name)?;
     if let Some(expected) = &request.expected_fingerprint {
@@ -1217,7 +1219,7 @@ fn save_file(request: SaveFileRequest) -> CommandResult<SaveResult> {
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn load_settings(app: AppHandle) -> CommandResult<Option<Value>> {
     let path = app_data_file(&app, "settings.json")?;
     if !path.exists() {
@@ -1230,7 +1232,7 @@ fn load_settings(app: AppHandle) -> CommandResult<Option<Value>> {
     Ok(Some(value))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn save_settings(app: AppHandle, settings: Value) -> CommandResult<()> {
     let path = app_data_file(&app, "settings.json")?;
     let bytes = serde_json::to_vec_pretty(&settings)
@@ -1238,7 +1240,7 @@ fn save_settings(app: AppHandle, settings: Value) -> CommandResult<()> {
     atomic_write(&path, &bytes)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn save_session(app: AppHandle, session: Value) -> CommandResult<()> {
     let path = app_data_file(&app, "session.json")?;
     let bytes = serde_json::to_vec_pretty(&session).map_err(|error| {
@@ -1251,7 +1253,7 @@ fn save_session(app: AppHandle, session: Value) -> CommandResult<()> {
     atomic_write(&path, &bytes)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn load_session(app: AppHandle) -> CommandResult<Option<Value>> {
     let path = app_data_file(&app, "session.json")?;
     if !path.exists() {
@@ -1270,7 +1272,7 @@ fn load_session(app: AppHandle) -> CommandResult<Option<Value>> {
     Ok(Some(value))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn load_recent_files(app: AppHandle) -> CommandResult<Vec<String>> {
     let path = app_data_file(&app, "recent-files.json")?;
     if !path.exists() {
@@ -1288,7 +1290,7 @@ fn load_recent_files(app: AppHandle) -> CommandResult<Vec<String>> {
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn save_recent_files(app: AppHandle, paths: Vec<String>) -> CommandResult<()> {
     let path = app_data_file(&app, "recent-files.json")?;
     let bytes = serde_json::to_vec_pretty(&paths).map_err(|error| {
@@ -1322,7 +1324,7 @@ fn normalize_recently_closed_tabs(entries: Vec<RecentlyClosedTab>) -> Vec<Recent
         .collect()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn load_recently_closed_tabs(app: AppHandle) -> CommandResult<Vec<RecentlyClosedTab>> {
     let path = app_data_file(&app, "recently-closed-tabs.json")?;
     if !path.exists() {
@@ -1341,7 +1343,7 @@ fn load_recently_closed_tabs(app: AppHandle) -> CommandResult<Vec<RecentlyClosed
     Ok(normalize_recently_closed_tabs(entries))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn persist_recently_closed_tabs(
     app: AppHandle,
     entries: Vec<RecentlyClosedTab>,
@@ -1442,12 +1444,12 @@ fn prune_all_backups(
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn prune_backups(app: AppHandle, retention_days: u64, max_versions: usize) -> CommandResult<()> {
     prune_all_backups(&app, retention_days, max_versions)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn write_backup(app: AppHandle, request: BackupRequest) -> CommandResult<()> {
     let directory = backup_root(&app)?.join(&request.document_id);
     fs::create_dir_all(&directory)
@@ -1555,7 +1557,7 @@ fn recovery_entry_from_path(path: &Path) -> RecoveryEntry {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn list_recoveries(app: AppHandle) -> CommandResult<Vec<RecoveryEntry>> {
     let mut entries = all_backup_files(&app)?
         .into_iter()
@@ -1611,12 +1613,12 @@ fn restore_recovery_document(app: &AppHandle, id: &str) -> CommandResult<OpenedD
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn restore_recovery(app: AppHandle, id: String) -> CommandResult<OpenedDocument> {
     restore_recovery_document(&app, &id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn restore_recoveries(app: AppHandle, ids: Vec<String>) -> BatchRecoveryResult {
     let mut result = BatchRecoveryResult {
         documents: Vec::new(),
@@ -1635,7 +1637,7 @@ fn restore_recoveries(app: AppHandle, ids: Vec<String>) -> BatchRecoveryResult {
     result
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn delete_recovery(app: AppHandle, id: String) -> CommandResult<()> {
     let path = find_recovery_path(&app, &id)?;
     fs::remove_file(path).map_err(|error| AppError::io("backup_delete_failed", error))

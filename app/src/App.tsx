@@ -147,6 +147,10 @@ type TabContextMenuState = {
   y: number;
 };
 
+const INITIAL_SESSION_PERSIST_DELAY_MS = 5_000;
+const SESSION_PERSIST_DELAY_MS = 500;
+const STARTUP_MAINTENANCE_DELAY_MS = 10_000;
+
 type DirectoryField = "defaultSaveFolder" | "cloudSyncFolder";
 type DirectoryCheck = {
   status: "idle" | "checking" | "valid" | "invalid";
@@ -1284,6 +1288,8 @@ export function App() {
   const splitResizePointerRef = useRef<number | null>(null);
   const updateCheckInFlight = useRef(false);
   const startupOpenPathsHandled = useRef(false);
+  const settingsMetadataRequested = useRef(false);
+  const sessionPersistenceStarted = useRef(false);
 
   useEffect(() => {
     document.getElementById("startup-titlebar")?.remove();
@@ -1866,15 +1872,28 @@ export function App() {
       window.setTimeout(() => {
         void loadRecentFiles().then(setRecentFiles).catch(() => undefined);
         void loadRecentlyClosedTabs().then(loadRecentlyClosedTabsIntoStore).catch(() => undefined);
-        void pruneRecoveries(effectiveSettings).catch(() => undefined);
+        window.setTimeout(() => {
+          const prune = () => void pruneRecoveries(effectiveSettings).catch(() => undefined);
+          if (window.requestIdleCallback) {
+            window.requestIdleCallback(prune, { timeout: STARTUP_MAINTENANCE_DELAY_MS });
+          } else {
+            prune();
+          }
+        }, STARTUP_MAINTENANCE_DELAY_MS);
       }, 0);
     }).catch(() => setHydrated(true));
   }, [loadRecentlyClosedTabsIntoStore, loadSettingsIntoStore, restoreSessionIntoStore]);
 
   useEffect(() => {
+    if (modal.type !== "settings" || settingsMetadataRequested.current) return;
+    settingsMetadataRequested.current = true;
     void getAppVersion().then(setAppVersion).catch(() => undefined);
-    void getContextMenuStatus().then(setContextMenuStatus).catch(() => undefined);
-  }, []);
+    setContextMenuBusy(true);
+    void getContextMenuStatus()
+      .then(setContextMenuStatus)
+      .catch(() => undefined)
+      .finally(() => setContextMenuBusy(false));
+  }, [modal.type]);
 
   useEffect(() => {
     const resolved = resolveLocale(settings.locale);
@@ -1989,10 +2008,14 @@ export function App() {
 
   useEffect(() => {
     if (!hydrated) return;
+    const delay = sessionPersistenceStarted.current
+      ? SESSION_PERSIST_DELAY_MS
+      : INITIAL_SESSION_PERSIST_DELAY_MS;
+    sessionPersistenceStarted.current = true;
     const timer = window.setTimeout(() => {
       if (closingRef.current) return;
       void persistSession(createWorkspaceSession({ split, splitRatio, activeTab, tabs, documents }));
-    }, 500);
+    }, delay);
     return () => window.clearTimeout(timer);
   }, [activeTab, documents, hydrated, split, splitRatio, tabs]);
 
