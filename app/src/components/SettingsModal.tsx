@@ -232,9 +232,6 @@ export function SettingsModal({
           <header>
             <h3>{sectionTitle}</h3>
             <div className="settings-header-actions">
-              {resettableSections.has(section) && (
-                <button type="button" className="button-secondary settings-reset-button" disabled={applying} onClick={() => onChange(defaultsForSection(section))}>{t("restoreDefaults")}</button>
-              )}
               <button type="button" className="icon-button close-settings" disabled={applying} onClick={onCancel} aria-label={t("close")}>
                 <X size={19} />
               </button>
@@ -493,8 +490,13 @@ export function SettingsModal({
             )}
           </div>
           <footer>
-            <button type="button" className="button-secondary" disabled={applying} onClick={onCancel}>{t("cancel")}</button>
-            <button type="button" className="button-primary" disabled={!canApply || applying} onClick={onApply}>{applying ? t("applying") : t("apply")}</button>
+            {resettableSections.has(section) && (
+              <button type="button" className="button-secondary settings-reset-button" disabled={applying} onClick={() => onChange(defaultsForSection(section))}>{t("restoreDefaults")}</button>
+            )}
+            <div className="settings-footer-actions">
+              <button type="button" className="button-secondary" disabled={applying} onClick={onCancel}>{t("cancel")}</button>
+              <button type="button" className="button-primary" disabled={!canApply || applying} onClick={onApply}>{applying ? t("applying") : t("apply")}</button>
+            </div>
           </footer>
         </div>
       </section>

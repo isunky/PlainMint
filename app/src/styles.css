@@ -1277,9 +1277,18 @@ select:focus-visible {
 }
 
 .settings-reset-button {
-  min-height: 32px;
-  padding-inline: 12px;
+  min-width: auto !important;
+  padding-inline: 14px;
+  border-color: var(--border-subtle);
+  background: transparent;
+  color: var(--text-secondary);
   font-size: 12px;
+}
+
+.settings-reset-button:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--surface-muted);
+  color: var(--text-primary);
 }
 
 .settings-scroll {
@@ -1731,7 +1740,14 @@ select:focus-visible {
   border-top: 1px solid var(--border-subtle);
 }
 
-.settings-content > footer button {
+.settings-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.settings-footer-actions button {
   min-width: 126px;
 }
 

@@ -193,12 +193,13 @@ describe("settings runtime controls", () => {
       onChange={onChange}
     />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Restore defaults" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reset this page" }));
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ autoBackupEnabled: true, wordWrapByDefault: true, autoCheckUpdates: true }));
     expect(onChange).not.toHaveBeenCalledWith(expect.objectContaining({ fontSize: 14 }));
+    expect(screen.getByRole("button", { name: "Reset this page" }).closest("footer")).not.toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Files & folders" }));
-    fireEvent.click(screen.getByRole("button", { name: "Restore defaults" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reset this page" }));
     expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ defaultEncoding: "utf-8", defaultLineEnding: "lf", recentFileLimit: 20 }));
   });
 
