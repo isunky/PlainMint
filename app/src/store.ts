@@ -1,8 +1,8 @@
+import { ChangeSet } from "@codemirror/state";
 import { create } from "zustand";
 import { isUntitledDocument, untitledDocumentFileName } from "./documentName";
 import { detectLanguage, isReadyForUntitledLanguageDetection } from "./languageMetadata";
 import { applyChangesToString, applyTextStats, getTextStats } from "./textStats";
-import { createTextChangeSet, textChangeSetIsEmpty, type TextChangeSet } from "./textChanges";
 import type {
   CursorStats,
   DocumentRecord,
@@ -19,8 +19,8 @@ import type {
 } from "./types";
 
 interface HistoryEntry {
-  forward: TextChangeSet;
-  inverse: TextChangeSet;
+  forward: ChangeSet;
+  inverse: ChangeSet;
 }
 
 interface AppState {
@@ -47,7 +47,7 @@ interface AppState {
   rememberClosedTab: (entry: RecentlyClosedTab) => void;
   removeRecentlyClosedTab: (path: string) => void;
   setActivePane: (pane: PaneId) => void;
-  applyChanges: (documentId: string, changes: TextChangeSet, origin: string) => void;
+  applyChanges: (documentId: string, changes: ChangeSet, origin: string) => void;
   undoDocument: (documentId: string) => void;
   redoDocument: (documentId: string) => void;
   markSaved: (documentId: string, filePath: string, savedRevision: number, fingerprint?: DocumentRecord["fingerprint"]) => void;
@@ -462,9 +462,9 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   applyChanges: (documentId, changes, origin) => set((state) => {
     const document = state.documents[documentId];
-    if (!document || document.readOnly || textChangeSetIsEmpty(changes)) return state;
+    if (!document || document.readOnly || changes.empty) return state;
     const result = applyChangesToString(document.content, changes);
-    const inverse = createTextChangeSet(result.content.length, result.inverseSpecs);
+    const inverse = ChangeSet.of(result.inverseSpecs, result.content.length);
     const history = state.histories[documentId] ?? { undo: [], redo: [] };
     return {
       documents: {
@@ -711,13 +711,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   replaceCurrent: (documentId, from, to, value) => {
     const document = get().documents[documentId];
     if (!document) return;
-    get().applyChanges(documentId, createTextChangeSet(document.content.length, { from, to, insert: value }), "replace");
+    get().applyChanges(documentId, ChangeSet.of({ from, to, insert: value }, document.content.length), "replace");
   },
 
   replaceAll: (documentId, ranges, value) => {
     const document = get().documents[documentId];
     if (!document || ranges.length === 0) return;
-    const changes = createTextChangeSet(document.content.length, ranges.map((range) => ({ ...range, insert: value })));
+    const changes = ChangeSet.of(ranges.map((range) => ({ ...range, insert: value })), document.content.length);
     get().applyChanges(documentId, changes, "replace-all");
   },
 

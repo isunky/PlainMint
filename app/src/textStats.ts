@@ -1,4 +1,4 @@
-import type { TextChangeSet } from "./textChanges";
+import type { ChangeSet } from "@codemirror/state";
 
 export interface TextStats {
   characters: number;
@@ -20,25 +20,21 @@ export function getTextStats(content: string): TextStats {
   };
 }
 
-export function applyChangesToString(content: string, changeSet: TextChangeSet) {
-  if (content.length !== changeSet.length) throw new RangeError("Text change length does not match content");
+export function applyChangesToString(content: string, changes: ChangeSet) {
   let cursor = 0;
   let next = "";
   const inverseSpecs: Array<{ from: number; to: number; insert: string }> = [];
-  let offset = 0;
   let characters = 0;
   let utf8Bytes = 0;
   let insertedLines = 0;
   let removedLines = 0;
 
-  changeSet.changes.forEach(({ from: fromA, to: toA, insert: added }) => {
+  changes.iterChanges((fromA, toA, fromB, toB, inserted) => {
     const removed = content.slice(fromA, toA);
-    const fromB = fromA + offset;
-    const toB = fromB + added.length;
+    const added = inserted.toString();
     next += content.slice(cursor, fromA) + added;
     cursor = toA;
     inverseSpecs.push({ from: fromB, to: toB, insert: removed });
-    offset += added.length - (toA - fromA);
     characters += characterCount(added) - characterCount(removed);
     utf8Bytes += encoder.encode(added).byteLength - encoder.encode(removed).byteLength;
     insertedLines += (added.match(/\n/g) ?? []).length;

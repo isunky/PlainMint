@@ -1,6 +1,6 @@
+import { ChangeSet } from "@codemirror/state";
 import { describe, expect, it } from "vitest";
 import { defaultSettings, normalizeRecentlyClosedTabs, normalizeSettings, useAppStore } from "./store";
-import { createTextChangeSet } from "./textChanges";
 import type { DocumentRecord, WorkspaceSession } from "./types";
 
 function documentRecord(id: string): DocumentRecord {
@@ -27,7 +27,7 @@ describe("document history", () => {
   it("applies, undoes, and redoes a change through the shared controller", () => {
     const id = useAppStore.getState().createDocument("left");
     const before = useAppStore.getState().documents[id].content;
-    useAppStore.getState().applyChanges(id, createTextChangeSet(before.length, { from: 0, to: 0, insert: "PlainMint" }), "test");
+    useAppStore.getState().applyChanges(id, ChangeSet.of({ from: 0, insert: "PlainMint" }, before.length), "test");
     expect(useAppStore.getState().documents[id].content).toBe("PlainMint");
     expect(useAppStore.getState().documents[id].dirty).toBe(true);
 
@@ -46,7 +46,7 @@ describe("disk reload", () => {
       documents: { ...state.documents, [id]: { ...documentRecord(id), dirty: false, externalModified: true, revision: 4 } },
       histories: {
         ...state.histories,
-        [id]: { undo: [{ forward: createTextChangeSet(0, []), inverse: createTextChangeSet(0, []) }], redo: [] },
+        [id]: { undo: [{ forward: ChangeSet.of([], 0), inverse: ChangeSet.of([], 0) }], redo: [] },
       },
     }));
     const opened = {
@@ -72,7 +72,7 @@ describe("disk reload", () => {
       documents: { ...state.documents, [id]: { ...documentRecord(id), dirty: true, missing: true, revision: 8 } },
       histories: {
         ...state.histories,
-        [id]: { undo: [{ forward: createTextChangeSet(0, []), inverse: createTextChangeSet(0, []) }], redo: [] },
+        [id]: { undo: [{ forward: ChangeSet.of([], 0), inverse: ChangeSet.of([], 0) }], redo: [] },
       },
     }));
     const beforeHistory = useAppStore.getState().histories[id];
@@ -304,7 +304,7 @@ describe("runtime settings", () => {
     useAppStore.getState().loadSettings({ ...defaultSettings, defaultEncoding: "utf-8", defaultLineEnding: "lf" });
     const id = useAppStore.getState().createDocument("left");
     useAppStore.getState().loadSettings({ ...defaultSettings, defaultEncoding: "utf-16be", defaultLineEnding: "cr" });
-    useAppStore.getState().applyChanges(id, createTextChangeSet(0, { from: 0, to: 0, insert: "text" }), "test");
+    useAppStore.getState().applyChanges(id, ChangeSet.of({ from: 0, insert: "text" }, 0), "test");
     expect(useAppStore.getState().documents[id].encoding).toBe("utf-16be");
     expect(useAppStore.getState().documents[id].lineEnding).toBe("cr");
   });
@@ -329,9 +329,9 @@ describe("runtime settings", () => {
 
   it("does not clear newer edits when an older revision finishes saving", () => {
     const id = useAppStore.getState().createDocument("left");
-    useAppStore.getState().applyChanges(id, createTextChangeSet(0, { from: 0, to: 0, insert: "first" }), "test");
+    useAppStore.getState().applyChanges(id, ChangeSet.of({ from: 0, insert: "first" }, 0), "test");
     const savedRevision = useAppStore.getState().documents[id].revision;
-    useAppStore.getState().applyChanges(id, createTextChangeSet(5, { from: 5, to: 5, insert: " second" }), "test");
+    useAppStore.getState().applyChanges(id, ChangeSet.of({ from: 5, insert: " second" }, 5), "test");
 
     useAppStore.getState().markSaved(id, "C:\\notes.txt", savedRevision, { modifiedAt: 1, size: 5, hash: "saved" });
     expect(useAppStore.getState().documents[id].dirty).toBe(true);
