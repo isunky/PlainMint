@@ -48,8 +48,13 @@ import {
   focusEditor,
   goToLineInPane,
   loadTextEditor,
+  cleanupTextInPane,
+  cutSelectionInPane,
+  pasteTextInPane,
   replaceAllSearchMatchesInPane,
   replaceCurrentSearchMatchInPane,
+  selectAllInPane,
+  selectedTextInPane,
 } from "./editorRuntime";
 
 import {
@@ -60,6 +65,7 @@ import {
   chooseDirectory,
   closeWindow,
   copyText,
+  readClipboardText,
   deleteRecovery,
   inspectFileMetadata,
   encodedByteLength,
@@ -67,6 +73,7 @@ import {
   getContextMenuStatus,
   getStartupOpenPaths,
   listenForWindowClose,
+  listenForFileDrop,
   listenForFileWatchChanges,
   listRecoveries,
   loadRecentFiles,
@@ -89,6 +96,8 @@ import {
   showSourceCode,
   showAuthorWebsite,
   toggleMaximizeWindow,
+  toggleFullscreenWindow,
+  isFullscreenWindow,
   validateDirectory,
   writeRecovery,
   writeSafetyRecovery,
@@ -106,6 +115,7 @@ const ConflictCompareView = lazy(async () => {
 import type { UpdateCheckResult, UpdateInstallProgress } from "./services/runtime";
 import { useAppStore } from "./store";
 import type { ContextMenuStatus, DirectoryValidationResult, DocumentRecord, EditorRevealTarget, Encoding, FileFingerprint, LanguageMode, LineEnding, OpenedDocument, PaneId, RecoveryEntry, RecentlyClosedTab, UserSettings, WorkspaceSession } from "./types";
+import type { TextCleanupAction } from "./textCleanup";
 
 type ModalState =
   | { type: "none" }
@@ -275,7 +285,140 @@ function isTitlebarControl(target: EventTarget | null) {
   return target instanceof Element && Boolean(target.closest("button, input, select, textarea, a"));
 }
 
-function TitleBar({ onClose }: { onClose: () => void }) {
+function MenuItems({ children, onDismiss }: { children: React.ReactNode; onDismiss: () => void }) {
+  const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
+    const current = items.indexOf(document.activeElement as HTMLButtonElement);
+    if (event.key === "Escape") { event.preventDefault(); onDismiss(); return; }
+    if (!items.length || !["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1
+      : (current + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+    items[next]?.focus();
+  };
+  return <div className="app-menu-popup" role="menu" onKeyDown={onKeyDown}>{children}</div>;
+}
+
+function AppMenus({
+  activeDocument,
+  canUndo,
+  canRedo,
+  settings,
+  split,
+  fullscreen,
+  recentFiles,
+  recentFileMissing,
+  hasRecentlyClosed,
+  onNew,
+  onOpen,
+  onSave,
+  onSaveAs,
+  onPrint,
+  onOpenRecent,
+  onReopen,
+  onRecovery,
+  onExit,
+  onUndo,
+  onRedo,
+  onCut,
+  onCopy,
+  onPaste,
+  onSelectAll,
+  onFind,
+  onReplace,
+  onCleanup,
+  onWrap,
+  onLineNumbers,
+  onSplit,
+  onFontSize,
+  onFullscreen,
+}: {
+  activeDocument?: DocumentRecord;
+  canUndo: boolean;
+  canRedo: boolean;
+  settings: UserSettings;
+  split: boolean;
+  fullscreen: boolean;
+  recentFiles: string[];
+  recentFileMissing: Record<string, boolean>;
+  hasRecentlyClosed: boolean;
+  onNew: () => void; onOpen: () => void; onSave: () => void; onSaveAs: () => void; onPrint: () => void;
+  onOpenRecent: (path: string) => void; onReopen: () => void; onRecovery: () => void; onExit: () => void;
+  onUndo: () => void; onRedo: () => void; onCut: () => void; onCopy: () => void; onPaste: () => void; onSelectAll: () => void;
+  onFind: () => void; onReplace: () => void; onCleanup: (action: TextCleanupAction) => void;
+  onWrap: () => void; onLineNumbers: () => void; onSplit: () => void; onFontSize: (next: number) => void; onFullscreen: () => void;
+}) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState<"file" | "edit" | "view" | null>(null);
+  const [cleanupOpen, setCleanupOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const close = () => { setOpen(null); setCleanupOpen(false); };
+  useEffect(() => {
+    const dismiss = (event: PointerEvent) => { if (!menuRef.current?.contains(event.target as Node)) close(); };
+    window.addEventListener("pointerdown", dismiss);
+    return () => window.removeEventListener("pointerdown", dismiss);
+  }, []);
+  const run = (action: () => void) => () => { close(); action(); };
+  const editDisabled = !activeDocument || activeDocument.readOnly;
+  const switchMenu = (menu: "file" | "edit" | "view") => setOpen((current) => current === menu ? null : menu);
+  return <nav className="app-menus" ref={menuRef} aria-label={t("appMenuBar")}>
+    <div className="app-menu-root">
+      <button type="button" aria-haspopup="menu" aria-expanded={open === "file"} onClick={() => switchMenu("file")}>{t("fileMenu")}</button>
+      {open === "file" && <MenuItems onDismiss={close}>
+        <button role="menuitem" onClick={run(onNew)}>{t("new")}<kbd>Ctrl / ⌘ N</kbd></button>
+        <button role="menuitem" onClick={run(onOpen)}>{t("open")}<kbd>Ctrl / ⌘ O</kbd></button>
+        <button role="menuitem" disabled={!activeDocument} onClick={run(onSave)}>{t("save")}<kbd>Ctrl / ⌘ S</kbd></button>
+        <button role="menuitem" disabled={!activeDocument} onClick={run(onSaveAs)}>{t("saveAs")}<kbd>Ctrl / ⌘ ⇧ S</kbd></button>
+        <button role="menuitem" disabled={!activeDocument} onClick={run(onPrint)}>{t("print")}<kbd>Ctrl / ⌘ P</kbd></button>
+        <div className="menu-separator" role="separator" />
+        <span className="app-menu-section">{t("recentFiles")}</span>
+        {recentFiles.slice(0, 8).map((path) => <button key={path} role="menuitem" disabled={recentFileMissing[path]} onClick={run(() => onOpenRecent(path))}>{path.split(/[\\/]/).at(-1)}<small>{path}</small></button>)}
+        {!recentFiles.length && <span className="app-menu-empty">{t("recentEmpty")}</span>}
+        <div className="menu-separator" role="separator" />
+        <button role="menuitem" disabled={!hasRecentlyClosed} onClick={run(onReopen)}>{t("reopenClosedTab")}<kbd>Ctrl / ⌘ ⇧ T</kbd></button>
+        <button role="menuitem" onClick={run(onRecovery)}>{t("openRecovery")}</button>
+        <button role="menuitem" onClick={run(onExit)}>{t("exit")}</button>
+      </MenuItems>}
+    </div>
+    <div className="app-menu-root">
+      <button type="button" aria-haspopup="menu" aria-expanded={open === "edit"} onClick={() => switchMenu("edit")}>{t("editMenu")}</button>
+      {open === "edit" && <MenuItems onDismiss={close}>
+        <button role="menuitem" disabled={!canUndo} onClick={run(onUndo)}>{t("undo")}<kbd>Ctrl / ⌘ Z</kbd></button>
+        <button role="menuitem" disabled={!canRedo} onClick={run(onRedo)}>{t("redo")}<kbd>Ctrl / ⌘ ⇧ Z</kbd></button>
+        <div className="menu-separator" role="separator" />
+        <button role="menuitem" disabled={editDisabled} onClick={run(onCut)}>{t("cut")}<kbd>Ctrl / ⌘ X</kbd></button>
+        <button role="menuitem" disabled={!activeDocument} onClick={run(onCopy)}>{t("copy")}<kbd>Ctrl / ⌘ C</kbd></button>
+        <button role="menuitem" disabled={editDisabled} onClick={run(onPaste)}>{t("paste")}<kbd>Ctrl / ⌘ V</kbd></button>
+        <button role="menuitem" disabled={!activeDocument} onClick={run(onSelectAll)}>{t("selectAll")}<kbd>Ctrl / ⌘ A</kbd></button>
+        <div className="menu-separator" role="separator" />
+        <button role="menuitem" disabled={!activeDocument} onClick={run(onFind)}>{t("find")}<kbd>Ctrl / ⌘ F</kbd></button>
+        <button role="menuitem" disabled={!activeDocument} onClick={run(onReplace)}>{t("replace")}<kbd>Ctrl / ⌘ H</kbd></button>
+        <div className="app-menu-submenu">
+          <button role="menuitem" aria-haspopup="menu" aria-expanded={cleanupOpen} disabled={editDisabled} onClick={() => setCleanupOpen((value) => !value)}>{t("textCleanup")}<span>›</span></button>
+          {cleanupOpen && <div className="app-menu-popup app-menu-submenu-popup" role="menu">
+            {(["sortAscending", "sortDescending", "deduplicate", "removeBlankLines", "trimTrailingWhitespace"] as TextCleanupAction[]).map((action) => <button key={action} role="menuitem" onClick={run(() => onCleanup(action))}>{t(`textCleanup_${action}`)}</button>)}
+          </div>}
+        </div>
+      </MenuItems>}
+    </div>
+    <div className="app-menu-root">
+      <button type="button" aria-haspopup="menu" aria-expanded={open === "view"} onClick={() => switchMenu("view")}>{t("viewMenu")}</button>
+      {open === "view" && <MenuItems onDismiss={close}>
+        <button role="menuitemcheckbox" aria-checked={settings.wordWrapByDefault} onClick={run(onWrap)}>{t("wrap")}<kbd>Alt / ⌥ Z</kbd></button>
+        <button role="menuitemcheckbox" aria-checked={settings.showLineNumbers} onClick={run(onLineNumbers)}>{t("showLineNumbers")}</button>
+        <button role="menuitemcheckbox" aria-checked={split} onClick={run(onSplit)}>{t("split")}<kbd>Ctrl / ⌘ \\</kbd></button>
+        <div className="menu-separator" role="separator" />
+        <button role="menuitem" disabled={settings.fontSize <= 10} onClick={run(() => onFontSize(settings.fontSize - 1))}>{t("decreaseFontSize")}<kbd>Ctrl / ⌘ -</kbd></button>
+        <button role="menuitem" disabled={settings.fontSize >= 28} onClick={run(() => onFontSize(settings.fontSize + 1))}>{t("increaseFontSize")}<kbd>Ctrl / ⌘ +</kbd></button>
+        <button role="menuitem" disabled={settings.fontSize === 14} onClick={run(() => onFontSize(14))}>{t("resetFontSize")}<kbd>Ctrl / ⌘ 0</kbd></button>
+        <div className="menu-separator" role="separator" />
+        <button role="menuitemcheckbox" aria-checked={fullscreen} onClick={run(onFullscreen)}>{t("fullscreen")}</button>
+      </MenuItems>}
+    </div>
+  </nav>;
+}
+
+function TitleBar({ onClose, children, fullscreen }: { onClose: () => void; children?: React.ReactNode; fullscreen: boolean }) {
   const { t } = useTranslation();
   const handleMouseDown = (event: ReactMouseEvent<HTMLElement>) => {
     if (event.button !== 0 || isTitlebarControl(event.target)) return;
@@ -291,7 +434,8 @@ function TitleBar({ onClose }: { onClose: () => void }) {
         <AppLogo />
         <span>{t("appName")}</span>
       </div>
-      <div className="window-controls">
+      {children}
+      <div className={"window-controls " + (fullscreen ? "fullscreen-controls" : "")}>
         <IconButton label={t("minimize")} onClick={() => void minimizeWindow()}><Minus size={18} /></IconButton>
         <IconButton label={t("maximize")} onClick={() => void toggleMaximizeWindow()}><Square size={15} /></IconButton>
         <IconButton label={t("close")} className="window-close" onClick={onClose}><X size={19} /></IconButton>
@@ -819,7 +963,7 @@ function StatusBar({ pane, document }: { pane: PaneId; document?: DocumentRecord
   );
 }
 
-function EditorPane({ pane, onCloseTab, onActivateTab, onTabPointerDown, onTabContextMenu, drag, editorRuntimeReady, onRequestEditorRuntime, revealTarget, onRevealHandled }: {
+function EditorPane({ pane, onCloseTab, onActivateTab, onTabPointerDown, onTabContextMenu, drag, editorRuntimeReady, onRequestEditorRuntime, revealTarget, onRevealHandled, fileDropTarget }: {
   pane: PaneId;
   onCloseTab: (pane: PaneId, tabId: string) => void;
   onActivateTab: (pane: PaneId, tabId: string) => void;
@@ -830,6 +974,7 @@ function EditorPane({ pane, onCloseTab, onActivateTab, onTabPointerDown, onTabCo
   onRequestEditorRuntime: (pane: PaneId) => void;
   revealTarget: EditorRevealTarget | null;
   onRevealHandled: (id: string) => void;
+  fileDropTarget?: boolean;
 }) {
   const { t } = useTranslation();
   const tabs = useAppStore((state) => state.tabs[pane]);
@@ -856,7 +1001,7 @@ function EditorPane({ pane, onCloseTab, onActivateTab, onTabPointerDown, onTabCo
     return () => window.clearTimeout(timer);
   }, [completeUntitledLanguageDetection, document?.autoLanguageDetectionComplete, document?.content, document?.filePath, document?.id, document?.languageMode]);
   return (
-    <section className="editor-pane" data-pane-drop={pane} onPointerDown={() => setActivePane(pane)}>
+    <section className={"editor-pane " + (fileDropTarget ? "file-drop-target" : "")} data-pane-drop={pane} onPointerDown={() => setActivePane(pane)}>
       <TabBar pane={pane} onClose={onCloseTab} onActivate={onActivateTab} onPointerDown={onTabPointerDown} onContextMenu={onTabContextMenu} drag={drag} />
       {document ? <div className="editor-region">
         {editorRuntimeReady ? <Suspense fallback={<div className="editor-loading" aria-busy="true">{t("loadingEditor")}</div>}>
@@ -1346,6 +1491,9 @@ export function App() {
   const [editorRuntimeReady, setEditorRuntimeReady] = useState(false);
   const [openedSearchResult, setOpenedSearchResult] = useState<OpenedDocumentSearchResult & { searching: boolean }>({ valid: true, total: 0, documentCount: 0, truncated: false, groups: [], searching: false });
   const [revealTarget, setRevealTarget] = useState<EditorRevealTarget | null>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [fileDropPane, setFileDropPane] = useState<PaneId | null>(null);
+  const [printJob, setPrintJob] = useState<{ title: string; content: string } | null>(null);
   const backupTimers = useRef<Record<string, number>>({});
   const idleSaveTimers = useRef<Record<string, { revision: number; timer: number }>>({});
   const saveInFlight = useRef(new Map<string, Promise<boolean>>());
@@ -1511,6 +1659,27 @@ export function App() {
       return next;
     });
   }, []);
+
+  useEffect(() => {
+    const refresh = () => { void isFullscreenWindow().then(setFullscreen).catch(() => undefined); };
+    refresh();
+    window.addEventListener("focus", refresh);
+    window.addEventListener("resize", refresh);
+    return () => { window.removeEventListener("focus", refresh); window.removeEventListener("resize", refresh); };
+  }, []);
+
+  useEffect(() => {
+    if (!printJob) return;
+    const previousTitle = document.title;
+    document.title = printJob.title;
+    const finish = () => { document.title = previousTitle; setPrintJob(null); };
+    const onAfterPrint = () => finish();
+    window.addEventListener("afterprint", onAfterPrint, { once: true });
+    const frame = window.requestAnimationFrame(() => {
+      try { window.print(); } catch { finish(); flash(t("printFailed")); }
+    });
+    return () => { window.cancelAnimationFrame(frame); window.removeEventListener("afterprint", onAfterPrint); };
+  }, [flash, printJob, t]);
 
   const rememberRecent = useCallback((paths: string[]) => {
     setRecentFiles((current) => {
@@ -1743,6 +1912,66 @@ export function App() {
       flash(t("openFailed"));
     }
   }, [activePane, addOpenedDocument, flash, rememberRecent, t]);
+
+  const openDroppedFiles = useCallback(async (paths: string[], pane: PaneId) => {
+    const results = await Promise.all(paths.map((path) => openDocumentPath(path).catch(() => null)));
+    const opened = results.filter((document): document is OpenedDocument => Boolean(document));
+    opened.forEach((document) => addOpenedDocument(document, pane));
+    if (opened.length) rememberRecent(opened.map((document) => document.path));
+    if (opened.length !== paths.length) flash(t("fileDropFailed"));
+  }, [addOpenedDocument, flash, rememberRecent, t]);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: () => void = () => undefined;
+    void listenForFileDrop((event) => {
+      if (event.type === "leave") { setFileDropPane(null); return; }
+      const target = event.x === undefined || event.y === undefined
+        ? useAppStore.getState().activePane
+        : (document.elementFromPoint(event.x, event.y)?.closest<HTMLElement>("[data-pane-drop]")?.dataset.paneDrop as PaneId | undefined) ?? useAppStore.getState().activePane;
+      setFileDropPane(target);
+      if (event.type === "drop") {
+        setFileDropPane(null);
+        if (event.paths.length) void openDroppedFiles(event.paths, target);
+      }
+    }).then((dispose) => { if (disposed) dispose(); else unlisten = dispose; });
+    return () => { disposed = true; unlisten(); };
+  }, [openDroppedFiles]);
+
+  const applyQuickSettings = useCallback((patch: Partial<UserSettings>) => {
+    updateSettings(patch);
+    const next = useAppStore.getState().settings;
+    void persistSettings(next).catch(() => flash(t("settingsSaveFailed")));
+  }, [flash, t, updateSettings]);
+
+  const runTextCleanup = useCallback((action: TextCleanupAction) => {
+    if (!activeDocument || activeDocument.readOnly) return;
+    requestEditorRuntime(activePane);
+    void loadTextEditor().then((module) => window.setTimeout(() => module.cleanupTextInPane(activePane, action, i18n.resolvedLanguage ?? i18n.language), 0));
+  }, [activeDocument, activePane, requestEditorRuntime]);
+
+  const copySelection = useCallback(() => {
+    const text = selectedTextInPane(activePane);
+    if (text) void copyText(text);
+  }, [activePane]);
+
+  const cutSelection = useCallback(() => {
+    const text = cutSelectionInPane(activePane);
+    if (text) void copyText(text);
+  }, [activePane]);
+
+  const pasteClipboard = useCallback(() => {
+    void readClipboardText().then((text) => { if (text) pasteTextInPane(activePane, text); }).catch(() => undefined);
+  }, [activePane]);
+
+  const toggleFullscreen = useCallback(() => {
+    void toggleFullscreenWindow().then(() => isFullscreenWindow()).then(setFullscreen).catch(() => undefined);
+  }, []);
+
+  const beginPrint = useCallback(() => {
+    if (!activeDocument) return;
+    setPrintJob({ title: localizedDocumentName(activeDocument, t), content: activeDocument.content });
+  }, [activeDocument, t]);
 
   useEffect(() => {
     if (!hydrated || startupOpenPathsHandled.current) return;
@@ -2405,8 +2634,10 @@ export function App() {
         setModal({ type: "none" });
         return;
       }
-      if (!mod || modal.type !== "none") return;
       const key = event.key.toLowerCase();
+      if (modal.type !== "none") return;
+      if (event.altKey && key === "z") { event.preventDefault(); applyQuickSettings({ wordWrapByDefault: !settings.wordWrapByDefault }); return; }
+      if (!mod) return;
       if (key === "w") {
         const tabId = useAppStore.getState().activeTab[useAppStore.getState().activePane];
         if (tabId) { event.preventDefault(); requestCloseTab(useAppStore.getState().activePane, tabId); }
@@ -2425,17 +2656,21 @@ export function App() {
       if (key === "t" && event.shiftKey) { event.preventDefault(); void reopenClosedTab(); }
       if (key === "n") { event.preventDefault(); createDocument(activePane); }
       if (key === "o") { event.preventDefault(); void openFiles(); }
+      if (key === "p") { event.preventDefault(); beginPrint(); }
       if (key === "d" && event.shiftKey && canCompareSplitPanes) { event.preventDefault(); openComparison(); }
       if (key === "s") { event.preventDefault(); void saveActive(event.shiftKey); }
       if (key === "f") { event.preventDefault(); setSearch({ open: true, replaceOpen: false }); }
       if (key === "h") { event.preventDefault(); setSearch({ open: true, replaceOpen: true, scope: "document" }); }
       if (key === "g" && !(event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement)) { event.preventDefault(); goToLineInPane(activePane); }
       if (key === "\\") { event.preventDefault(); toggleSplit(); }
+      if (key === "=" || key === "+") { event.preventDefault(); applyQuickSettings({ fontSize: Math.min(28, settings.fontSize + 1) }); }
+      if (key === "-") { event.preventDefault(); applyQuickSettings({ fontSize: Math.max(10, settings.fontSize - 1) }); }
+      if (key === "0") { event.preventDefault(); applyQuickSettings({ fontSize: 14 }); }
       if (key === ",") { event.preventDefault(); setModal({ type: "settings", snapshot: settings }); }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [activePane, canCompareSplitPanes, createDocument, modal.type, openComparison, openFiles, reopenClosedTab, requestCloseTab, saveActive, setActiveTab, setSearch, settings, toggleSplit]);
+  }, [activePane, applyQuickSettings, beginPrint, canCompareSplitPanes, createDocument, modal.type, openComparison, openFiles, reopenClosedTab, requestCloseTab, saveActive, setActiveTab, setSearch, settings, toggleSplit]);
 
   const contextTabs = tabContextMenu ? tabs[tabContextMenu.pane] : [];
   const contextTabIndex = tabContextMenu?.tabId ? contextTabs.findIndex((tab) => tab.id === tabContextMenu.tabId) : -1;
@@ -2446,7 +2681,24 @@ export function App() {
 
   return (
     <main className="app-shell">
-      <TitleBar onClose={requestCloseWindow} />
+      <TitleBar onClose={requestCloseWindow} fullscreen={fullscreen}>
+        <AppMenus
+          activeDocument={activeDocument}
+          canUndo={Boolean(history?.undo.length)}
+          canRedo={Boolean(history?.redo.length)}
+          settings={settings}
+          split={split}
+          fullscreen={fullscreen}
+          recentFiles={recentFiles}
+          recentFileMissing={recentFileMissing}
+          hasRecentlyClosed={Boolean(recentlyClosedTabs[0])}
+          onNew={() => createDocument(activePane)} onOpen={() => void openFiles()} onSave={() => void saveActive()} onSaveAs={() => void saveActive(true)} onPrint={beginPrint}
+          onOpenRecent={(path) => void openRecent(path)} onReopen={() => void reopenClosedTab()} onRecovery={() => setModal({ type: "recovery" })} onExit={requestCloseWindow}
+          onUndo={() => activeDocument && undoDocument(activeDocument.id)} onRedo={() => activeDocument && redoDocument(activeDocument.id)} onCut={cutSelection} onCopy={copySelection} onPaste={pasteClipboard} onSelectAll={() => selectAllInPane(activePane)}
+          onFind={() => setSearch({ open: true, replaceOpen: false })} onReplace={() => setSearch({ open: true, replaceOpen: true, scope: "document" })} onCleanup={runTextCleanup}
+          onWrap={() => applyQuickSettings({ wordWrapByDefault: !settings.wordWrapByDefault })} onLineNumbers={() => applyQuickSettings({ showLineNumbers: !settings.showLineNumbers })} onSplit={toggleSplit} onFontSize={(fontSize) => applyQuickSettings({ fontSize })} onFullscreen={toggleFullscreen}
+        />
+      </TitleBar>
       <Toolbar
         canUndo={Boolean(history?.undo.length)}
         canRedo={Boolean(history?.redo.length)}
@@ -2507,7 +2759,7 @@ export function App() {
             onRecovery={() => setModal({ type: "recovery" })}
             onRestoreSession={() => void loadSession().then((session) => session && restoreSessionIntoStore(session))}
           />
-        ) : <EditorPane pane="left" onCloseTab={requestCloseTab} onActivateTab={activateTab} onTabPointerDown={beginTabDrag} onTabContextMenu={setTabContextMenu} drag={tabDrag} editorRuntimeReady={editorRuntimeReady} onRequestEditorRuntime={requestEditorRuntime} revealTarget={revealTarget} onRevealHandled={(id) => setRevealTarget((target) => target?.id === id ? null : target)} />}
+        ) : <EditorPane pane="left" onCloseTab={requestCloseTab} onActivateTab={activateTab} onTabPointerDown={beginTabDrag} onTabContextMenu={setTabContextMenu} drag={tabDrag} editorRuntimeReady={editorRuntimeReady} onRequestEditorRuntime={requestEditorRuntime} revealTarget={revealTarget} onRevealHandled={(id) => setRevealTarget((target) => target?.id === id ? null : target)} fileDropTarget={fileDropPane === "left"} />}
         {split && (
           <>
             <div
@@ -2522,7 +2774,7 @@ export function App() {
               onPointerDown={onSplitPointerDown}
               onKeyDown={onSplitKeyDown}
             ><DotsThree size={20} weight="bold" /></div>
-            <EditorPane pane="right" onCloseTab={requestCloseTab} onActivateTab={activateTab} onTabPointerDown={beginTabDrag} onTabContextMenu={setTabContextMenu} drag={tabDrag} editorRuntimeReady={editorRuntimeReady} onRequestEditorRuntime={requestEditorRuntime} revealTarget={revealTarget} onRevealHandled={(id) => setRevealTarget((target) => target?.id === id ? null : target)} />
+            <EditorPane pane="right" onCloseTab={requestCloseTab} onActivateTab={activateTab} onTabPointerDown={beginTabDrag} onTabContextMenu={setTabContextMenu} drag={tabDrag} editorRuntimeReady={editorRuntimeReady} onRequestEditorRuntime={requestEditorRuntime} revealTarget={revealTarget} onRevealHandled={(id) => setRevealTarget((target) => target?.id === id ? null : target)} fileDropTarget={fileDropPane === "right"} />
           </>
         )}
         {tabDrag?.dragging && tabDrag.rightEdge && <div className="split-drop-overlay" aria-hidden="true"><Columns size={28} /><span>{t("dropToSplit")}</span></div>}
@@ -2552,6 +2804,8 @@ export function App() {
       )}
 
       {toast && <div className="toast" role="status">{toast}</div>}
+
+      {printJob && <div className="print-view" aria-hidden="true"><pre>{printJob.content}</pre></div>}
 
       {modal.type === "settings" && (
         <SettingsModal

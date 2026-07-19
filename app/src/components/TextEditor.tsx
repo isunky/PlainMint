@@ -33,6 +33,7 @@ import { getTextStats } from "../textStats";
 import { plainMintSyntaxHighlighting } from "../syntaxHighlighting";
 import type { DocumentRecord, EditorRevealTarget, PaneId, SearchState, UserSettings } from "../types";
 import { createSearchQuery } from "../searchPolicy";
+import { buildTextCleanupChanges, type TextCleanupAction } from "../textCleanup";
 
 const externalSync = Annotation.define<boolean>();
 const editors: Partial<Record<PaneId, EditorView>> = {};
@@ -75,6 +76,50 @@ export function selectNextOccurrenceInPane(pane: PaneId) {
   if (!view) return 0;
   selectNextOccurrence(view);
   return view.state.selection.ranges.length;
+}
+
+export function cleanupTextInPane(pane: PaneId, action: TextCleanupAction, locale: string) {
+  const view = editors[pane];
+  if (!view || view.state.facet(EditorState.readOnly)) return false;
+  const changes = buildTextCleanupChanges(
+    view.state.doc.toString(),
+    view.state.selection.ranges.map(({ from, to }) => ({ from, to })),
+    action,
+    locale,
+  );
+  if (!changes.length) return false;
+  view.dispatch({ changes });
+  return true;
+}
+
+export function selectedTextInPane(pane: PaneId) {
+  const view = editors[pane];
+  return view ? view.state.selection.ranges.map(({ from, to }) => view.state.sliceDoc(from, to)).filter(Boolean).join("\n") : "";
+}
+
+export function cutSelectionInPane(pane: PaneId) {
+  const view = editors[pane];
+  if (!view || view.state.facet(EditorState.readOnly)) return "";
+  const ranges = view.state.selection.ranges.filter(({ from, to }) => from !== to);
+  const text = ranges.map(({ from, to }) => view.state.sliceDoc(from, to)).join("\n");
+  if (!text) return "";
+  view.dispatch({ changes: ranges.map(({ from, to }) => ({ from, to, insert: "" })) });
+  return text;
+}
+
+export function pasteTextInPane(pane: PaneId, text: string) {
+  const view = editors[pane];
+  if (!view || view.state.facet(EditorState.readOnly)) return false;
+  view.dispatch(view.state.replaceSelection(text));
+  return true;
+}
+
+export function selectAllInPane(pane: PaneId) {
+  const view = editors[pane];
+  if (!view) return false;
+  view.dispatch({ selection: { anchor: 0, head: view.state.doc.length } });
+  view.focus();
+  return true;
 }
 
 interface TextEditorProps {

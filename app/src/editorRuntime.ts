@@ -1,4 +1,5 @@
 import type { PaneId } from "./types";
+import type { TextCleanupAction } from "./textCleanup";
 
 type TextEditorModule = typeof import("./components/TextEditor");
 
@@ -37,3 +38,12 @@ export function replaceCurrentSearchMatchInPane(pane: PaneId, match: { from: num
 export function replaceAllSearchMatchesInPane(pane: PaneId) {
   return loadedModule?.replaceAllSearchMatchesInPane(pane) ?? false;
 }
+
+export function cleanupTextInPane(pane: PaneId, action: TextCleanupAction, locale: string) {
+  return loadedModule?.cleanupTextInPane(pane, action, locale) ?? false;
+}
+
+export function selectedTextInPane(pane: PaneId) { return loadedModule?.selectedTextInPane(pane) ?? ""; }
+export function cutSelectionInPane(pane: PaneId) { return loadedModule?.cutSelectionInPane(pane) ?? ""; }
+export function pasteTextInPane(pane: PaneId, text: string) { return loadedModule?.pasteTextInPane(pane, text) ?? false; }
+export function selectAllInPane(pane: PaneId) { return loadedModule?.selectAllInPane(pane) ?? false; }

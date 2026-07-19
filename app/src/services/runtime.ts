@@ -3,8 +3,9 @@ import { getVersion } from "@tauri-apps/api/app";
 import { listen } from "@tauri-apps/api/event";
 import { documentDir, join } from "@tauri-apps/api/path";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
@@ -412,6 +413,29 @@ export async function toggleMaximizeWindow() {
 
 export async function startDraggingWindow() {
   if (isTauri()) await getCurrentWindow().startDragging();
+}
+
+export async function readClipboardText() {
+  if (isTauri()) return readText();
+  return navigator.clipboard?.readText?.() ?? "";
+}
+
+export async function toggleFullscreenWindow() {
+  if (isTauri()) return getCurrentWindow().setFullscreen(!(await getCurrentWindow().isFullscreen()));
+  if (document.fullscreenElement) return document.exitFullscreen();
+  return document.documentElement.requestFullscreen?.();
+}
+
+export async function isFullscreenWindow() {
+  return isTauri() ? getCurrentWindow().isFullscreen() : Boolean(document.fullscreenElement);
+}
+
+export async function listenForFileDrop(handler: (event: { type: "enter" | "over" | "drop" | "leave"; paths: string[]; x?: number; y?: number }) => void) {
+  if (!isTauri()) return () => undefined;
+  return getCurrentWebview().onDragDropEvent(({ payload }) => {
+    if (payload.type === "leave") handler({ type: "leave", paths: [] });
+    else handler({ type: payload.type, paths: "paths" in payload ? payload.paths : [], x: payload.position.x / window.devicePixelRatio, y: payload.position.y / window.devicePixelRatio });
+  });
 }
 
 export async function listenForWindowClose(handler: () => void): Promise<() => void> {
