@@ -284,16 +284,30 @@ function isTitlebarControl(target: EventTarget | null) {
 
 function TitleBar({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation();
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+  const draggingRef = useRef(false);
   const handleMouseDown = (event: ReactMouseEvent<HTMLElement>) => {
     if (event.button !== 0 || isTitlebarControl(event.target)) return;
+    dragStartRef.current = { x: event.clientX, y: event.clientY };
+    draggingRef.current = false;
+  };
+  const handleMouseMove = (event: ReactMouseEvent<HTMLElement>) => {
+    const start = dragStartRef.current;
+    if (!start || draggingRef.current || Math.hypot(event.clientX - start.x, event.clientY - start.y) < 3) return;
+    draggingRef.current = true;
     void startDraggingWindow();
+  };
+  const clearDragStart = () => {
+    dragStartRef.current = null;
+    draggingRef.current = false;
   };
   const handleDoubleClick = (event: ReactMouseEvent<HTMLElement>) => {
     if (isTitlebarControl(event.target)) return;
+    clearDragStart();
     void toggleMaximizeWindow();
   };
   return (
-    <header className="titlebar" onMouseDown={handleMouseDown} onDoubleClick={handleDoubleClick}>
+    <header className="titlebar" onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={clearDragStart} onMouseLeave={clearDragStart} onDoubleClick={handleDoubleClick}>
       <div className="brand">
         <AppLogo />
         <span>{t("appName")}</span>

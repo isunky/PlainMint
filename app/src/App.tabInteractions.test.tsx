@@ -23,12 +23,14 @@ vi.mock("./services/runtime", async (importOriginal) => {
     revealFileInDirectory: vi.fn().mockResolvedValue(undefined),
     writeRecovery: vi.fn().mockResolvedValue(undefined),
     listenForWindowClose: vi.fn().mockResolvedValue(() => undefined),
+    startDraggingWindow: vi.fn().mockResolvedValue(undefined),
+    toggleMaximizeWindow: vi.fn().mockResolvedValue(undefined),
   };
 });
 
 import { App } from "./App";
 import { selectNextOccurrenceInPane } from "./components/TextEditor";
-import { inspectFileMetadata, loadRecentFiles, openDocumentPath, persistRecentFiles, revealFileInDirectory } from "./services/runtime";
+import { inspectFileMetadata, loadRecentFiles, openDocumentPath, persistRecentFiles, revealFileInDirectory, startDraggingWindow, toggleMaximizeWindow } from "./services/runtime";
 
 function doc(id: string): DocumentRecord {
   return {
@@ -98,6 +100,16 @@ beforeEach(async () => {
 afterEach(cleanup);
 
 describe("tab and split interactions", () => {
+  it("maximizes on a title-bar double click without starting a drag", async () => {
+    const { container } = render(<App />);
+    await settle();
+
+    fireEvent.doubleClick(container.querySelector(".titlebar") as HTMLElement, { clientX: 120, clientY: 20 });
+
+    expect(toggleMaximizeWindow).toHaveBeenCalledTimes(1);
+    expect(startDraggingWindow).not.toHaveBeenCalled();
+  });
+
   it("keeps essential actions in the toolbar without title-bar text menus", async () => {
     render(<App />);
     await settle();
