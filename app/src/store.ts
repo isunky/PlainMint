@@ -23,6 +23,12 @@ interface HistoryEntry {
   inverse: ChangeSet;
 }
 
+export interface NewDocumentPreset {
+  fileName: string;
+  content: string;
+  languageMode?: Exclude<LanguageMode, "auto">;
+}
+
 interface AppState {
   documents: Record<string, DocumentRecord>;
   tabs: Record<PaneId, EditorTab[]>;
@@ -35,7 +41,7 @@ interface AppState {
   cursor: Record<PaneId, CursorStats>;
   settings: UserSettings;
   histories: Record<string, { undo: HistoryEntry[]; redo: HistoryEntry[] }>;
-  createDocument: (pane?: PaneId) => string;
+  createDocument: (pane?: PaneId, preset?: NewDocumentPreset) => string;
   addOpenedDocument: (opened: OpenedDocument, pane?: PaneId) => string;
   setActiveTab: (pane: PaneId, tabId: string) => void;
   closeTab: (pane: PaneId, tabId: string) => void;
@@ -271,19 +277,24 @@ export const useAppStore = create<AppState>((set, get) => ({
   settings: defaultSettings,
   histories: {},
 
-  createDocument: (pane = get().activePane) => {
+  createDocument: (pane = get().activePane, preset) => {
     const id = uniqueId("doc");
     const tabId = uniqueId("tab");
-    const untitledNumber = nextUntitledNumber(get().documents);
+    const untitledNumber = preset ? undefined : nextUntitledNumber(get().documents);
     const document = makeDocument(
       id,
-      untitledDocumentFileName(untitledNumber),
-      "",
-      true,
+      preset?.fileName ?? untitledDocumentFileName(untitledNumber!),
+      preset?.content ?? "",
+      Boolean(preset),
       get().settings.defaultEncoding,
       get().settings.defaultLineEnding,
       untitledNumber,
     );
+    if (preset?.languageMode) {
+      document.languageMode = preset.languageMode;
+      document.detectedLanguage = preset.languageMode;
+      document.autoLanguageDetectionComplete = true;
+    }
     set((state) => ({
       documents: { ...state.documents, [id]: document },
       tabs: {

@@ -16,6 +16,7 @@ import {
   DotsThree,
   FilePlus,
   FileText,
+  Files,
   FloppyDisk,
   FloppyDiskBack,
   FolderOpen,
@@ -36,6 +37,7 @@ import i18n, { resolveLocale } from "./i18n";
 import { isAutoSaveEligible, isAutoSaveRevisionSuppressed } from "./autoSavePolicy";
 import { needsExitSaveConfirmation, needsSaveConfirmation } from "./closePolicy";
 import { displayDocumentName } from "./documentName";
+import { createDocumentTemplate, documentTemplates, type DocumentTemplateId } from "./documentTemplates";
 import { buildEditorFontFamily } from "./fontSettings";
 import { createWorkspaceSession, decideStartupRecovery } from "./recoveryPolicy";
 import { resolveInitialSaveFolder } from "./saveFolderPolicy";
@@ -118,6 +120,7 @@ type ModalState =
   | { type: "settings"; snapshot: UserSettings }
   | { type: "recovery" }
   | { type: "startup-recovery"; session: WorkspaceSession }
+  | { type: "templates"; pane: PaneId }
   | { type: "exit"; documents: DocumentRecord[] }
   | { type: "bulk-close"; targets: TabCloseTarget[]; documents: DocumentRecord[] }
   | { type: "close-tab"; pane: PaneId; tabId: string; document: DocumentRecord }
@@ -325,6 +328,7 @@ function Welcome({
   recentFiles,
   recentFileMissing,
   onNew,
+  onTemplates,
   onOpen,
   onOpenRecent,
   onRemoveRecent,
@@ -335,6 +339,7 @@ function Welcome({
   recentFiles: string[];
   recentFileMissing: Record<string, boolean>;
   onNew: () => void;
+  onTemplates: () => void;
   onOpen: () => void;
   onOpenRecent: (path: string) => void;
   onRemoveRecent: (path: string) => void;
@@ -357,6 +362,7 @@ function Welcome({
           <button type="button" className="welcome-action welcome-main-action primary" onClick={onNew}><FilePlus size={23} /><span><strong>{t("createFile")}</strong><small>Ctrl / ⌘ + N</small></span></button>
           <button type="button" className="welcome-action welcome-main-action" onClick={onOpen}><FolderOpen size={23} /><span><strong>{t("openFile")}</strong><small>Ctrl / ⌘ + O</small></span></button>
           <div className="welcome-support-actions">
+            <button type="button" className="welcome-action welcome-support-action" onClick={onTemplates}><Files size={22} /><span><strong>{t("templates")}</strong><small>{t("builtInTemplates")}</small></span></button>
             <button type="button" className="welcome-action welcome-support-action" onClick={onRestoreSession}><ArrowCounterClockwise size={22} /><span><strong>{t("restoreSession")}</strong><small>{t("sessionRecovery")}</small></span></button>
             <button type="button" className="welcome-action welcome-support-action" onClick={onRecovery}><FloppyDisk size={22} /><span><strong>{t("openRecovery")}</strong><small>{t("backupRecovery")}</small></span></button>
           </div>
@@ -589,6 +595,7 @@ interface ToolbarProps {
   recentFiles: string[];
   recentFileMissing: Record<string, boolean>;
   onNew: () => void;
+  onTemplates: () => void;
   onOpen: () => void;
   onOpenRecent: (path: string) => void;
   onRemoveRecent: (path: string) => void;
@@ -607,7 +614,7 @@ interface ToolbarProps {
   onSettings: () => void;
 }
 
-type ToolbarActionKey = "new" | "open" | "recent" | "save" | "saveAs" | "print" | "undo" | "redo" | "find" | "replace" | "compare" | "wrap" | "split" | "tools";
+type ToolbarActionKey = "new" | "templates" | "open" | "recent" | "save" | "saveAs" | "print" | "undo" | "redo" | "find" | "replace" | "compare" | "wrap" | "split" | "tools";
 type ToolbarActionGroup = "file" | "edit" | "view";
 type ToolbarAction = {
   key: ToolbarActionKey;
@@ -623,13 +630,14 @@ type ToolbarAction = {
 };
 
 const toolbarCollapsePriority: ToolbarActionKey[] = [
-  "print", "saveAs", "replace", "tools", "recent", "compare", "split", "wrap", "redo", "undo", "find",
+  "print", "saveAs", "templates", "replace", "tools", "recent", "compare", "split", "wrap", "redo", "undo", "find",
 ];
 
 function Toolbar(props: ToolbarProps) {
   const { t } = useTranslation();
   const actions: ToolbarAction[] = [
     { key: "new", group: "file", label: t("new"), icon: FilePlus, action: props.onNew, showLabel: true, shortcut: "Ctrl / ⌘ + N" },
+    { key: "templates", group: "file", label: t("templates"), icon: Files, action: props.onTemplates, showLabel: false },
     { key: "open", group: "file", label: t("open"), icon: FolderOpen, action: props.onOpen, showLabel: true, shortcut: "Ctrl / ⌘ + O" },
     { key: "recent", group: "file", label: t("recentFiles"), showLabel: false, kind: "recent" },
     { key: "save", group: "file", label: t("save"), icon: FloppyDisk, action: props.onSave, showLabel: true, shortcut: "Ctrl / ⌘ + S", disabled: !props.hasActiveDocument },
@@ -1165,6 +1173,39 @@ function EditorPane({ pane, onCloseTab, onActivateTab, onTabPointerDown, onTabCo
       </div> : <div className="editor-empty"><span>{t("emptyPaneHint")}</span></div>}
       <StatusBar pane={pane} document={document} />
     </section>
+  );
+}
+
+function TemplateModal({ onClose, onSelect }: {
+  onClose: () => void;
+  onSelect: (id: DocumentTemplateId) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="modal-backdrop">
+      <section className="confirm-modal template-modal" role="dialog" aria-modal="true" aria-labelledby="template-modal-title">
+        <header className="template-modal-header">
+          <div>
+            <h2 id="template-modal-title">{t("newFromTemplate")}</h2>
+            <p>{t("templateDialogDescription")}</p>
+          </div>
+          <IconButton label={t("close")} onClick={onClose}><X size={19} /></IconButton>
+        </header>
+        <div className="template-grid">
+          {documentTemplates.map((template) => (
+            <button key={template.id} type="button" className="template-card" onClick={() => onSelect(template.id)}>
+              <span className="template-card-icon"><FileText size={21} /></span>
+              <span className="template-card-copy">
+                <strong>{t(`templateName_${template.id}`)}</strong>
+                <span>{t(`templateDescription_${template.id}`)}</span>
+                <small>{template.fileName}</small>
+              </span>
+            </button>
+          ))}
+        </div>
+        <p className="template-privacy-note">{t("templatePrivacyNote")}</p>
+      </section>
+    </div>
   );
 }
 
@@ -2755,7 +2796,7 @@ export function App() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const mod = event.ctrlKey || event.metaKey;
-      if (event.key === "Escape" && modal.type === "compare") {
+      if (event.key === "Escape" && (modal.type === "compare" || modal.type === "templates")) {
         event.preventDefault();
         setModal({ type: "none" });
         return;
@@ -2819,6 +2860,7 @@ export function App() {
         recentFiles={recentFiles}
         recentFileMissing={recentFileMissing}
         onNew={() => createDocument(activePane)}
+        onTemplates={() => setModal({ type: "templates", pane: activePane })}
         onOpen={() => void openFiles()}
         onOpenRecent={(path) => void openRecent(path)}
         onRemoveRecent={removeRecent}
@@ -2867,6 +2909,7 @@ export function App() {
             recentFiles={recentFiles}
             recentFileMissing={recentFileMissing}
             onNew={() => createDocument("left")}
+            onTemplates={() => setModal({ type: "templates", pane: "left" })}
             onOpen={() => void openFiles()}
             onOpenRecent={(path) => void openRecent(path)}
             onRemoveRecent={removeRecent}
@@ -2921,6 +2964,18 @@ export function App() {
       {toast && <div className="toast" role="status">{toast}</div>}
 
       {printJob && <div className="print-view" aria-hidden="true"><pre>{printJob.content}</pre></div>}
+
+      {modal.type === "templates" && (
+        <TemplateModal
+          onClose={() => setModal({ type: "none" })}
+          onSelect={(id) => {
+            const pane = modal.pane;
+            createDocument(pane, createDocumentTemplate(id, resolveLocale(settings.locale)));
+            setModal({ type: "none" });
+            requestEditorRuntime(pane);
+          }}
+        />
+      )}
 
       {modal.type === "settings" && (
         <SettingsModal

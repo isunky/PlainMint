@@ -24,6 +24,33 @@ function documentRecord(id: string): DocumentRecord {
 }
 
 describe("document history", () => {
+  it("creates a dirty document from a template using the current file defaults", () => {
+    const previousSettings = useAppStore.getState().settings;
+    useAppStore.setState((state) => ({
+      settings: { ...state.settings, defaultEncoding: "utf-16le", defaultLineEnding: "crlf" },
+    }));
+    const id = useAppStore.getState().createDocument("right", {
+      fileName: "meeting-notes.md",
+      content: "# Meeting notes\n",
+      languageMode: "markdown",
+    });
+
+    const document = useAppStore.getState().documents[id];
+    useAppStore.setState({ settings: previousSettings });
+    expect(document.filePath).toBeUndefined();
+    expect(document).toMatchObject({
+      fileName: "meeting-notes.md",
+      untitledNumber: undefined,
+      content: "# Meeting notes\n",
+      encoding: "utf-16le",
+      lineEnding: "crlf",
+      languageMode: "markdown",
+      dirty: true,
+    });
+    expect(useAppStore.getState().activePane).toBe("right");
+    expect(useAppStore.getState().tabs.right.at(-1)?.documentId).toBe(id);
+  });
+
   it("applies, undoes, and redoes a change through the shared controller", () => {
     const id = useAppStore.getState().createDocument("left");
     const before = useAppStore.getState().documents[id].content;

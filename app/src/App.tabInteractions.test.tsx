@@ -209,7 +209,7 @@ describe("tab and split interactions", () => {
     for (const label of ["New", "Open", "Save"]) {
       expect(toolbar.getByRole("button", { name: label })).toHaveClass("toolbar-labeled-action");
     }
-    for (const label of ["Recent files", "Save as", "Print", "Undo", "Redo", "Find", "Replace", "Compare", "Wrap", "Split", "Tools", "Settings"]) {
+    for (const label of ["Templates", "Recent files", "Save as", "Print", "Undo", "Redo", "Find", "Replace", "Compare", "Wrap", "Split", "Tools", "Settings"]) {
       expect(toolbar.getByRole("button", { name: label })).toHaveClass("toolbar-icon-action");
     }
 
@@ -229,6 +229,27 @@ describe("tab and split interactions", () => {
     expect(toolsMenu).toHaveTextContent("Remove blank lines");
     fireEvent.keyDown(toolsMenu, { key: "Escape" });
     expect(tools).toHaveFocus();
+  });
+
+  it("creates a localized unsaved document from a built-in template", async () => {
+    render(<App />);
+    await settle();
+
+    fireEvent.click(screen.getByRole("button", { name: "Templates" }));
+    const dialog = screen.getByRole("dialog", { name: "New from template" });
+    expect(within(dialog).getAllByRole("button")).toHaveLength(7);
+    expect(within(dialog).getByText("Templates are built into PlainMint and work entirely offline.")).toBeVisible();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: /Meeting notes/ }));
+
+    expect(screen.queryByRole("dialog", { name: "New from template" })).not.toBeInTheDocument();
+    const created = Object.values(useAppStore.getState().documents).find((document) => document.fileName === "meeting-notes.md");
+    expect(created?.filePath).toBeUndefined();
+    expect(created).toMatchObject({
+      content: expect.stringContaining("# Meeting notes"),
+      languageMode: "markdown",
+      dirty: true,
+    });
   });
 
   it("compares the current left and right pane content with the toolbar and shortcut", async () => {
@@ -483,6 +504,7 @@ describe("tab and split interactions", () => {
     expect(container.querySelector(".welcome")).toBeInTheDocument();
     expect(container.querySelector(".welcome-start")).toBeInTheDocument();
     expect(container.querySelector(".recent-panel")).toBeInTheDocument();
+    expect(within(container.querySelector(".welcome") as HTMLElement).getByRole("button", { name: /Templates/ })).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Remove a.txt from recent files" }));
     expect(persistRecentFiles).toHaveBeenLastCalledWith(["C:\\b.txt"]);
