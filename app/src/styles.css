@@ -345,6 +345,77 @@ select:focus-visible {
   border-left: 1px solid var(--border-subtle);
 }
 
+.toolbar-split-action {
+  position: relative;
+  gap: 0;
+}
+
+.toolbar-split-main,
+.toolbar-split-trigger {
+  height: 34px;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  font: inherit;
+}
+
+.toolbar-split-main {
+  min-width: 68px;
+  padding: 0 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  border-radius: 8px 0 0 8px;
+  font-size: 14px;
+  font-weight: 520;
+}
+
+.toolbar-split-main svg {
+  flex: 0 0 auto;
+  color: var(--accent-primary);
+}
+
+.toolbar-split-trigger {
+  width: 26px;
+  flex: 0 0 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-left: 1px solid var(--border-subtle);
+  border-radius: 0 8px 8px 0;
+  color: var(--text-secondary);
+}
+
+.toolbar-split-main:hover,
+.toolbar-split-trigger:hover,
+.toolbar-split-main:focus-visible,
+.toolbar-split-trigger:focus-visible {
+  background: var(--surface-hover);
+  outline: none;
+}
+
+.toolbar-split-trigger[aria-expanded="true"] {
+  background: var(--accent-soft);
+  color: var(--accent-primary);
+}
+
+.toolbar-split-main:disabled,
+.toolbar-split-trigger:disabled {
+  opacity: 0.34;
+  cursor: default;
+}
+
+.toolbar-split-main:disabled:hover,
+.toolbar-split-trigger:disabled:hover {
+  background: transparent;
+}
+
+.toolbar-split-menu {
+  min-width: 220px;
+}
+
 .toolbar-action {
   height: 34px;
   min-width: 0;

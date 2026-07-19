@@ -207,9 +207,12 @@ describe("tab and split interactions", () => {
     const toolbar = within(screen.getByRole("toolbar", { name: "Toolbar" }));
 
     for (const label of ["New", "Open", "Save"]) {
-      expect(toolbar.getByRole("button", { name: label })).toHaveClass("toolbar-labeled-action");
+      expect(toolbar.getByRole("button", { name: label })).toHaveClass("toolbar-split-main");
     }
-    for (const label of ["Templates", "Recent files", "Save as", "Print", "Undo", "Redo", "Find", "Replace", "Compare", "Wrap", "Split", "Tools", "Settings"]) {
+    for (const label of ["New options", "Open options", "Save options"]) {
+      expect(toolbar.getByRole("button", { name: label })).toHaveClass("toolbar-split-trigger");
+    }
+    for (const label of ["Print", "Undo", "Redo", "Find", "Replace", "Compare", "Wrap", "Split", "Tools", "Settings"]) {
       expect(toolbar.getByRole("button", { name: label })).toHaveClass("toolbar-icon-action");
     }
 
@@ -218,7 +221,6 @@ describe("tab and split interactions", () => {
     expect(screen.queryByRole("button", { name: "View" })).not.toBeInTheDocument();
     expect(toolbar.getByRole("button", { name: "New" })).toHaveAttribute("title", "New (Ctrl / ⌘ + N)");
     expect(toolbar.getByRole("button", { name: "Find" })).toHaveAttribute("title", "Find (Ctrl / ⌘ + F)");
-    expect(toolbar.getByRole("button", { name: "Save as" })).toHaveAttribute("title", "Save as (Ctrl / ⌘ + Shift + S)");
     expect(toolbar.getByRole("button", { name: "Print" })).toHaveAttribute("title", "Print (Ctrl / ⌘ + P)");
     expect(toolbar.getByRole("button", { name: "Wrap" })).toHaveAttribute("aria-pressed");
     expect(toolbar.getByRole("button", { name: "Split" })).toHaveAttribute("aria-pressed", "false");
@@ -235,7 +237,8 @@ describe("tab and split interactions", () => {
     render(<App />);
     await settle();
 
-    fireEvent.click(screen.getByRole("button", { name: "Templates" }));
+    fireEvent.click(screen.getByRole("button", { name: "New options" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "New from template" }));
     const dialog = screen.getByRole("dialog", { name: "New from template" });
     expect(within(dialog).getAllByRole("button")).toHaveLength(7);
     expect(within(dialog).getByText("Templates are stored locally and work entirely offline.")).toBeVisible();
@@ -519,7 +522,7 @@ describe("tab and split interactions", () => {
     render(<App />);
     await settle();
 
-    const trigger = screen.getByRole("button", { name: "Recent files" });
+    const trigger = screen.getByRole("button", { name: "Open options" });
     fireEvent.click(trigger);
     const menu = screen.getByRole("menu", { name: "Recent files" });
     expect(menu).toHaveTextContent("recent.txt");
@@ -572,7 +575,7 @@ describe("tab and split interactions", () => {
     expect(missing).toBeDisabled();
     expect(screen.getByText("File no longer exists · C:\\missing.txt")).toBeVisible();
 
-    fireEvent.click(screen.getByRole("button", { name: "Recent files" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open options" }));
     const menu = screen.getByRole("menu", { name: "Recent files" });
     expect(within(menu).getByRole("menuitem", { name: "missing.txt is unavailable" })).toBeDisabled();
     expect(within(menu).getByText("File no longer exists · C:\\missing.txt")).toBeVisible();
