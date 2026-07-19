@@ -61,6 +61,17 @@ foreach ($Command in @("node.exe", "npm.cmd", "cargo.exe")) {
     }
 }
 
+$LocalBinRoot = Join-Path $AppRoot "node_modules\.bin"
+$RequiredLocalCommands = @("tauri.cmd", "tsc.cmd", "vite.cmd")
+
+function Assert-LocalBuildDependencies {
+    $MissingCommands = @($RequiredLocalCommands | Where-Object { -not (Test-Path -LiteralPath (Join-Path $LocalBinRoot $_)) })
+    if ($MissingCommands.Count -gt 0) {
+        $MissingList = $MissingCommands -join ", "
+        throw "Required frontend build tools are missing ($MissingList). Run 'npm ci' in '$AppRoot' before building. If npm ci reports a locked esbuild.exe, close running PlainMint, Vite, or test processes and try again."
+    }
+}
+
 if (Test-Path -LiteralPath $OutputRoot) {
     $ResolvedOutput = [System.IO.Path]::GetFullPath($OutputRoot)
     $ResolvedRepo = [System.IO.Path]::GetFullPath($RepoRoot)
@@ -77,9 +88,17 @@ try {
         Write-Host "[1/4] Reusing the existing release build..." -ForegroundColor DarkCyan
     } elseif (-not $SkipInstall) {
         Write-Host "[1/4] Installing dependencies..." -ForegroundColor Cyan
-        Invoke-NativeCommand -Command "npm.cmd" -Arguments @("ci")
+        try {
+            Invoke-NativeCommand -Command "npm.cmd" -Arguments @("ci")
+        } catch {
+            throw "Dependency installation failed. Close running PlainMint, Vite, or test processes and run 'npm ci' in '$AppRoot' before retrying. $($_.Exception.Message)"
+        }
     } else {
         Write-Host "[1/4] Reusing installed dependencies..." -ForegroundColor DarkCyan
+    }
+
+    if (-not $PackageOnly) {
+        Assert-LocalBuildDependencies
     }
 
     if (-not $PackageOnly) {
