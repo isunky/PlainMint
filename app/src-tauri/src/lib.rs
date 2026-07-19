@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 #[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+#[cfg(target_os = "windows")]
 use std::process::Command;
 #[cfg(target_os = "windows")]
 use std::{
@@ -122,10 +124,19 @@ struct ContextMenuStatus {
 
 #[cfg(target_os = "windows")]
 const CONTEXT_MENU_KEY: &str = r"HKCU\Software\Classes\*\shell\PlainMint.Open";
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+#[cfg(target_os = "windows")]
+fn registry_command() -> Command {
+    let mut command = Command::new("reg");
+    command.creation_flags(CREATE_NO_WINDOW);
+    command
+}
 
 #[cfg(target_os = "windows")]
 fn context_menu_status() -> ContextMenuStatus {
-    let enabled = Command::new("reg")
+    let enabled = registry_command()
         .args(["query", CONTEXT_MENU_KEY])
         .output()
         .map(|output| output.status.success())
@@ -146,7 +157,7 @@ fn context_menu_status() -> ContextMenuStatus {
 
 #[cfg(target_os = "windows")]
 fn run_registry_command(arguments: &[String]) -> CommandResult<()> {
-    let output = Command::new("reg")
+    let output = registry_command()
         .args(arguments)
         .output()
         .map_err(|error| {
@@ -1120,7 +1131,7 @@ fn set_context_menu_enabled(enabled: bool) -> CommandResult<ContextMenuStatus> {
                 "/f".into(),
             ])?;
         } else {
-            let output = Command::new("reg")
+            let output = registry_command()
                 .args(["delete", CONTEXT_MENU_KEY, "/f"])
                 .output()
                 .map_err(|error| {
