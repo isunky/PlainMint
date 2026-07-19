@@ -98,7 +98,7 @@ beforeEach(async () => {
 afterEach(cleanup);
 
 describe("tab and split interactions", () => {
-  it("keeps core toolbar labels and accessible icon-only actions", async () => {
+  it("keeps essential actions in the toolbar without title-bar text menus", async () => {
     render(<App />);
     await settle();
     const toolbar = within(screen.getByRole("toolbar", { name: "Toolbar" }));
@@ -106,14 +106,26 @@ describe("tab and split interactions", () => {
     for (const label of ["New", "Open", "Save"]) {
       expect(toolbar.getByRole("button", { name: label })).toHaveClass("toolbar-labeled-action");
     }
-    for (const label of ["Recent files", "Undo", "Redo", "Find", "Compare", "Wrap", "Split", "Settings"]) {
+    for (const label of ["Recent files", "Save as", "Print", "Undo", "Redo", "Find", "Replace", "Compare", "Wrap", "Split", "Tools", "Settings"]) {
       expect(toolbar.getByRole("button", { name: label })).toHaveClass("toolbar-icon-action");
     }
 
+    expect(screen.queryByRole("button", { name: "File" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "View" })).not.toBeInTheDocument();
     expect(toolbar.getByRole("button", { name: "New" })).toHaveAttribute("title", "New (Ctrl / ⌘ + N)");
     expect(toolbar.getByRole("button", { name: "Find" })).toHaveAttribute("title", "Find (Ctrl / ⌘ + F)");
+    expect(toolbar.getByRole("button", { name: "Save as" })).toHaveAttribute("title", "Save as (Ctrl / ⌘ + Shift + S)");
+    expect(toolbar.getByRole("button", { name: "Print" })).toHaveAttribute("title", "Print (Ctrl / ⌘ + P)");
     expect(toolbar.getByRole("button", { name: "Wrap" })).toHaveAttribute("aria-pressed");
     expect(toolbar.getByRole("button", { name: "Split" })).toHaveAttribute("aria-pressed", "false");
+
+    const tools = toolbar.getByRole("button", { name: "Tools" });
+    fireEvent.click(tools);
+    const toolsMenu = screen.getByRole("menu", { name: "Tools" });
+    expect(toolsMenu).toHaveTextContent("Remove blank lines");
+    fireEvent.keyDown(toolsMenu, { key: "Escape" });
+    expect(tools).toHaveFocus();
   });
 
   it("compares the current left and right pane content with the toolbar and shortcut", async () => {

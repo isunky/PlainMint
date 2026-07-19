@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import {
@@ -17,14 +17,17 @@ import {
   FilePlus,
   FileText,
   FloppyDisk,
+  FloppyDiskBack,
   FolderOpen,
   GearSix,
   MagnifyingGlass,
   Lock,
   Minus,
   Plus,
+  Printer,
   Square,
   TextAlignLeft,
+  Toolbox,
   WarningCircle,
   X,
 } from "@phosphor-icons/react";
@@ -49,12 +52,8 @@ import {
   goToLineInPane,
   loadTextEditor,
   cleanupTextInPane,
-  cutSelectionInPane,
-  pasteTextInPane,
   replaceAllSearchMatchesInPane,
   replaceCurrentSearchMatchInPane,
-  selectAllInPane,
-  selectedTextInPane,
 } from "./editorRuntime";
 
 import {
@@ -65,7 +64,6 @@ import {
   chooseDirectory,
   closeWindow,
   copyText,
-  readClipboardText,
   deleteRecovery,
   inspectFileMetadata,
   encodedByteLength,
@@ -96,8 +94,6 @@ import {
   showSourceCode,
   showAuthorWebsite,
   toggleMaximizeWindow,
-  toggleFullscreenWindow,
-  isFullscreenWindow,
   validateDirectory,
   writeRecovery,
   writeSafetyRecovery,
@@ -285,140 +281,8 @@ function isTitlebarControl(target: EventTarget | null) {
   return target instanceof Element && Boolean(target.closest("button, input, select, textarea, a"));
 }
 
-function MenuItems({ children, onDismiss }: { children: React.ReactNode; onDismiss: () => void }) {
-  const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)")];
-    const current = items.indexOf(document.activeElement as HTMLButtonElement);
-    if (event.key === "Escape") { event.preventDefault(); onDismiss(); return; }
-    if (!items.length || !["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
-    event.preventDefault();
-    const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1
-      : (current + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
-    items[next]?.focus();
-  };
-  return <div className="app-menu-popup" role="menu" onKeyDown={onKeyDown}>{children}</div>;
-}
 
-function AppMenus({
-  activeDocument,
-  canUndo,
-  canRedo,
-  settings,
-  split,
-  fullscreen,
-  recentFiles,
-  recentFileMissing,
-  hasRecentlyClosed,
-  onNew,
-  onOpen,
-  onSave,
-  onSaveAs,
-  onPrint,
-  onOpenRecent,
-  onReopen,
-  onRecovery,
-  onExit,
-  onUndo,
-  onRedo,
-  onCut,
-  onCopy,
-  onPaste,
-  onSelectAll,
-  onFind,
-  onReplace,
-  onCleanup,
-  onWrap,
-  onLineNumbers,
-  onSplit,
-  onFontSize,
-  onFullscreen,
-}: {
-  activeDocument?: DocumentRecord;
-  canUndo: boolean;
-  canRedo: boolean;
-  settings: UserSettings;
-  split: boolean;
-  fullscreen: boolean;
-  recentFiles: string[];
-  recentFileMissing: Record<string, boolean>;
-  hasRecentlyClosed: boolean;
-  onNew: () => void; onOpen: () => void; onSave: () => void; onSaveAs: () => void; onPrint: () => void;
-  onOpenRecent: (path: string) => void; onReopen: () => void; onRecovery: () => void; onExit: () => void;
-  onUndo: () => void; onRedo: () => void; onCut: () => void; onCopy: () => void; onPaste: () => void; onSelectAll: () => void;
-  onFind: () => void; onReplace: () => void; onCleanup: (action: TextCleanupAction) => void;
-  onWrap: () => void; onLineNumbers: () => void; onSplit: () => void; onFontSize: (next: number) => void; onFullscreen: () => void;
-}) {
-  const { t } = useTranslation();
-  const [open, setOpen] = useState<"file" | "edit" | "view" | null>(null);
-  const [cleanupOpen, setCleanupOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const close = () => { setOpen(null); setCleanupOpen(false); };
-  useEffect(() => {
-    const dismiss = (event: PointerEvent) => { if (!menuRef.current?.contains(event.target as Node)) close(); };
-    window.addEventListener("pointerdown", dismiss);
-    return () => window.removeEventListener("pointerdown", dismiss);
-  }, []);
-  const run = (action: () => void) => () => { close(); action(); };
-  const editDisabled = !activeDocument || activeDocument.readOnly;
-  const switchMenu = (menu: "file" | "edit" | "view") => setOpen((current) => current === menu ? null : menu);
-  return <nav className="app-menus" ref={menuRef} aria-label={t("appMenuBar")}>
-    <div className="app-menu-root">
-      <button type="button" aria-haspopup="menu" aria-expanded={open === "file"} onClick={() => switchMenu("file")}>{t("fileMenu")}</button>
-      {open === "file" && <MenuItems onDismiss={close}>
-        <button role="menuitem" onClick={run(onNew)}>{t("new")}<kbd>Ctrl / ⌘ N</kbd></button>
-        <button role="menuitem" onClick={run(onOpen)}>{t("open")}<kbd>Ctrl / ⌘ O</kbd></button>
-        <button role="menuitem" disabled={!activeDocument} onClick={run(onSave)}>{t("save")}<kbd>Ctrl / ⌘ S</kbd></button>
-        <button role="menuitem" disabled={!activeDocument} onClick={run(onSaveAs)}>{t("saveAs")}<kbd>Ctrl / ⌘ ⇧ S</kbd></button>
-        <button role="menuitem" disabled={!activeDocument} onClick={run(onPrint)}>{t("print")}<kbd>Ctrl / ⌘ P</kbd></button>
-        <div className="menu-separator" role="separator" />
-        <span className="app-menu-section">{t("recentFiles")}</span>
-        {recentFiles.slice(0, 8).map((path) => <button key={path} role="menuitem" disabled={recentFileMissing[path]} onClick={run(() => onOpenRecent(path))}>{path.split(/[\\/]/).at(-1)}<small>{path}</small></button>)}
-        {!recentFiles.length && <span className="app-menu-empty">{t("recentEmpty")}</span>}
-        <div className="menu-separator" role="separator" />
-        <button role="menuitem" disabled={!hasRecentlyClosed} onClick={run(onReopen)}>{t("reopenClosedTab")}<kbd>Ctrl / ⌘ ⇧ T</kbd></button>
-        <button role="menuitem" onClick={run(onRecovery)}>{t("openRecovery")}</button>
-        <button role="menuitem" onClick={run(onExit)}>{t("exit")}</button>
-      </MenuItems>}
-    </div>
-    <div className="app-menu-root">
-      <button type="button" aria-haspopup="menu" aria-expanded={open === "edit"} onClick={() => switchMenu("edit")}>{t("editMenu")}</button>
-      {open === "edit" && <MenuItems onDismiss={close}>
-        <button role="menuitem" disabled={!canUndo} onClick={run(onUndo)}>{t("undo")}<kbd>Ctrl / ⌘ Z</kbd></button>
-        <button role="menuitem" disabled={!canRedo} onClick={run(onRedo)}>{t("redo")}<kbd>Ctrl / ⌘ ⇧ Z</kbd></button>
-        <div className="menu-separator" role="separator" />
-        <button role="menuitem" disabled={editDisabled} onClick={run(onCut)}>{t("cut")}<kbd>Ctrl / ⌘ X</kbd></button>
-        <button role="menuitem" disabled={!activeDocument} onClick={run(onCopy)}>{t("copy")}<kbd>Ctrl / ⌘ C</kbd></button>
-        <button role="menuitem" disabled={editDisabled} onClick={run(onPaste)}>{t("paste")}<kbd>Ctrl / ⌘ V</kbd></button>
-        <button role="menuitem" disabled={!activeDocument} onClick={run(onSelectAll)}>{t("selectAll")}<kbd>Ctrl / ⌘ A</kbd></button>
-        <div className="menu-separator" role="separator" />
-        <button role="menuitem" disabled={!activeDocument} onClick={run(onFind)}>{t("find")}<kbd>Ctrl / ⌘ F</kbd></button>
-        <button role="menuitem" disabled={!activeDocument} onClick={run(onReplace)}>{t("replace")}<kbd>Ctrl / ⌘ H</kbd></button>
-        <div className="app-menu-submenu">
-          <button role="menuitem" aria-haspopup="menu" aria-expanded={cleanupOpen} disabled={editDisabled} onClick={() => setCleanupOpen((value) => !value)}>{t("textCleanup")}<span>›</span></button>
-          {cleanupOpen && <div className="app-menu-popup app-menu-submenu-popup" role="menu">
-            {(["sortAscending", "sortDescending", "deduplicate", "removeBlankLines", "trimTrailingWhitespace"] as TextCleanupAction[]).map((action) => <button key={action} role="menuitem" onClick={run(() => onCleanup(action))}>{t(`textCleanup_${action}`)}</button>)}
-          </div>}
-        </div>
-      </MenuItems>}
-    </div>
-    <div className="app-menu-root">
-      <button type="button" aria-haspopup="menu" aria-expanded={open === "view"} onClick={() => switchMenu("view")}>{t("viewMenu")}</button>
-      {open === "view" && <MenuItems onDismiss={close}>
-        <button role="menuitemcheckbox" aria-checked={settings.wordWrapByDefault} onClick={run(onWrap)}>{t("wrap")}<kbd>Alt / ⌥ Z</kbd></button>
-        <button role="menuitemcheckbox" aria-checked={settings.showLineNumbers} onClick={run(onLineNumbers)}>{t("showLineNumbers")}</button>
-        <button role="menuitemcheckbox" aria-checked={split} onClick={run(onSplit)}>{t("split")}<kbd>Ctrl / ⌘ \\</kbd></button>
-        <div className="menu-separator" role="separator" />
-        <button role="menuitem" disabled={settings.fontSize <= 10} onClick={run(() => onFontSize(settings.fontSize - 1))}>{t("decreaseFontSize")}<kbd>Ctrl / ⌘ -</kbd></button>
-        <button role="menuitem" disabled={settings.fontSize >= 28} onClick={run(() => onFontSize(settings.fontSize + 1))}>{t("increaseFontSize")}<kbd>Ctrl / ⌘ +</kbd></button>
-        <button role="menuitem" disabled={settings.fontSize === 14} onClick={run(() => onFontSize(14))}>{t("resetFontSize")}<kbd>Ctrl / ⌘ 0</kbd></button>
-        <div className="menu-separator" role="separator" />
-        <button role="menuitemcheckbox" aria-checked={fullscreen} onClick={run(onFullscreen)}>{t("fullscreen")}</button>
-      </MenuItems>}
-    </div>
-  </nav>;
-}
-
-function TitleBar({ onClose, children, fullscreen }: { onClose: () => void; children?: React.ReactNode; fullscreen: boolean }) {
+function TitleBar({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation();
   const handleMouseDown = (event: ReactMouseEvent<HTMLElement>) => {
     if (event.button !== 0 || isTitlebarControl(event.target)) return;
@@ -434,8 +298,7 @@ function TitleBar({ onClose, children, fullscreen }: { onClose: () => void; chil
         <AppLogo />
         <span>{t("appName")}</span>
       </div>
-      {children}
-      <div className={"window-controls " + (fullscreen ? "fullscreen-controls" : "")}>
+      <div className="window-controls">
         <IconButton label={t("minimize")} onClick={() => void minimizeWindow()}><Minus size={18} /></IconButton>
         <IconButton label={t("maximize")} onClick={() => void toggleMaximizeWindow()}><Square size={15} /></IconButton>
         <IconButton label={t("close")} className="window-close" onClick={onClose}><X size={19} /></IconButton>
@@ -521,12 +384,14 @@ function RecentFilesToolbarMenu({
   onOpen,
   onRemove,
   onClear,
+  withDivider = false,
 }: {
   recentFiles: string[];
   recentFileMissing: Record<string, boolean>;
   onOpen: (path: string) => void;
   onRemove: (path: string) => void;
   onClear: () => void;
+  withDivider?: boolean;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -575,7 +440,7 @@ function RecentFilesToolbarMenu({
   };
 
   return (
-    <div className="toolbar-action-wrap recent-files-trigger" ref={menuRef}>
+    <div className={"toolbar-action-wrap recent-files-trigger " + (withDivider ? "with-divider" : "")} ref={menuRef}>
       <button
         ref={triggerRef}
         type="button"
@@ -626,12 +491,87 @@ function RecentFilesToolbarMenu({
   );
 }
 
+function TextToolsToolbarMenu({
+  disabled,
+  onCleanup,
+  withDivider = false,
+}: {
+  disabled: boolean;
+  onCleanup: (action: TextCleanupAction) => void;
+  withDivider?: boolean;
+}) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const dismiss = useCallback((restoreFocus = false) => {
+    setOpen(false);
+    if (restoreFocus) triggerRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const dismissOutside = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) dismiss();
+    };
+    window.setTimeout(() => menuRef.current?.querySelector<HTMLButtonElement>("button[role='menuitem']:not(:disabled)")?.focus(), 0);
+    window.addEventListener("pointerdown", dismissOutside);
+    return () => window.removeEventListener("pointerdown", dismissOutside);
+  }, [dismiss, open]);
+
+  const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const items = [...(menuRef.current?.querySelectorAll<HTMLButtonElement>("button[role='menuitem']:not(:disabled)") ?? [])];
+    const current = items.indexOf(document.activeElement as HTMLButtonElement);
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      dismiss(true);
+      return;
+    }
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key) || items.length === 0) return;
+    event.preventDefault();
+    const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1
+      : (current + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+    items[next]?.focus();
+  };
+
+  return (
+    <div className={"toolbar-action-wrap toolbar-tools-trigger " + (withDivider ? "with-divider" : "")} ref={menuRef}>
+      <button
+        ref={triggerRef}
+        type="button"
+        className="toolbar-action toolbar-icon-action"
+        aria-label={t("tools")}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        disabled={disabled}
+        onClick={() => setOpen((current) => !current)}
+        title={t("tools")}
+      >
+        <Toolbox size={20} weight="regular" />
+        <span className="toolbar-action-label">{t("tools")}</span>
+      </button>
+      {open && (
+        <div className="toolbar-popup-menu toolbar-tools-menu" role="menu" aria-label={t("tools")} tabIndex={-1} onKeyDown={onKeyDown}>
+          {(["sortAscending", "sortDescending", "deduplicate", "removeBlankLines", "trimTrailingWhitespace"] as TextCleanupAction[]).map((action) => (
+            <button key={action} type="button" role="menuitem" className="toolbar-menu-item" onClick={() => { dismiss(); onCleanup(action); }}>
+              {t(`textCleanup_${action}`)}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface ToolbarProps {
   canUndo: boolean;
   canRedo: boolean;
   split: boolean;
   wrap: boolean;
   canCompare: boolean;
+  hasActiveDocument: boolean;
+  canUseTools: boolean;
   recentFiles: string[];
   recentFileMissing: Record<string, boolean>;
   onNew: () => void;
@@ -640,71 +580,258 @@ interface ToolbarProps {
   onRemoveRecent: (path: string) => void;
   onClearRecent: () => void;
   onSave: () => void;
+  onSaveAs: () => void;
+  onPrint: () => void;
   onUndo: () => void;
   onRedo: () => void;
   onFind: () => void;
+  onReplace: () => void;
+  onCleanup: (action: TextCleanupAction) => void;
   onCompare: () => void;
   onWrap: () => void;
   onSplit: () => void;
   onSettings: () => void;
 }
 
-type ToolbarAction =
-  | { key: "recent" }
-  | {
-    key: "new" | "open" | "save" | "undo" | "redo" | "find" | "compare" | "wrap" | "split";
-    label: string;
-    icon: Icon;
-    action: () => void;
-    showLabel: boolean;
-    shortcut?: string;
-    disabled?: boolean;
-    pressed?: boolean;
-  };
+type ToolbarActionKey = "new" | "open" | "recent" | "save" | "saveAs" | "print" | "undo" | "redo" | "find" | "replace" | "compare" | "wrap" | "split" | "tools";
+type ToolbarActionGroup = "file" | "edit" | "view";
+type ToolbarAction = {
+  key: ToolbarActionKey;
+  group: ToolbarActionGroup;
+  label: string;
+  icon?: Icon;
+  action?: () => void;
+  showLabel: boolean;
+  shortcut?: string;
+  disabled?: boolean;
+  pressed?: boolean;
+  kind?: "recent" | "tools";
+};
+
+const toolbarCollapsePriority: ToolbarActionKey[] = [
+  "print", "saveAs", "replace", "tools", "recent", "compare", "split", "wrap", "redo", "undo", "find",
+];
 
 function Toolbar(props: ToolbarProps) {
   const { t } = useTranslation();
   const actions: ToolbarAction[] = [
-    { key: "new", label: t("new"), icon: FilePlus, action: props.onNew, showLabel: true, shortcut: "Ctrl / ⌘ + N" },
-    { key: "open", label: t("open"), icon: FolderOpen, action: props.onOpen, showLabel: true, shortcut: "Ctrl / ⌘ + O" },
-    { key: "recent" },
-    { key: "save", label: t("save"), icon: FloppyDisk, action: props.onSave, showLabel: true, shortcut: "Ctrl / ⌘ + S" },
-    { key: "undo", label: t("undo"), icon: ArrowCounterClockwise, action: props.onUndo, showLabel: false, shortcut: "Ctrl / ⌘ + Z", disabled: !props.canUndo },
-    { key: "redo", label: t("redo"), icon: ArrowClockwise, action: props.onRedo, showLabel: false, shortcut: "Ctrl / ⌘ + Y", disabled: !props.canRedo },
-    { key: "find", label: t("find"), icon: MagnifyingGlass, action: props.onFind, showLabel: false, shortcut: "Ctrl / ⌘ + F" },
-    { key: "compare", label: t("compare"), icon: ArrowsLeftRight, action: props.onCompare, showLabel: false, shortcut: "Ctrl / ⌘ + Shift + D", disabled: !props.canCompare },
-    { key: "wrap", label: t("wrap"), icon: TextAlignLeft, action: props.onWrap, showLabel: false, pressed: props.wrap },
-    { key: "split", label: t("split"), icon: Columns, action: props.onSplit, showLabel: false, shortcut: "Ctrl / ⌘ + \\", pressed: props.split },
+    { key: "new", group: "file", label: t("new"), icon: FilePlus, action: props.onNew, showLabel: true, shortcut: "Ctrl / ⌘ + N" },
+    { key: "open", group: "file", label: t("open"), icon: FolderOpen, action: props.onOpen, showLabel: true, shortcut: "Ctrl / ⌘ + O" },
+    { key: "recent", group: "file", label: t("recentFiles"), showLabel: false, kind: "recent" },
+    { key: "save", group: "file", label: t("save"), icon: FloppyDisk, action: props.onSave, showLabel: true, shortcut: "Ctrl / ⌘ + S", disabled: !props.hasActiveDocument },
+    { key: "saveAs", group: "file", label: t("saveAs"), icon: FloppyDiskBack, action: props.onSaveAs, showLabel: false, shortcut: "Ctrl / ⌘ + Shift + S", disabled: !props.hasActiveDocument },
+    { key: "print", group: "file", label: t("print"), icon: Printer, action: props.onPrint, showLabel: false, shortcut: "Ctrl / ⌘ + P", disabled: !props.hasActiveDocument },
+    { key: "undo", group: "edit", label: t("undo"), icon: ArrowCounterClockwise, action: props.onUndo, showLabel: false, shortcut: "Ctrl / ⌘ + Z", disabled: !props.canUndo },
+    { key: "redo", group: "edit", label: t("redo"), icon: ArrowClockwise, action: props.onRedo, showLabel: false, shortcut: "Ctrl / ⌘ + Y", disabled: !props.canRedo },
+    { key: "find", group: "edit", label: t("find"), icon: MagnifyingGlass, action: props.onFind, showLabel: false, shortcut: "Ctrl / ⌘ + F", disabled: !props.hasActiveDocument },
+    { key: "replace", group: "edit", label: t("replace"), icon: ArrowsClockwise, action: props.onReplace, showLabel: false, shortcut: "Ctrl / ⌘ + H", disabled: !props.hasActiveDocument },
+    { key: "compare", group: "view", label: t("compare"), icon: ArrowsLeftRight, action: props.onCompare, showLabel: false, shortcut: "Ctrl / ⌘ + Shift + D", disabled: !props.canCompare },
+    { key: "wrap", group: "view", label: t("wrap"), icon: TextAlignLeft, action: props.onWrap, showLabel: false, pressed: props.wrap },
+    { key: "split", group: "view", label: t("split"), icon: Columns, action: props.onSplit, showLabel: false, shortcut: "Ctrl / ⌘ + \\", pressed: props.split },
+    { key: "tools", group: "view", label: t("tools"), showLabel: false, kind: "tools", disabled: !props.canUseTools },
   ];
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const [overflowKeys, setOverflowKeys] = useState<ToolbarActionKey[]>([]);
+
+  const calculateOverflow = useCallback(() => {
+    const toolbar = toolbarRef.current;
+    if (!toolbar || toolbar.clientWidth === 0) {
+      setOverflowKeys((current) => current.length ? [] : current);
+      return;
+    }
+    const settingsWidth = toolbar.querySelector<HTMLElement>("[data-toolbar-settings]")?.getBoundingClientRect().width ?? 38;
+    const availableWidth = toolbar.clientWidth - settingsWidth - 20;
+    const actionWidth = (action: ToolbarAction) => action.showLabel ? 72 : 38;
+    const totalWidth = (visible: ToolbarAction[], hasOverflow: boolean) => visible.reduce((width, action, index) => (
+      width + actionWidth(action) + (index > 0 && action.group !== visible[index - 1]?.group ? 14 : 0)
+    ), hasOverflow ? 38 : 0);
+    const visible = [...actions];
+    const hidden: ToolbarActionKey[] = [];
+    for (const key of toolbarCollapsePriority) {
+      if (totalWidth(visible, hidden.length > 0) <= availableWidth) break;
+      const index = visible.findIndex((action) => action.key === key);
+      if (index >= 0) {
+        visible.splice(index, 1);
+        hidden.push(key);
+      }
+    }
+    setOverflowKeys((current) => current.length === hidden.length && current.every((key, index) => key === hidden[index]) ? current : hidden);
+  }, [actions]);
+
+  useLayoutEffect(() => {
+    calculateOverflow();
+    const toolbar = toolbarRef.current;
+    if (!toolbar || typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", calculateOverflow);
+      return () => window.removeEventListener("resize", calculateOverflow);
+    }
+    const observer = new ResizeObserver(calculateOverflow);
+    observer.observe(toolbar);
+    return () => observer.disconnect();
+  }, [calculateOverflow]);
+
+  const visibleActions = actions.filter((action) => !overflowKeys.includes(action.key));
+  const overflowActions = actions.filter((action) => overflowKeys.includes(action.key));
   return (
-    <div className="toolbar" role="toolbar" aria-label={t("toolbar")}>
-      {actions.map((action) => {
-        if (action.key === "recent") {
-          return <RecentFilesToolbarMenu key={action.key} recentFiles={props.recentFiles} recentFileMissing={props.recentFileMissing} onOpen={props.onOpenRecent} onRemove={props.onRemoveRecent} onClear={props.onClearRecent} />;
-        }
-        const Icon = action.icon;
-        const title = action.shortcut ? `${action.label} (${action.shortcut})` : action.label;
-        return (
-          <div className={"toolbar-action-wrap " + (["undo", "compare"].includes(action.key) ? "with-divider" : "")} key={action.key}>
-            <button
-              type="button"
-              className={`toolbar-action ${action.showLabel ? "toolbar-labeled-action" : "toolbar-icon-action"} ${action.pressed ? "active" : ""}`}
-              aria-label={action.label}
-              aria-pressed={action.pressed}
-              disabled={action.disabled}
-              onClick={action.action}
-              title={title}
-            >
-              <Icon size={20} weight="regular" />
-              <span className="toolbar-action-label">{action.label}</span>
-            </button>
-          </div>
-        );
-      })}
-      <button type="button" className="toolbar-action toolbar-icon-action toolbar-more" aria-label={t("settings")} onClick={props.onSettings} title={t("settings")}>
-        <GearSix size={20} />
-        <span className="toolbar-action-label">{t("settings")}</span>
+    <div className="toolbar" role="toolbar" aria-label={t("toolbar")} ref={toolbarRef}>
+      <div className="toolbar-actions">
+        {visibleActions.map((action, index) => {
+          const withDivider = index > 0 && action.group !== visibleActions[index - 1]?.group;
+          if (action.kind === "recent") {
+            return <RecentFilesToolbarMenu key={action.key} recentFiles={props.recentFiles} recentFileMissing={props.recentFileMissing} onOpen={props.onOpenRecent} onRemove={props.onRemoveRecent} onClear={props.onClearRecent} withDivider={withDivider} />;
+          }
+          if (action.kind === "tools") {
+            return <TextToolsToolbarMenu key={action.key} disabled={Boolean(action.disabled)} onCleanup={props.onCleanup} withDivider={withDivider} />;
+          }
+          const Icon = action.icon!;
+          const title = action.shortcut ? `${action.label} (${action.shortcut})` : action.label;
+          return (
+            <div className={"toolbar-action-wrap " + (withDivider ? "with-divider" : "")} key={action.key}>
+              <button
+                type="button"
+                className={`toolbar-action ${action.showLabel ? "toolbar-labeled-action" : "toolbar-icon-action"} ${action.pressed ? "active" : ""}`}
+                aria-label={action.label}
+                aria-pressed={action.pressed}
+                disabled={action.disabled}
+                onClick={action.action}
+                title={title}
+              >
+                <Icon size={20} weight="regular" />
+                <span className="toolbar-action-label">{action.label}</span>
+              </button>
+            </div>
+          );
+        })}
+        <ToolbarOverflowMenu actions={overflowActions} recentFiles={props.recentFiles} recentFileMissing={props.recentFileMissing} onOpenRecent={props.onOpenRecent} onRemoveRecent={props.onRemoveRecent} onClearRecent={props.onClearRecent} onCleanup={props.onCleanup} />
+      </div>
+      <div className="toolbar-action-wrap toolbar-settings" data-toolbar-settings>
+        <button type="button" className="toolbar-action toolbar-icon-action" aria-label={t("settings")} onClick={props.onSettings} title={t("settings")}>
+          <GearSix size={20} />
+          <span className="toolbar-action-label">{t("settings")}</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ToolbarOverflowMenu({
+  actions,
+  recentFiles,
+  recentFileMissing,
+  onOpenRecent,
+  onRemoveRecent,
+  onClearRecent,
+  onCleanup,
+}: {
+  actions: ToolbarAction[];
+  recentFiles: string[];
+  recentFileMissing: Record<string, boolean>;
+  onOpenRecent: (path: string) => void;
+  onRemoveRecent: (path: string) => void;
+  onClearRecent: () => void;
+  onCleanup: (action: TextCleanupAction) => void;
+}) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const [panel, setPanel] = useState<"root" | "recent" | "tools">("root");
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const dismiss = useCallback((restoreFocus = false) => {
+    setOpen(false);
+    setPanel("root");
+    if (restoreFocus) triggerRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const dismissOutside = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) dismiss();
+    };
+    window.setTimeout(() => menuRef.current?.querySelector<HTMLButtonElement>("[role^='menuitem']:not(:disabled)")?.focus(), 0);
+    window.addEventListener("pointerdown", dismissOutside);
+    return () => window.removeEventListener("pointerdown", dismissOutside);
+  }, [dismiss, open, panel]);
+
+  if (actions.length === 0) return null;
+
+  const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const items = [...(menuRef.current?.querySelectorAll<HTMLButtonElement>("[role^='menuitem']:not(:disabled)") ?? [])];
+    const current = items.indexOf(document.activeElement as HTMLButtonElement);
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      dismiss(true);
+      return;
+    }
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key) || items.length === 0) return;
+    event.preventDefault();
+    const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1
+      : (current + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+    items[next]?.focus();
+  };
+
+  const run = (action: () => void) => () => {
+    dismiss();
+    action();
+  };
+
+  const renderRoot = () => actions.map((action) => {
+    if (action.kind === "recent" || action.kind === "tools") {
+      return (
+        <button key={action.key} type="button" role="menuitem" className="toolbar-menu-item toolbar-menu-submenu" disabled={action.disabled} onClick={() => setPanel(action.kind!)}>
+          <span>{action.label}</span><span aria-hidden="true">›</span>
+        </button>
+      );
+    }
+    return (
+      <button key={action.key} type="button" role={action.pressed === undefined ? "menuitem" : "menuitemcheckbox"} aria-checked={action.pressed} className="toolbar-menu-item" disabled={action.disabled} onClick={run(action.action!)}>
+        <span>{action.label}</span>{action.shortcut && <kbd>{action.shortcut}</kbd>}
       </button>
+    );
+  });
+
+  const renderRecent = () => (
+    <>
+      <button type="button" role="menuitem" className="toolbar-menu-item toolbar-menu-back" onClick={() => setPanel("root")}>‹ {t("moreActions")}</button>
+      {recentFiles.length === 0 ? <p className="toolbar-menu-empty">{t("recentEmpty")}</p> : (
+        <>
+          {recentFiles.map((path) => {
+            const fileName = path.split(/[\\/]/).at(-1) ?? path;
+            const missing = recentFileMissing[path] === true;
+            return (
+              <div className="toolbar-overflow-recent" key={path}>
+                <button type="button" role="menuitem" className="toolbar-menu-item" disabled={missing} title={missing ? t("recentFileUnavailableName", { name: fileName }) : path} onClick={run(() => onOpenRecent(path))}>
+                  <span>{fileName}</span>
+                </button>
+                <button type="button" role="menuitem" className="icon-button" aria-label={t("removeRecentFile", { name: fileName })} title={t("removeRecentFile", { name: fileName })} onClick={run(() => onRemoveRecent(path))}><X size={16} /></button>
+              </div>
+            );
+          })}
+          <div className="menu-separator" role="separator" />
+          <button type="button" role="menuitem" className="toolbar-menu-item" onClick={run(onClearRecent)}>{t("clearRecentFiles")}</button>
+        </>
+      )}
+    </>
+  );
+
+  const renderTools = () => (
+    <>
+      <button type="button" role="menuitem" className="toolbar-menu-item toolbar-menu-back" onClick={() => setPanel("root")}>‹ {t("moreActions")}</button>
+      {(["sortAscending", "sortDescending", "deduplicate", "removeBlankLines", "trimTrailingWhitespace"] as TextCleanupAction[]).map((action) => (
+        <button key={action} type="button" role="menuitem" className="toolbar-menu-item" onClick={run(() => onCleanup(action))}>{t(`textCleanup_${action}`)}</button>
+      ))}
+    </>
+  );
+
+  const label = panel === "recent" ? t("recentFiles") : panel === "tools" ? t("tools") : t("moreActions");
+  return (
+    <div className="toolbar-action-wrap toolbar-overflow-trigger" ref={menuRef}>
+      <button ref={triggerRef} type="button" className="toolbar-action toolbar-icon-action" aria-label={t("moreActions")} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((current) => !current)} title={t("moreActions")}>
+        <DotsThree size={20} weight="bold" />
+      </button>
+      {open && <div className="toolbar-popup-menu toolbar-overflow-menu" role="menu" aria-label={label} tabIndex={-1} onKeyDown={onKeyDown}>
+        {panel === "root" ? renderRoot() : panel === "recent" ? renderRecent() : renderTools()}
+      </div>}
     </div>
   );
 }
@@ -1493,7 +1620,6 @@ export function App() {
   const [editorRuntimeReady, setEditorRuntimeReady] = useState(false);
   const [openedSearchResult, setOpenedSearchResult] = useState<OpenedDocumentSearchResult & { searching: boolean }>({ valid: true, total: 0, documentCount: 0, truncated: false, groups: [], searching: false });
   const [revealTarget, setRevealTarget] = useState<EditorRevealTarget | null>(null);
-  const [fullscreen, setFullscreen] = useState(false);
   const [fileDropPane, setFileDropPane] = useState<PaneId | null>(null);
   const [printJob, setPrintJob] = useState<{ title: string; content: string } | null>(null);
   const backupTimers = useRef<Record<string, number>>({});
@@ -1660,14 +1786,6 @@ export function App() {
       results.forEach(([path, missing]) => { next[path] = missing; });
       return next;
     });
-  }, []);
-
-  useEffect(() => {
-    const refresh = () => { void isFullscreenWindow().then(setFullscreen).catch(() => undefined); };
-    refresh();
-    window.addEventListener("focus", refresh);
-    window.addEventListener("resize", refresh);
-    return () => { window.removeEventListener("focus", refresh); window.removeEventListener("resize", refresh); };
   }, []);
 
   useEffect(() => {
@@ -1951,24 +2069,6 @@ export function App() {
     requestEditorRuntime(activePane);
     void loadTextEditor().then((module) => window.setTimeout(() => module.cleanupTextInPane(activePane, action, i18n.resolvedLanguage ?? i18n.language), 0));
   }, [activeDocument, activePane, requestEditorRuntime]);
-
-  const copySelection = useCallback(() => {
-    const text = selectedTextInPane(activePane);
-    if (text) void copyText(text);
-  }, [activePane]);
-
-  const cutSelection = useCallback(() => {
-    const text = cutSelectionInPane(activePane);
-    if (text) void copyText(text);
-  }, [activePane]);
-
-  const pasteClipboard = useCallback(() => {
-    void readClipboardText().then((text) => { if (text) pasteTextInPane(activePane, text); }).catch(() => undefined);
-  }, [activePane]);
-
-  const toggleFullscreen = useCallback(() => {
-    void toggleFullscreenWindow().then(() => isFullscreenWindow()).then(setFullscreen).catch(() => undefined);
-  }, []);
 
   const beginPrint = useCallback(() => {
     if (!activeDocument) return;
@@ -2683,30 +2783,15 @@ export function App() {
 
   return (
     <main className="app-shell">
-      <TitleBar onClose={requestCloseWindow} fullscreen={fullscreen}>
-        <AppMenus
-          activeDocument={activeDocument}
-          canUndo={Boolean(history?.undo.length)}
-          canRedo={Boolean(history?.redo.length)}
-          settings={settings}
-          split={split}
-          fullscreen={fullscreen}
-          recentFiles={recentFiles}
-          recentFileMissing={recentFileMissing}
-          hasRecentlyClosed={Boolean(recentlyClosedTabs[0])}
-          onNew={() => createDocument(activePane)} onOpen={() => void openFiles()} onSave={() => void saveActive()} onSaveAs={() => void saveActive(true)} onPrint={beginPrint}
-          onOpenRecent={(path) => void openRecent(path)} onReopen={() => void reopenClosedTab()} onRecovery={() => setModal({ type: "recovery" })} onExit={requestCloseWindow}
-          onUndo={() => activeDocument && undoDocument(activeDocument.id)} onRedo={() => activeDocument && redoDocument(activeDocument.id)} onCut={cutSelection} onCopy={copySelection} onPaste={pasteClipboard} onSelectAll={() => selectAllInPane(activePane)}
-          onFind={() => setSearch({ open: true, replaceOpen: false })} onReplace={() => setSearch({ open: true, replaceOpen: true, scope: "document" })} onCleanup={runTextCleanup}
-          onWrap={() => applyQuickSettings({ wordWrapByDefault: !settings.wordWrapByDefault })} onLineNumbers={() => applyQuickSettings({ showLineNumbers: !settings.showLineNumbers })} onSplit={toggleSplit} onFontSize={(fontSize) => applyQuickSettings({ fontSize })} onFullscreen={toggleFullscreen}
-        />
-      </TitleBar>
+      <TitleBar onClose={requestCloseWindow} />
       <Toolbar
         canUndo={Boolean(history?.undo.length)}
         canRedo={Boolean(history?.redo.length)}
         split={split}
         wrap={settings.wordWrapByDefault}
         canCompare={canCompareSplitPanes}
+        hasActiveDocument={Boolean(activeDocument)}
+        canUseTools={Boolean(activeDocument && !activeDocument.readOnly)}
         recentFiles={recentFiles}
         recentFileMissing={recentFileMissing}
         onNew={() => createDocument(activePane)}
@@ -2715,9 +2800,13 @@ export function App() {
         onRemoveRecent={removeRecent}
         onClearRecent={clearRecent}
         onSave={() => void saveActive()}
+        onSaveAs={() => void saveActive(true)}
+        onPrint={beginPrint}
         onUndo={() => activeDocument && undoDocument(activeDocument.id)}
         onRedo={() => activeDocument && redoDocument(activeDocument.id)}
         onFind={() => { setSearch({ open: true, replaceOpen: false }); window.setTimeout(() => focusEditor(activePane), 0); }}
+        onReplace={() => { setSearch({ open: true, replaceOpen: true, scope: "document" }); window.setTimeout(() => focusEditor(activePane), 0); }}
+        onCleanup={runTextCleanup}
         onCompare={() => void openComparison()}
         onWrap={() => updateSettings({ wordWrapByDefault: !settings.wordWrapByDefault })}
         onSplit={toggleSplit}

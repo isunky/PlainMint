@@ -313,6 +313,12 @@ select:focus-visible {
   background: var(--surface-toolbar);
 }
 
+.toolbar-actions {
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+}
+
 .toolbar-action-wrap {
   display: flex;
   align-items: center;
@@ -321,6 +327,16 @@ select:focus-visible {
 
 .recent-files-trigger {
   position: relative;
+}
+
+.toolbar-tools-trigger,
+.toolbar-overflow-trigger {
+  position: relative;
+}
+
+.toolbar-settings {
+  margin-left: auto;
+  padding-left: 10px;
 }
 
 .toolbar-action-wrap.with-divider {
@@ -392,10 +408,6 @@ select:focus-visible {
   color: var(--text-secondary);
 }
 
-.toolbar-more {
-  margin-left: auto;
-}
-
 .recent-files-menu {
   position: absolute;
   z-index: 70;
@@ -409,6 +421,87 @@ select:focus-visible {
   border-radius: 10px;
   background: var(--surface-elevated);
   box-shadow: var(--shadow-popup);
+}
+
+.toolbar-popup-menu {
+  position: absolute;
+  z-index: 70;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 220px;
+  max-width: min(360px, calc(100vw - 24px));
+  max-height: min(440px, calc(100vh - 96px));
+  padding: 6px;
+  overflow-y: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-popup);
+}
+
+.toolbar-overflow-menu,
+.toolbar-tools-menu {
+  right: 0;
+  left: auto;
+}
+
+.toolbar-menu-item {
+  width: 100%;
+  min-height: 32px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+}
+
+.toolbar-menu-item:hover,
+.toolbar-menu-item:focus-visible {
+  background: var(--accent-soft);
+  outline: none;
+}
+
+.toolbar-menu-item:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+
+.toolbar-menu-item kbd {
+  color: var(--text-tertiary);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.toolbar-menu-back {
+  color: var(--text-secondary);
+}
+
+.toolbar-menu-empty {
+  margin: 0;
+  padding: 7px 8px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.toolbar-overflow-recent {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px;
+}
+
+.toolbar-overflow-recent .toolbar-menu-item {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .recent-files-menu-empty {
@@ -473,110 +566,6 @@ select:focus-visible {
   font-size: 11px;
 }
 
-.app-menus {
-  height: 100%;
-  display: flex;
-  align-items: stretch;
-  margin-left: 20px;
-  margin-right: auto;
-}
-
-.app-menu-root {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.app-menu-root > button {
-  height: 32px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font: inherit;
-  font-size: 13px;
-}
-
-.app-menu-root > button:hover,
-.app-menu-root > button[aria-expanded="true"] {
-  color: var(--text-primary);
-  background: var(--surface-hover);
-}
-
-.app-menu-popup {
-  position: absolute;
-  z-index: 90;
-  top: calc(100% + 1px);
-  left: 0;
-  min-width: 220px;
-  max-width: min(380px, calc(100vw - 24px));
-  padding: 5px;
-  border: 1px solid var(--border-strong);
-  border-radius: 8px;
-  background: var(--surface-elevated);
-  box-shadow: var(--shadow-popup);
-}
-
-.app-menu-popup > button,
-.app-menu-submenu > button {
-  width: 100%;
-  min-height: 31px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-  padding: 5px 8px;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--text-primary);
-  cursor: pointer;
-  font: inherit;
-  font-size: 13px;
-  text-align: left;
-}
-
-.app-menu-popup > button:hover,
-.app-menu-popup > button:focus-visible,
-.app-menu-submenu > button:hover,
-.app-menu-submenu > button:focus-visible {
-  background: var(--accent-soft);
-  outline: none;
-}
-
-.app-menu-popup button:disabled {
-  opacity: 0.38;
-  cursor: default;
-}
-
-.app-menu-popup kbd {
-  color: var(--text-tertiary);
-  font-size: 11px;
-  white-space: nowrap;
-}
-
-.app-menu-popup small {
-  grid-column: 1 / -1;
-  overflow: hidden;
-  color: var(--text-tertiary);
-  font-size: 10px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.app-menu-section,
-.app-menu-empty {
-  display: block;
-  padding: 5px 8px;
-  color: var(--text-tertiary);
-  font-size: 11px;
-}
-
-.app-menu-submenu { position: relative; }
-.app-menu-submenu-popup { top: -5px; left: calc(100% + 5px); }
-.fullscreen-controls { visibility: hidden; }
 
 .file-drop-target {
   box-shadow: inset 0 0 0 2px var(--accent-primary);
