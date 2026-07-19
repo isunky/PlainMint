@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findSearchMatches } from "./searchMatcher";
+import { findSearchMatches, findSearchMatchesWithLimit } from "./searchMatcher";
 
 const defaults = {
   query: "",
@@ -20,6 +20,14 @@ describe("search matcher", () => {
     expect(findSearchMatches("ab", { ...defaults, query: "(?=.)", regexp: true })).toEqual({
       valid: true,
       matches: [{ from: 0, to: 0 }, { from: 1, to: 1 }],
+    });
+  });
+
+  it("keeps an exact count when only a limited number of matches are retained", () => {
+    expect(findSearchMatchesWithLimit("cat cat cat", { ...defaults, query: "cat" }, 2)).toEqual({
+      valid: true,
+      total: 3,
+      matches: [{ from: 0, to: 3 }, { from: 4, to: 7 }],
     });
   });
 });

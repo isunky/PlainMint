@@ -74,7 +74,7 @@ beforeEach(async () => {
     split: false,
     splitRatio: 0.5,
     recentlyClosedTabs: [],
-    search: { open: false, replaceOpen: false, query: "", replacement: "", caseSensitive: false, wholeWord: false, regexp: false },
+    search: { open: false, replaceOpen: false, scope: "document", query: "", replacement: "", caseSensitive: false, wholeWord: false, regexp: false },
     histories: {},
     settings: { ...defaultSettings, autoBackupEnabled: false },
   });
@@ -313,6 +313,24 @@ describe("tab and split interactions", () => {
     expect(screen.getByText("2 of 2")).toBeVisible();
     fireEvent.click(screen.getByLabelText("Case sensitive"));
     expect(screen.getByText("1 of 1")).toBeVisible();
+  });
+
+  it("searches opened documents from their current in-memory content and opens a result tab", async () => {
+    useAppStore.setState({ documents: { a: { ...doc("a"), content: "nothing here" }, b: { ...doc("b"), content: "draft cat\ncat again", dirty: true } } });
+    render(<App />);
+    await settle();
+
+    fireEvent.keyDown(window, { key: "f", ctrlKey: true });
+    fireEvent.change(screen.getByLabelText("Search scope"), { target: { value: "opened" } });
+    fireEvent.change(screen.getByPlaceholderText("Find"), { target: { value: "cat" } });
+
+    await waitFor(() => expect(screen.getByText("2 matches in 1 documents")).toBeVisible());
+    expect(document.querySelector(".opened-search-group strong")).toHaveTextContent("b.txt");
+    fireEvent.click(screen.getByRole("button", { name: /Line 1/ }));
+    expect(useAppStore.getState().activeTab.left).toBe("tab-b");
+
+    fireEvent.keyDown(window, { key: "h", ctrlKey: true });
+    expect(useAppStore.getState().search).toMatchObject({ replaceOpen: true, scope: "document" });
   });
 
   it("changes the active document format from the status bar", async () => {

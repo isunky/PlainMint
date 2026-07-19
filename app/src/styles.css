@@ -987,6 +987,12 @@ select:focus-visible {
   grid-template-rows: 46px 45px;
 }
 
+.searchbar.opened-documents-mode {
+  min-height: 52px;
+  flex: 0 1 auto;
+  grid-template-rows: 51px minmax(0, min(36vh, 320px));
+}
+
 .searchbar-primary,
 .searchbar-replace {
   min-width: 0;
@@ -1010,6 +1016,25 @@ select:focus-visible {
 .search-navigation .icon-button {
   width: 32px;
   height: 32px;
+}
+
+.search-scope {
+  height: 32px;
+  min-width: 112px;
+  max-width: 146px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 0 7px;
+  background: var(--surface-elevated);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+}
+
+.search-scope:focus-visible {
+  border-color: var(--accent-primary);
+  outline: 2px solid var(--accent-soft);
+  outline-offset: 1px;
 }
 
 .search-input-wrap {
@@ -1157,6 +1182,83 @@ select:focus-visible {
 
 .replace-mode .search-close {
   top: 6px;
+}
+
+.opened-search-results {
+  min-height: 0;
+  overflow: auto;
+  padding: 0 0 8px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.opened-search-truncated {
+  margin: 8px 0 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.opened-search-group {
+  padding: 8px 0 3px;
+}
+
+.opened-search-group + .opened-search-group {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.opened-search-group header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.opened-search-group header span,
+.opened-search-path {
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.opened-search-path {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.opened-search-result {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 8px;
+  margin-top: 3px;
+  padding: 5px 7px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+}
+
+.opened-search-result:hover,
+.opened-search-result:focus-visible {
+  background: var(--accent-soft);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.opened-search-line {
+  color: var(--text-tertiary);
+}
+
+.opened-search-preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre;
+  font-family: var(--editor-font);
 }
 
 .notice-bar {

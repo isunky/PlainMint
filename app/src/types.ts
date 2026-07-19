@@ -108,14 +108,24 @@ export interface CursorStats {
   selected: number;
 }
 
+export type SearchScope = "document" | "opened";
+
 export interface SearchState {
   open: boolean;
   replaceOpen: boolean;
+  scope: SearchScope;
   query: string;
   replacement: string;
   caseSensitive: boolean;
   wholeWord: boolean;
   regexp: boolean;
+}
+
+export interface EditorRevealTarget {
+  id: string;
+  documentId: string;
+  from: number;
+  to: number;
 }
 
 export interface UserSettings {

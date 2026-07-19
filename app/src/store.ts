@@ -257,6 +257,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   search: {
     open: requestedState === "find",
     replaceOpen: requestedState === "find",
+    scope: "document",
     query: requestedState === "find" ? "wrap" : "",
     replacement: "",
     caseSensitive: false,

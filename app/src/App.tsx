@@ -37,6 +37,7 @@ import { buildEditorFontFamily } from "./fontSettings";
 import { createWorkspaceSession, decideStartupRecovery } from "./recoveryPolicy";
 import { resolveInitialSaveFolder } from "./saveFolderPolicy";
 import { findSearchMatches } from "./searchMatcher";
+import { OPEN_DOCUMENT_RESULT_LIMIT, searchOpenedDocuments, type OpenedDocumentSearchResult } from "./openedDocumentSearch";
 import { effectiveLanguage, isSyntaxHighlightableStats, languageLabelKey, languageOptionIds } from "./languageMetadata";
 import { getTextStats } from "./textStats";
 import type { ComparisonSide } from "./components/ConflictCompareView";
@@ -104,7 +105,7 @@ const ConflictCompareView = lazy(async () => {
 });
 import type { UpdateCheckResult, UpdateInstallProgress } from "./services/runtime";
 import { useAppStore } from "./store";
-import type { ContextMenuStatus, DirectoryValidationResult, DocumentRecord, Encoding, FileFingerprint, LanguageMode, LineEnding, OpenedDocument, PaneId, RecoveryEntry, RecentlyClosedTab, UserSettings, WorkspaceSession } from "./types";
+import type { ContextMenuStatus, DirectoryValidationResult, DocumentRecord, EditorRevealTarget, Encoding, FileFingerprint, LanguageMode, LineEnding, OpenedDocument, PaneId, RecoveryEntry, RecentlyClosedTab, UserSettings, WorkspaceSession } from "./types";
 
 type ModalState =
   | { type: "none" }
@@ -664,16 +665,23 @@ function SearchBar({
   searchValid,
   matchIndex,
   onMatchIndex,
+  openedResult,
+  documents,
+  onSelectOpenedMatch,
 }: {
   pane: PaneId;
   matches: Array<{ from: number; to: number }>;
   searchValid: boolean;
   matchIndex: number;
   onMatchIndex: (index: number) => void;
+  openedResult: OpenedDocumentSearchResult & { searching: boolean };
+  documents: Record<string, DocumentRecord>;
+  onSelectOpenedMatch: (documentId: string, match: { from: number; to: number }) => void;
 }) {
   const { t } = useTranslation();
   const search = useAppStore((state) => state.search);
   const setSearch = useAppStore((state) => state.setSearch);
+  const openedScope = search.scope === "opened" && !search.replaceOpen;
   const hasMatches = searchValid && matches.length > 0;
   const go = (direction: -1 | 1) => {
     if (!hasMatches) return;
@@ -681,8 +689,9 @@ function SearchBar({
     onMatchIndex(next);
     direction > 0 ? findNextInPane(pane) : findPreviousInPane(pane);
   };
+  const close = () => setSearch({ open: false, scope: "document" });
   return (
-    <div className={`searchbar ${search.replaceOpen ? "replace-mode" : "find-mode"}`} role="search">
+    <div className={`searchbar ${search.replaceOpen ? "replace-mode" : "find-mode"} ${openedScope ? "opened-documents-mode" : ""}`} role="search">
       <div className="searchbar-primary">
         <div className={"search-input-wrap " + (search.query && !searchValid ? "invalid-query" : search.query && !hasMatches ? "no-match" : "")}>
           <MagnifyingGlass size={18} />
@@ -691,14 +700,27 @@ function SearchBar({
             value={search.query}
             placeholder={t("find")}
             onChange={(event) => { setSearch({ query: event.target.value }); onMatchIndex(0); }}
-            onKeyDown={(event) => { if (event.key === "Enter") go(event.shiftKey ? -1 : 1); if (event.key === "Escape") setSearch({ open: false }); }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !openedScope) go(event.shiftKey ? -1 : 1);
+              if (event.key === "ArrowDown" && openedScope) {
+                const firstResult = document.querySelector<HTMLButtonElement>(".opened-search-result");
+                if (firstResult) { event.preventDefault(); firstResult.focus(); }
+              }
+              if (event.key === "Escape") close();
+            }}
           />
         </div>
-        <div className="search-navigation">
+        {!openedScope && <div className="search-navigation">
           <IconButton label={t("previousMatch")} onClick={() => go(-1)} disabled={!hasMatches}><CaretUp size={17} /></IconButton>
           <IconButton label={t("nextMatch")} onClick={() => go(1)} disabled={!hasMatches}><CaretDown size={17} /></IconButton>
-        </div>
-        <span className="match-count">{search.query && !searchValid ? t("invalidRegularExpression") : hasMatches ? t("matchCount", { current: Math.min(matchIndex + 1, matches.length), total: matches.length }) : t("noMatches")}</span>
+        </div>}
+        <select className="search-scope" aria-label={t("searchScope")} value={openedScope ? "opened" : "document"} disabled={search.replaceOpen} onChange={(event) => setSearch({ scope: event.target.value as "document" | "opened", replaceOpen: false })}>
+          <option value="document">{t("searchCurrentDocument")}</option>
+          <option value="opened">{t("searchOpenedDocuments")}</option>
+        </select>
+        <span className="match-count" aria-live="polite">{openedScope
+          ? !search.query ? t("noMatches") : openedResult.searching ? t("searchingOpenedDocuments") : !openedResult.valid ? t("invalidRegularExpression") : openedResult.total ? t("openedSearchSummary", { matches: openedResult.total, documents: openedResult.documentCount }) : t("noMatches")
+          : search.query && !searchValid ? t("invalidRegularExpression") : hasMatches ? t("matchCount", { current: Math.min(matchIndex + 1, matches.length), total: matches.length }) : t("noMatches")}</span>
         <div className="search-options">
           <label className="check-control" title={t("caseSensitive")}><input type="checkbox" aria-label={t("caseSensitive")} checked={search.caseSensitive} onChange={(event) => setSearch({ caseSensitive: event.target.checked })} /><span className="check-control-label">{t("caseSensitive")}</span><span className="check-control-compact" aria-hidden="true">Aa</span></label>
           <label className="check-control" title={t("wholeWord")}><input type="checkbox" aria-label={t("wholeWord")} checked={search.wholeWord} onChange={(event) => setSearch({ wholeWord: event.target.checked })} /><span className="check-control-label">{t("wholeWord")}</span><span className="check-control-compact" aria-hidden="true">W</span></label>
@@ -715,7 +737,34 @@ function SearchBar({
           <button type="button" className="button-primary search-action" disabled={!hasMatches} onClick={() => { if (replaceAllSearchMatchesInPane(pane)) onMatchIndex(0); }}>{t("replaceAll")}</button>
         </div>
       )}
-      <IconButton label={t("closeSearch")} className="search-close" onClick={() => setSearch({ open: false })}><X size={18} /></IconButton>
+      {openedScope && search.query && !openedResult.searching && openedResult.valid && (
+        <div className="opened-search-results" aria-label={t("searchOpenedDocuments")}>
+          {openedResult.truncated && <p className="opened-search-truncated" role="status">{t("openedSearchTruncated", { shown: OPEN_DOCUMENT_RESULT_LIMIT, total: openedResult.total })}</p>}
+          {openedResult.groups.map((group) => {
+            const resultDocument = documents[group.documentId];
+            if (!resultDocument) return null;
+            return <section className="opened-search-group" key={group.documentId}>
+              <header><strong>{localizedDocumentName(resultDocument, t)}</strong><span>{t("openedSearchGroupCount", { count: group.matchCount })}</span></header>
+              {resultDocument.filePath && openedResult.groups.filter((other) => documents[other.documentId]?.fileName === resultDocument.fileName).length > 1 && <span className="opened-search-path">{resultDocument.filePath}</span>}
+              {group.matches.map((match) => <button
+                type="button"
+                className="opened-search-result"
+                key={`${match.from}-${match.to}`}
+                onClick={() => onSelectOpenedMatch(group.documentId, match)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") close();
+                  if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+                  event.preventDefault();
+                  const items = [...window.document.querySelectorAll<HTMLButtonElement>(".opened-search-result")];
+                  const index = items.indexOf(event.currentTarget);
+                  items[index + (event.key === "ArrowDown" ? 1 : -1)]?.focus();
+                }}
+              ><span className="opened-search-line">{t("searchResultLine", { line: match.line })}</span><span className="opened-search-preview">{match.preview || " "}</span></button>)}
+            </section>;
+          })}
+        </div>
+      )}
+      <IconButton label={t("closeSearch")} className="search-close" onClick={close}><X size={18} /></IconButton>
     </div>
   );
 }
@@ -770,7 +819,7 @@ function StatusBar({ pane, document }: { pane: PaneId; document?: DocumentRecord
   );
 }
 
-function EditorPane({ pane, onCloseTab, onActivateTab, onTabPointerDown, onTabContextMenu, drag, editorRuntimeReady, onRequestEditorRuntime }: {
+function EditorPane({ pane, onCloseTab, onActivateTab, onTabPointerDown, onTabContextMenu, drag, editorRuntimeReady, onRequestEditorRuntime, revealTarget, onRevealHandled }: {
   pane: PaneId;
   onCloseTab: (pane: PaneId, tabId: string) => void;
   onActivateTab: (pane: PaneId, tabId: string) => void;
@@ -779,6 +828,8 @@ function EditorPane({ pane, onCloseTab, onActivateTab, onTabPointerDown, onTabCo
   drag: TabDragView | null;
   editorRuntimeReady: boolean;
   onRequestEditorRuntime: (pane: PaneId) => void;
+  revealTarget: EditorRevealTarget | null;
+  onRevealHandled: (id: string) => void;
 }) {
   const { t } = useTranslation();
   const tabs = useAppStore((state) => state.tabs[pane]);
@@ -819,6 +870,8 @@ function EditorPane({ pane, onCloseTab, onActivateTab, onTabPointerDown, onTabCo
             onFocus={() => setActivePane(pane)}
             onUndo={() => undoDocument(document.id)}
             onRedo={() => redoDocument(document.id)}
+            revealTarget={revealTarget?.documentId === document.id ? revealTarget : undefined}
+            onRevealHandled={onRevealHandled}
           />
         </Suspense> : <button type="button" className="editor-loading editor-loading-button" aria-busy="true" onPointerDown={() => onRequestEditorRuntime(pane)}>{t("loadingEditor")}</button>}
       </div> : <div className="editor-empty"><span>{t("emptyPaneHint")}</span></div>}
@@ -1291,6 +1344,8 @@ export function App() {
   const [contextMenuStatus, setContextMenuStatus] = useState<ContextMenuStatus>({ supported: false, enabled: false });
   const [contextMenuBusy, setContextMenuBusy] = useState(false);
   const [editorRuntimeReady, setEditorRuntimeReady] = useState(false);
+  const [openedSearchResult, setOpenedSearchResult] = useState<OpenedDocumentSearchResult & { searching: boolean }>({ valid: true, total: 0, documentCount: 0, truncated: false, groups: [], searching: false });
+  const [revealTarget, setRevealTarget] = useState<EditorRevealTarget | null>(null);
   const backupTimers = useRef<Record<string, number>>({});
   const idleSaveTimers = useRef<Record<string, { revision: number; timer: number }>>({});
   const saveInFlight = useRef(new Map<string, Promise<boolean>>());
@@ -1358,6 +1413,28 @@ export function App() {
     [activeDocument?.content, search.open, search.query, search.replacement, search.caseSensitive, search.wholeWord, search.regexp],
   );
   const matches = searchResult.matches;
+  useEffect(() => {
+    if (!search.open || search.scope !== "opened" || search.replaceOpen || !search.query) {
+      setOpenedSearchResult({ valid: true, total: 0, documentCount: 0, truncated: false, groups: [], searching: false });
+      return;
+    }
+    setOpenedSearchResult((current) => ({ ...current, searching: true }));
+    const timer = window.setTimeout(() => {
+      setOpenedSearchResult({ ...searchOpenedDocuments(documents, tabs, search), searching: false });
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [documents, search, tabs]);
+
+  const selectOpenedSearchMatch = useCallback((documentId: string, match: { from: number; to: number }) => {
+    const targetPane = tabs[activePane].some((tab) => tab.documentId === documentId)
+      ? activePane
+      : (activePane === "left" ? "right" : "left");
+    const targetTab = tabs[targetPane].find((tab) => tab.documentId === documentId);
+    if (!targetTab) return;
+    setRevealTarget({ id: `${documentId}-${match.from}-${match.to}-${Date.now()}`, documentId, from: match.from, to: match.to });
+    setActiveTab(targetPane, targetTab.id);
+    requestEditorRuntime(targetPane);
+  }, [activePane, requestEditorRuntime, setActiveTab, tabs]);
   const history = activeDocument ? histories[activeDocument.id] : undefined;
   const watchedFilePaths = useMemo(() => {
     const unique = new Map<string, string>();
@@ -2351,7 +2428,7 @@ export function App() {
       if (key === "d" && event.shiftKey && canCompareSplitPanes) { event.preventDefault(); openComparison(); }
       if (key === "s") { event.preventDefault(); void saveActive(event.shiftKey); }
       if (key === "f") { event.preventDefault(); setSearch({ open: true, replaceOpen: false }); }
-      if (key === "h") { event.preventDefault(); setSearch({ open: true, replaceOpen: true }); }
+      if (key === "h") { event.preventDefault(); setSearch({ open: true, replaceOpen: true, scope: "document" }); }
       if (key === "g" && !(event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement)) { event.preventDefault(); goToLineInPane(activePane); }
       if (key === "\\") { event.preventDefault(); toggleSplit(); }
       if (key === ",") { event.preventDefault(); setModal({ type: "settings", snapshot: settings }); }
@@ -2393,7 +2470,7 @@ export function App() {
         onSettings={() => setModal({ type: "settings", snapshot: settings })}
       />
 
-      {search.open && <SearchBar pane={activePane} matches={matches} searchValid={searchResult.valid} matchIndex={matchIndex} onMatchIndex={setMatchIndex} />}
+      {search.open && <SearchBar pane={activePane} matches={matches} searchValid={searchResult.valid} matchIndex={matchIndex} onMatchIndex={setMatchIndex} openedResult={openedSearchResult} documents={documents} onSelectOpenedMatch={selectOpenedSearchMatch} />}
 
       {activeDocument?.externalModified && (
         <div className="notice-bar">
@@ -2430,7 +2507,7 @@ export function App() {
             onRecovery={() => setModal({ type: "recovery" })}
             onRestoreSession={() => void loadSession().then((session) => session && restoreSessionIntoStore(session))}
           />
-        ) : <EditorPane pane="left" onCloseTab={requestCloseTab} onActivateTab={activateTab} onTabPointerDown={beginTabDrag} onTabContextMenu={setTabContextMenu} drag={tabDrag} editorRuntimeReady={editorRuntimeReady} onRequestEditorRuntime={requestEditorRuntime} />}
+        ) : <EditorPane pane="left" onCloseTab={requestCloseTab} onActivateTab={activateTab} onTabPointerDown={beginTabDrag} onTabContextMenu={setTabContextMenu} drag={tabDrag} editorRuntimeReady={editorRuntimeReady} onRequestEditorRuntime={requestEditorRuntime} revealTarget={revealTarget} onRevealHandled={(id) => setRevealTarget((target) => target?.id === id ? null : target)} />}
         {split && (
           <>
             <div
@@ -2445,7 +2522,7 @@ export function App() {
               onPointerDown={onSplitPointerDown}
               onKeyDown={onSplitKeyDown}
             ><DotsThree size={20} weight="bold" /></div>
-            <EditorPane pane="right" onCloseTab={requestCloseTab} onActivateTab={activateTab} onTabPointerDown={beginTabDrag} onTabContextMenu={setTabContextMenu} drag={tabDrag} editorRuntimeReady={editorRuntimeReady} onRequestEditorRuntime={requestEditorRuntime} />
+            <EditorPane pane="right" onCloseTab={requestCloseTab} onActivateTab={activateTab} onTabPointerDown={beginTabDrag} onTabContextMenu={setTabContextMenu} drag={tabDrag} editorRuntimeReady={editorRuntimeReady} onRequestEditorRuntime={requestEditorRuntime} revealTarget={revealTarget} onRevealHandled={(id) => setRevealTarget((target) => target?.id === id ? null : target)} />
           </>
         )}
         {tabDrag?.dragging && tabDrag.rightEdge && <div className="split-drop-overlay" aria-hidden="true"><Columns size={28} /><span>{t("dropToSplit")}</span></div>}

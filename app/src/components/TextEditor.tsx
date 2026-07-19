@@ -31,7 +31,7 @@ import { codeMirrorCspExtension } from "../codeMirrorCsp";
 import { effectiveLanguage, isSyntaxHighlightableStats, isTextLanguage, loadLanguage } from "../languageRegistry";
 import { getTextStats } from "../textStats";
 import { plainMintSyntaxHighlighting } from "../syntaxHighlighting";
-import type { DocumentRecord, PaneId, SearchState, UserSettings } from "../types";
+import type { DocumentRecord, EditorRevealTarget, PaneId, SearchState, UserSettings } from "../types";
 import { createSearchQuery } from "../searchPolicy";
 
 const externalSync = Annotation.define<boolean>();
@@ -87,6 +87,8 @@ interface TextEditorProps {
   onFocus: () => void;
   onUndo: () => void;
   onRedo: () => void;
+  revealTarget?: EditorRevealTarget;
+  onRevealHandled: (id: string) => void;
 }
 
 function editorTheme(settings: UserSettings) {
@@ -165,6 +167,8 @@ export function TextEditor({
   onFocus,
   onUndo,
   onRedo,
+  revealTarget,
+  onRevealHandled,
 }: TextEditorProps) {
   const { t } = useTranslation();
   const hostRef = useRef<HTMLDivElement>(null);
@@ -305,6 +309,20 @@ export function TextEditor({
       effects: setSearchQuery.of(createSearchQuery(searchState)),
     });
   }, [searchState.query, searchState.replacement, searchState.caseSensitive, searchState.wholeWord, searchState.regexp]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || !revealTarget || revealTarget.documentId !== document.id) return;
+    const length = view.state.doc.length;
+    const from = Math.min(Math.max(0, revealTarget.from), length);
+    const to = Math.min(Math.max(from, revealTarget.to), length);
+    view.dispatch({
+      selection: { anchor: from, head: to },
+      effects: EditorView.scrollIntoView(from, { y: "center" }),
+    });
+    view.focus();
+    onRevealHandled(revealTarget.id);
+  }, [document.id, onRevealHandled, revealTarget]);
 
   useEffect(() => {
     const view = viewRef.current;
