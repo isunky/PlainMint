@@ -13,6 +13,7 @@ vi.mock("./services/runtime", async (importOriginal) => {
     loadSettings: vi.fn().mockResolvedValue(null),
     loadSession: vi.fn().mockResolvedValue(null),
     loadRecentFiles: vi.fn().mockResolvedValue([]),
+    inspectFileMetadata: vi.fn().mockResolvedValue(null),
     openDocumentPath: vi.fn(),
     loadRecentlyClosedTabs: vi.fn().mockResolvedValue([]),
     persistSession: vi.fn().mockResolvedValue(undefined),
@@ -27,7 +28,7 @@ vi.mock("./services/runtime", async (importOriginal) => {
 
 import { App } from "./App";
 import { selectNextOccurrenceInPane } from "./components/TextEditor";
-import { loadRecentFiles, openDocumentPath, persistRecentFiles, revealFileInDirectory } from "./services/runtime";
+import { inspectFileMetadata, loadRecentFiles, openDocumentPath, persistRecentFiles, revealFileInDirectory } from "./services/runtime";
 
 function doc(id: string): DocumentRecord {
   return {
@@ -78,6 +79,7 @@ beforeEach(async () => {
     settings: { ...defaultSettings, autoBackupEnabled: false },
   });
   vi.mocked(loadRecentFiles).mockResolvedValue([]);
+  vi.mocked(inspectFileMetadata).mockResolvedValue(null);
   vi.mocked(openDocumentPath).mockImplementation(async (path) => ({
     path,
     name: path.split(/[\\/]/).at(-1) ?? "document.txt",
@@ -392,6 +394,34 @@ describe("tab and split interactions", () => {
     expect(emptyMenu).toHaveTextContent("Recent files will appear here.");
     fireEvent.keyDown(emptyMenu, { key: "Escape" });
     expect(trigger).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("marks missing recent files before they can be opened", async () => {
+    useAppStore.setState({
+      documents: {},
+      tabs: { left: [], right: [] },
+      activeTab: { left: null, right: null },
+    });
+    vi.mocked(loadRecentFiles).mockResolvedValue(["C:\\missing.txt", "C:\\available.txt"]);
+    vi.mocked(inspectFileMetadata).mockImplementation(async (path) => ({
+      exists: !path.includes("missing"),
+      modifiedAt: 1,
+      size: 1,
+      readOnly: false,
+    }));
+
+    render(<App />);
+    await settle();
+
+    const missing = screen.getByRole("button", { name: "missing.txt is unavailable" });
+    expect(missing).toBeDisabled();
+    expect(screen.getByText("File no longer exists · C:\\missing.txt")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Recent files" }));
+    const menu = screen.getByRole("menu", { name: "Recent files" });
+    expect(within(menu).getByRole("menuitem", { name: "missing.txt is unavailable" })).toBeDisabled();
+    expect(within(menu).getByText("File no longer exists · C:\\missing.txt")).toBeVisible();
+    expect(within(menu).getByRole("menuitem", { name: "Remove missing.txt from recent files" })).toBeEnabled();
   });
 
   it("supports regular-expression replacement with capture groups", async () => {

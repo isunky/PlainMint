@@ -301,6 +301,7 @@ function TitleBar({ onClose }: { onClose: () => void }) {
 
 function Welcome({
   recentFiles,
+  recentFileMissing,
   onNew,
   onOpen,
   onOpenRecent,
@@ -310,6 +311,7 @@ function Welcome({
   onRestoreSession,
 }: {
   recentFiles: string[];
+  recentFileMissing: Record<string, boolean>;
   onNew: () => void;
   onOpen: () => void;
   onOpenRecent: (path: string) => void;
@@ -344,10 +346,17 @@ function Welcome({
         {recentFiles.length === 0 ? <p>{t("recentEmpty")}</p> : (
           <div className="recent-list">
             {recentFiles.slice(0, 8).map((path) => (
-              <div className="recent-item" key={path}>
-                <button type="button" className="recent-open" onClick={() => onOpenRecent(path)}>
+              <div className={`recent-item ${recentFileMissing[path] ? "recent-item-missing" : ""}`} key={path}>
+                <button
+                  type="button"
+                  className="recent-open"
+                  disabled={recentFileMissing[path]}
+                  aria-label={recentFileMissing[path] ? t("recentFileUnavailableName", { name: path.split(/[\\/]/).at(-1) }) : undefined}
+                  title={recentFileMissing[path] ? t("recentFileUnavailableName", { name: path.split(/[\\/]/).at(-1) }) : path}
+                  onClick={() => onOpenRecent(path)}
+                >
                   <FileText size={19} />
-                  <span><strong>{path.split(/[\\/]/).at(-1)}</strong><small>{path}</small></span>
+                  <span><strong>{path.split(/[\\/]/).at(-1)}</strong><small>{recentFileMissing[path] ? `${t("recentFileMissing")} · ${path}` : path}</small></span>
                 </button>
                 <IconButton label={t("removeRecentFile", { name: path.split(/[\\/]/).at(-1) })} className="recent-remove" onClick={() => onRemoveRecent(path)}><X size={17} /></IconButton>
               </div>
@@ -361,11 +370,13 @@ function Welcome({
 
 function RecentFilesToolbarMenu({
   recentFiles,
+  recentFileMissing,
   onOpen,
   onRemove,
   onClear,
 }: {
   recentFiles: string[];
+  recentFileMissing: Record<string, boolean>;
   onOpen: (path: string) => void;
   onRemove: (path: string) => void;
   onClear: () => void;
@@ -438,11 +449,20 @@ function RecentFilesToolbarMenu({
               <div className="recent-files-menu-list">
                 {recentFiles.map((path) => {
                   const fileName = path.split(/[\\/]/).at(-1) ?? path;
+                  const missing = recentFileMissing[path] === true;
                   return (
                     <div className="recent-files-menu-item" key={path}>
-                      <button type="button" role="menuitem" className="recent-files-menu-open" onClick={run(() => onOpen(path))}>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className={`recent-files-menu-open ${missing ? "recent-files-menu-open-missing" : ""}`}
+                        disabled={missing}
+                        aria-label={missing ? t("recentFileUnavailableName", { name: fileName }) : undefined}
+                        title={missing ? t("recentFileUnavailableName", { name: fileName }) : path}
+                        onClick={run(() => onOpen(path))}
+                      >
                         <FileText size={18} />
-                        <span><strong>{fileName}</strong><small>{path}</small></span>
+                        <span><strong>{fileName}</strong><small>{missing ? `${t("recentFileMissing")} · ${path}` : path}</small></span>
                       </button>
                       <button type="button" role="menuitem" className="icon-button recent-files-menu-remove" aria-label={t("removeRecentFile", { name: fileName })} title={t("removeRecentFile", { name: fileName })} onClick={run(() => onRemove(path))}><X size={16} /></button>
                     </div>
@@ -466,6 +486,7 @@ interface ToolbarProps {
   wrap: boolean;
   canCompare: boolean;
   recentFiles: string[];
+  recentFileMissing: Record<string, boolean>;
   onNew: () => void;
   onOpen: () => void;
   onOpenRecent: (path: string) => void;
@@ -512,7 +533,7 @@ function Toolbar(props: ToolbarProps) {
     <div className="toolbar" role="toolbar" aria-label={t("toolbar")}>
       {actions.map((action) => {
         if (action.key === "recent") {
-          return <RecentFilesToolbarMenu key={action.key} recentFiles={props.recentFiles} onOpen={props.onOpenRecent} onRemove={props.onRemoveRecent} onClear={props.onClearRecent} />;
+          return <RecentFilesToolbarMenu key={action.key} recentFiles={props.recentFiles} recentFileMissing={props.recentFileMissing} onOpen={props.onOpenRecent} onRemove={props.onRemoveRecent} onClear={props.onClearRecent} />;
         }
         const Icon = action.icon;
         const title = action.shortcut ? `${action.label} (${action.shortcut})` : action.label;
@@ -1258,6 +1279,7 @@ export function App() {
   const [updateCheckStatus, setUpdateCheckStatus] = useState<"idle" | "latest" | "failed">("idle");
   const [updateDialog, setUpdateDialog] = useState<UpdateDialogState | null>(null);
   const [recentFiles, setRecentFiles] = useState<string[]>([]);
+  const [recentFileMissing, setRecentFileMissing] = useState<Record<string, boolean>>({});
   const [hydrated, setHydrated] = useState(false);
   const [directoryChecks, setDirectoryChecks] = useState<Record<DirectoryField, DirectoryCheck>>(emptyDirectoryChecks);
   const [settingsApplying, setSettingsApplying] = useState(false);
@@ -1393,10 +1415,35 @@ export function App() {
     }
   }, [documents, flash, t, updateDialog]);
 
+  const refreshRecentFileStatus = useCallback(async (paths: string[]) => {
+    const results = await Promise.all(paths.map(async (path) => {
+      try {
+        const metadata = await inspectFileMetadata(path);
+        return [path, metadata?.exists === false] as const;
+      } catch {
+        return [path, false] as const;
+      }
+    }));
+    setRecentFileMissing((current) => {
+      const next: Record<string, boolean> = {};
+      const currentPaths = new Set(paths);
+      Object.entries(current).forEach(([path, missing]) => {
+        if (currentPaths.has(path)) next[path] = missing;
+      });
+      results.forEach(([path, missing]) => { next[path] = missing; });
+      return next;
+    });
+  }, []);
+
   const rememberRecent = useCallback((paths: string[]) => {
     setRecentFiles((current) => {
       const next = [...paths, ...current].filter((path, index, all) => path && all.indexOf(path) === index).slice(0, settings.recentFileLimit);
       void persistRecentFiles(next);
+      return next;
+    });
+    setRecentFileMissing((current) => {
+      const next = { ...current };
+      paths.forEach((path) => { next[path] = false; });
       return next;
     });
   }, [settings.recentFileLimit]);
@@ -1405,6 +1452,12 @@ export function App() {
     setRecentFiles((current) => {
       const next = current.filter((item) => item !== path);
       void persistRecentFiles(next);
+      return next;
+    });
+    setRecentFileMissing((current) => {
+      if (!(path in current)) return current;
+      const next = { ...current };
+      delete next[path];
       return next;
     });
   }, []);
@@ -1426,6 +1479,7 @@ export function App() {
       void persistRecentFiles([]);
       return [];
     });
+    setRecentFileMissing({});
     flash(t("recentFilesCleared"));
   }, []);
 
@@ -1583,16 +1637,32 @@ export function App() {
 
   const openRecent = useCallback(async (path: string) => {
     try {
+      const metadata = await inspectFileMetadata(path);
+      if (metadata && !metadata.exists) {
+        setRecentFileMissing((current) => ({ ...current, [path]: true }));
+        flash(t("recentFileMissing"));
+        return;
+      }
+      if (metadata) setRecentFileMissing((current) => ({ ...current, [path]: false }));
+    } catch {
+      // Opening the file below provides the actionable error when metadata cannot be read.
+    }
+    try {
       const opened = await openDocumentPath(path);
       addOpenedDocument(opened, activePane);
       rememberRecent([opened.path]);
       flash(t("opened"));
     } catch {
-      setRecentFiles((current) => {
-        const next = current.filter((item) => item !== path);
-        void persistRecentFiles(next);
-        return next;
-      });
+      try {
+        const metadata = await inspectFileMetadata(path);
+        if (metadata && !metadata.exists) {
+          setRecentFileMissing((current) => ({ ...current, [path]: true }));
+          flash(t("recentFileMissing"));
+          return;
+        }
+      } catch {
+        // Keep the existing recent entry when the reason for the failure is unknown.
+      }
       flash(t("openFailed"));
     }
   }, [activePane, addOpenedDocument, flash, rememberRecent, t]);
@@ -1870,7 +1940,10 @@ export function App() {
       if (decision === "ask" && storedSession) setModal({ type: "startup-recovery", session: storedSession });
       if (decision !== "ask") setHydrated(true);
       window.setTimeout(() => {
-        void loadRecentFiles().then(setRecentFiles).catch(() => undefined);
+        void loadRecentFiles().then((paths) => {
+          setRecentFiles(paths);
+          void refreshRecentFileStatus(paths);
+        }).catch(() => undefined);
         void loadRecentlyClosedTabs().then(loadRecentlyClosedTabsIntoStore).catch(() => undefined);
         window.setTimeout(() => {
           const prune = () => void pruneRecoveries(effectiveSettings).catch(() => undefined);
@@ -1882,7 +1955,7 @@ export function App() {
         }, STARTUP_MAINTENANCE_DELAY_MS);
       }, 0);
     }).catch(() => setHydrated(true));
-  }, [loadRecentlyClosedTabsIntoStore, loadSettingsIntoStore, restoreSessionIntoStore]);
+  }, [loadRecentlyClosedTabsIntoStore, loadSettingsIntoStore, refreshRecentFileStatus, restoreSessionIntoStore]);
 
   useEffect(() => {
     if (modal.type !== "settings" || settingsMetadataRequested.current) return;
@@ -2304,6 +2377,7 @@ export function App() {
         wrap={settings.wordWrapByDefault}
         canCompare={canCompareSplitPanes}
         recentFiles={recentFiles}
+        recentFileMissing={recentFileMissing}
         onNew={() => createDocument(activePane)}
         onOpen={() => void openFiles()}
         onOpenRecent={(path) => void openRecent(path)}
@@ -2347,6 +2421,7 @@ export function App() {
         {tabs.left.length === 0 && tabs.right.length === 0 && !split ? (
           <Welcome
             recentFiles={recentFiles}
+            recentFileMissing={recentFileMissing}
             onNew={() => createDocument("left")}
             onOpen={() => void openFiles()}
             onOpenRecent={(path) => void openRecent(path)}

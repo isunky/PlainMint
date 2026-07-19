@@ -473,6 +473,16 @@ select:focus-visible {
   font-size: 11px;
 }
 
+.recent-files-menu-open-missing,
+.recent-files-menu-open-missing svg {
+  color: var(--text-muted);
+}
+
+.recent-files-menu-open-missing {
+  cursor: not-allowed;
+  opacity: 0.78;
+}
+
 .recent-files-menu-remove {
   align-self: center;
   flex: 0 0 auto;
@@ -2213,6 +2223,16 @@ select:focus-visible {
 .recent-open:hover {
   border-color: var(--accent-primary);
   background: var(--surface-hover);
+}
+
+.recent-item-missing .recent-open {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border-soft));
+  color: var(--text-secondary);
+  cursor: not-allowed;
+}
+
+.recent-item-missing .recent-open small {
+  color: var(--danger);
 }
 
 .welcome-action.primary {
