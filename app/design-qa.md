@@ -1,6 +1,18 @@
 # PlainMint Design QA
 
-Final result: **PASSED**
+final result: passed
+
+## Homepage redesign — 2026-07-19
+
+- Source visual truth: `qa/homepage-selected-direction.png`
+- Browser implementation: `qa/homepage-1280x800.png`
+- Full-view comparison: `qa/homepage-comparison.png`
+- Responsive evidence: `qa/homepage-720x560.png`
+- Viewports and state: 1280 × 800 and 720 × 560, Simplified Chinese, light theme, no open document, three recent files including an intentionally long path; dark theme was also checked.
+- Focused crop: not required because the full comparison keeps the hero, actions, filenames, paths, and remove controls legible; the responsive capture isolates the overflow-sensitive area.
+- Findings: no actionable P0, P1, or P2 issues remain. Typography, spacing, Tiffany-aqua tokens, existing logo and Phosphor icons, and interface copy match the selected direction.
+- Comparison history: the first 720 × 560 pass found a P2 horizontal scrollbar caused by intrinsic recent-file text width. The text container and small-screen grid were constrained; the final pass measured a 720 px document width, 705 px welcome width, and 641 px rows with matching client/scroll widths.
+- Interactions: New File opened an editor; recent-file remove changed three rows to two and Clear changed two to zero; light/dark themes rendered correctly; browser console warnings and errors were empty.
 
 ## Source of truth
 

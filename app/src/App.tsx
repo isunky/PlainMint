@@ -477,10 +477,12 @@ function Welcome({
           </div>
         </div>
         <div className="welcome-actions">
-          <button type="button" className="welcome-action primary" onClick={onNew}><FilePlus size={22} /><span><strong>{t("createFile")}</strong><small>Ctrl / ⌘ + N</small></span></button>
-          <button type="button" className="welcome-action" onClick={onOpen}><FolderOpen size={22} /><span><strong>{t("openFile")}</strong><small>Ctrl / ⌘ + O</small></span></button>
-          <button type="button" className="welcome-action" onClick={onRestoreSession}><ArrowCounterClockwise size={22} /><span><strong>{t("restoreSession")}</strong><small>{t("sessionRecovery")}</small></span></button>
-          <button type="button" className="welcome-action" onClick={onRecovery}><FloppyDisk size={22} /><span><strong>{t("openRecovery")}</strong><small>{t("backupRecovery")}</small></span></button>
+          <button type="button" className="welcome-action welcome-main-action primary" onClick={onNew}><FilePlus size={23} /><span><strong>{t("createFile")}</strong><small>Ctrl / ⌘ + N</small></span></button>
+          <button type="button" className="welcome-action welcome-main-action" onClick={onOpen}><FolderOpen size={23} /><span><strong>{t("openFile")}</strong><small>Ctrl / ⌘ + O</small></span></button>
+          <div className="welcome-support-actions">
+            <button type="button" className="welcome-action welcome-support-action" onClick={onRestoreSession}><ArrowCounterClockwise size={22} /><span><strong>{t("restoreSession")}</strong><small>{t("sessionRecovery")}</small></span></button>
+            <button type="button" className="welcome-action welcome-support-action" onClick={onRecovery}><FloppyDisk size={22} /><span><strong>{t("openRecovery")}</strong><small>{t("backupRecovery")}</small></span></button>
+          </div>
         </div>
       </div>
       <div className="recent-panel">
