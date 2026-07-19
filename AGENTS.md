@@ -1,5 +1,7 @@
-# Repository workflow
+# PlainMint workflow
 
-- Small owner-requested changes should be committed directly to `main` unless the owner asks for a branch or pull request.
-- Use a dedicated branch and pull request for large, risky, or review-heavy changes.
-- Keep the public README concise, visually balanced, and fully bilingual in Simplified Chinese and English; avoid dense feature tables.
+- Prefer the simplest complete solution. Avoid over-engineering, unrelated refactors, and unnecessary dependencies.
+- Commit small owner-requested changes directly to `main`. Use a branch and pull request only when requested or when a change is large or risky.
+- Keep each change focused and preserve unrelated work.
+- Run the smallest relevant checks before delivery; expand validation only when the risk justifies it.
+- Keep the public README concise, visually balanced, easy to scan, and fully bilingual in Simplified Chinese and English.
