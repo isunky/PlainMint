@@ -1,25 +1,26 @@
 #[cfg(target_os = "windows")]
 use notify::{event::ModifyKind, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 #[cfg(target_os = "windows")]
 use std::process::Command;
+use std::{
+    collections::BTreeMap,
+    fs::{self, File, OpenOptions},
+    io::{Read, Write},
+    path::{Path, PathBuf},
+    sync::{Mutex, OnceLock},
+    time::{SystemTime, UNIX_EPOCH},
+};
 #[cfg(target_os = "windows")]
 use std::{
     collections::{HashMap, HashSet},
     sync::{mpsc, Arc, RwLock},
     thread,
     time::{Duration, Instant},
-};
-use std::{
-    fs::{self, File, OpenOptions},
-    io::{Read, Write},
-    path::{Path, PathBuf},
-    sync::{Mutex, OnceLock},
-    time::{SystemTime, UNIX_EPOCH},
 };
 #[cfg(target_os = "windows")]
 use tauri::Emitter;
@@ -120,6 +121,69 @@ struct FileWatchEventPayload {
 struct ContextMenuStatus {
     supported: bool,
     enabled: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+enum DocumentTemplate {
+    Builtin {
+        id: String,
+        built_in_id: String,
+        file_name: String,
+        content: BTreeMap<String, String>,
+        #[serde(default)]
+        revision: Option<String>,
+    },
+    Custom {
+        id: String,
+        name: String,
+        description: Option<String>,
+        file_name: String,
+        content: String,
+        #[serde(default)]
+        revision: Option<String>,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TemplateDeleteRequest {
+    id: String,
+    revision: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DocumentTemplateChangesRequest {
+    defaults: Vec<DocumentTemplate>,
+    upserts: Vec<DocumentTemplate>,
+    deletes: Vec<TemplateDeleteRequest>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TemplateIssue {
+    file_name: String,
+    message: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DocumentTemplateCatalog {
+    templates: Vec<DocumentTemplate>,
+    issues: Vec<TemplateIssue>,
+    directory_path: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TemplateHeader {
+    version: u8,
+    kind: String,
+    built_in_id: Option<String>,
+    name: Option<String>,
+    description: Option<String>,
+    file_name: String,
 }
 
 #[cfg(target_os = "windows")]
@@ -906,6 +970,455 @@ fn app_data_file(app: &AppHandle, name: &str) -> CommandResult<PathBuf> {
         })
 }
 
+fn template_root(app: &AppHandle) -> CommandResult<PathBuf> {
+    let root = app_data_file(app, "templates")?;
+    fs::create_dir_all(&root).map_err(|error| AppError::io("template_directory_failed", error))?;
+    Ok(root)
+}
+
+fn template_revision(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    format!("{:x}", hasher.finalize())
+}
+
+fn valid_template_storage_id(id: &str) -> bool {
+    id.ends_with(".pmtpl")
+        && !id.is_empty()
+        && !id.contains(['/', '\\'])
+        && !id.contains("..")
+        && !id.chars().any(char::is_control)
+}
+
+fn valid_suggested_file_name(file_name: &str) -> bool {
+    let value = file_name.trim();
+    !value.is_empty()
+        && value != "."
+        && value != ".."
+        && !value.contains(['/', '\\'])
+        && !value.chars().any(|character| {
+            character.is_control() || matches!(character, '<' | '>' | ':' | '"' | '|' | '?' | '*')
+        })
+        && !value.ends_with(['.', ' '])
+}
+
+fn template_path(root: &Path, id: &str) -> CommandResult<PathBuf> {
+    if !valid_template_storage_id(id) {
+        return Err(AppError::new(
+            "template_invalid_id",
+            "templateSaveFailed",
+            Some(id.to_string()),
+        ));
+    }
+    Ok(root.join(id))
+}
+
+fn normalize_template_content(content: &str) -> String {
+    content.replace("\r\n", "\n").replace('\r', "\n")
+}
+
+fn template_header(value: Value) -> CommandResult<String> {
+    let serialized = serde_json::to_string(&value).map_err(|error| {
+        AppError::new(
+            "template_invalid",
+            "templateSaveFailed",
+            Some(error.to_string()),
+        )
+    })?;
+    Ok(format!("<!-- plainmint-template: {serialized} -->"))
+}
+
+fn validate_template(
+    template: &DocumentTemplate,
+    defaults: &[DocumentTemplate],
+) -> CommandResult<()> {
+    match template {
+        DocumentTemplate::Builtin {
+            id,
+            built_in_id,
+            file_name,
+            content,
+            ..
+        } => {
+            if !valid_template_storage_id(id)
+                || !id.starts_with("builtin-")
+                || !valid_suggested_file_name(file_name)
+            {
+                return Err(AppError::new(
+                    "template_invalid",
+                    "templateSaveFailed",
+                    Some(id.clone()),
+                ));
+            }
+            if !content.contains_key("zh-CN") || !content.contains_key("en") {
+                return Err(AppError::new(
+                    "template_invalid",
+                    "templateSaveFailed",
+                    Some(built_in_id.clone()),
+                ));
+            }
+            let known = defaults.iter().any(|candidate| matches!(candidate,
+                DocumentTemplate::Builtin { id: known_id, built_in_id: known_builtin_id, .. } if known_id == id && known_builtin_id == built_in_id
+            ));
+            if !known {
+                return Err(AppError::new(
+                    "template_unknown_builtin",
+                    "templateSaveFailed",
+                    Some(built_in_id.clone()),
+                ));
+            }
+        }
+        DocumentTemplate::Custom {
+            name, file_name, ..
+        } => {
+            if name.trim().is_empty() || !valid_suggested_file_name(file_name) {
+                return Err(AppError::new(
+                    "template_invalid",
+                    "templateSaveFailed",
+                    None,
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn serialize_template(template: &DocumentTemplate) -> CommandResult<String> {
+    match template {
+        DocumentTemplate::Builtin {
+            built_in_id,
+            file_name,
+            content,
+            ..
+        } => {
+            let header = template_header(json!({
+                "version": 1,
+                "kind": "builtin",
+                "builtInId": built_in_id,
+                "fileName": file_name.trim(),
+            }))?;
+            let zh = normalize_template_content(
+                content.get("zh-CN").map(String::as_str).unwrap_or_default(),
+            );
+            let en = normalize_template_content(
+                content.get("en").map(String::as_str).unwrap_or_default(),
+            );
+            Ok(format!("{header}\n<!-- plainmint-locale: zh-CN -->\n{zh}\n<!-- plainmint-locale: en -->\n{en}"))
+        }
+        DocumentTemplate::Custom {
+            name,
+            description,
+            file_name,
+            content,
+            ..
+        } => {
+            let header = template_header(json!({
+                "version": 1,
+                "kind": "custom",
+                "name": name.trim(),
+                "description": description.as_ref().map(|value| value.trim()).filter(|value| !value.is_empty()),
+                "fileName": file_name.trim(),
+            }))?;
+            Ok(format!("{header}\n{}", normalize_template_content(content)))
+        }
+    }
+}
+
+fn parse_template_file(
+    id: String,
+    source: &str,
+    revision: String,
+) -> Result<DocumentTemplate, String> {
+    let (header_line, body) = source.split_once('\n').unwrap_or((source, ""));
+    let prefix = "<!-- plainmint-template: ";
+    let json_source = header_line
+        .strip_prefix(prefix)
+        .and_then(|line| line.strip_suffix(" -->"))
+        .ok_or_else(|| "Missing PlainMint template header".to_string())?;
+    let header: TemplateHeader =
+        serde_json::from_str(json_source).map_err(|error| error.to_string())?;
+    if header.version != 1 || !valid_suggested_file_name(&header.file_name) {
+        return Err("Unsupported or invalid template metadata".to_string());
+    }
+    match header.kind.as_str() {
+        "builtin" => {
+            let built_in_id = header
+                .built_in_id
+                .ok_or_else(|| "Missing built-in template id".to_string())?;
+            let marker = "\n<!-- plainmint-locale: en -->\n";
+            let zh_prefix = "<!-- plainmint-locale: zh-CN -->\n";
+            let zh_and_en = body
+                .strip_prefix(zh_prefix)
+                .ok_or_else(|| "Missing Chinese template section".to_string())?;
+            let (zh, en) = zh_and_en
+                .split_once(marker)
+                .ok_or_else(|| "Missing English template section".to_string())?;
+            Ok(DocumentTemplate::Builtin {
+                id,
+                built_in_id,
+                file_name: header.file_name,
+                content: BTreeMap::from([
+                    ("zh-CN".to_string(), zh.to_string()),
+                    ("en".to_string(), en.to_string()),
+                ]),
+                revision: Some(revision),
+            })
+        }
+        "custom" => Ok(DocumentTemplate::Custom {
+            id,
+            name: header.name.unwrap_or_default(),
+            description: header.description.filter(|value| !value.trim().is_empty()),
+            file_name: header.file_name,
+            content: body.to_string(),
+            revision: Some(revision),
+        }),
+        _ => Err("Unknown template type".to_string()),
+    }
+}
+
+fn default_builtins(defaults: &[DocumentTemplate]) -> CommandResult<Vec<DocumentTemplate>> {
+    let builtins = defaults
+        .iter()
+        .filter(|template| matches!(template, DocumentTemplate::Builtin { .. }))
+        .cloned()
+        .collect::<Vec<_>>();
+    for template in &builtins {
+        validate_template(template, defaults)?;
+    }
+    Ok(builtins)
+}
+
+fn load_document_templates_inner(
+    app: &AppHandle,
+    defaults: &[DocumentTemplate],
+) -> CommandResult<DocumentTemplateCatalog> {
+    let root = template_root(app)?;
+    let builtins = default_builtins(defaults)?;
+    for template in &builtins {
+        let id = match template {
+            DocumentTemplate::Builtin { id, .. } => id,
+            _ => unreachable!(),
+        };
+        let path = template_path(&root, id)?;
+        if !path.exists() {
+            atomic_write(&path, serialize_template(template)?.as_bytes())?;
+        }
+    }
+
+    let mut parsed = BTreeMap::<String, DocumentTemplate>::new();
+    let mut invalid_revisions = BTreeMap::<String, String>::new();
+    let mut issues = Vec::new();
+    for entry in fs::read_dir(&root)
+        .map_err(|error| AppError::io("template_directory_read_failed", error))?
+    {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                issues.push(TemplateIssue {
+                    file_name: "unknown".to_string(),
+                    message: error.to_string(),
+                });
+                continue;
+            }
+        };
+        let file_name = entry.file_name().to_string_lossy().to_string();
+        if !valid_template_storage_id(&file_name)
+            || !entry
+                .file_type()
+                .map(|kind| kind.is_file())
+                .unwrap_or(false)
+        {
+            continue;
+        }
+        let bytes = match fs::read(entry.path()) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                issues.push(TemplateIssue {
+                    file_name,
+                    message: error.to_string(),
+                });
+                continue;
+            }
+        };
+        let revision = template_revision(&bytes);
+        let source = match String::from_utf8(bytes.clone()) {
+            Ok(source) => source,
+            Err(_) => {
+                invalid_revisions.insert(file_name.clone(), revision);
+                issues.push(TemplateIssue {
+                    file_name,
+                    message: "Template must be UTF-8 text".to_string(),
+                });
+                continue;
+            }
+        };
+        match parse_template_file(file_name.clone(), &source, revision.clone()) {
+            Ok(template) => {
+                let valid_kind = match &template {
+                    DocumentTemplate::Builtin { id, built_in_id, .. } => builtins.iter().any(|default| matches!(default, DocumentTemplate::Builtin { id: default_id, built_in_id: default_builtin_id, .. } if default_id == id && default_builtin_id == built_in_id)),
+                    DocumentTemplate::Custom { .. } => !file_name.starts_with("builtin-"),
+                };
+                if valid_kind {
+                    parsed.insert(file_name, template);
+                } else {
+                    issues.push(TemplateIssue {
+                        file_name,
+                        message: "Template metadata does not match its file".to_string(),
+                    });
+                }
+            }
+            Err(message) => {
+                invalid_revisions.insert(file_name.clone(), revision);
+                issues.push(TemplateIssue { file_name, message });
+            }
+        }
+    }
+
+    let mut templates = Vec::new();
+    for default in builtins {
+        let id = match &default {
+            DocumentTemplate::Builtin { id, .. } => id.clone(),
+            _ => unreachable!(),
+        };
+        if let Some(template) = parsed.remove(&id) {
+            templates.push(template);
+        } else {
+            let mut fallback = default;
+            if let Some(revision) = invalid_revisions.remove(&id) {
+                match &mut fallback {
+                    DocumentTemplate::Builtin {
+                        revision: fallback_revision,
+                        ..
+                    } => *fallback_revision = Some(revision),
+                    DocumentTemplate::Custom { .. } => unreachable!(),
+                }
+            }
+            templates.push(fallback);
+        }
+    }
+    let mut customs = parsed
+        .into_values()
+        .filter(|template| matches!(template, DocumentTemplate::Custom { .. }))
+        .collect::<Vec<_>>();
+    customs.sort_by(|left, right| match (left, right) {
+        (
+            DocumentTemplate::Custom { name: left, .. },
+            DocumentTemplate::Custom { name: right, .. },
+        ) => left.to_lowercase().cmp(&right.to_lowercase()),
+        _ => std::cmp::Ordering::Equal,
+    });
+    templates.extend(customs);
+    Ok(DocumentTemplateCatalog {
+        templates,
+        issues,
+        directory_path: root.to_string_lossy().to_string(),
+    })
+}
+
+#[tauri::command(async)]
+fn load_document_templates(
+    app: AppHandle,
+    defaults: Vec<DocumentTemplate>,
+) -> CommandResult<DocumentTemplateCatalog> {
+    load_document_templates_inner(&app, &defaults)
+}
+
+#[tauri::command(async)]
+fn apply_document_template_changes(
+    app: AppHandle,
+    request: DocumentTemplateChangesRequest,
+) -> CommandResult<DocumentTemplateCatalog> {
+    let root = template_root(&app)?;
+    let builtins = default_builtins(&request.defaults)?;
+    let mut writes = Vec::<(PathBuf, DocumentTemplate)>::new();
+    let mut deletes = Vec::<PathBuf>::new();
+    for template in request.upserts {
+        validate_template(&template, &request.defaults)?;
+        let (id, existing_allowed) = match &template {
+            DocumentTemplate::Builtin { id, .. } => (id.clone(), true),
+            DocumentTemplate::Custom { id, .. } if valid_template_storage_id(id) => {
+                (id.clone(), true)
+            }
+            DocumentTemplate::Custom { .. } => (format!("custom-{}.pmtpl", Uuid::new_v4()), false),
+        };
+        let path = template_path(&root, &id)?;
+        let actual_revision = fs::read(&path).ok().map(|bytes| template_revision(&bytes));
+        let expected_revision = match &template {
+            DocumentTemplate::Builtin { revision, .. }
+            | DocumentTemplate::Custom { revision, .. } => revision,
+        };
+        if existing_allowed && actual_revision.as_deref() != expected_revision.as_deref() {
+            return Err(AppError::new(
+                "template_conflict",
+                "templateConflict",
+                Some(id),
+            ));
+        }
+        let stored = match template {
+            DocumentTemplate::Builtin {
+                built_in_id,
+                file_name,
+                content,
+                revision,
+                ..
+            } => DocumentTemplate::Builtin {
+                id,
+                built_in_id,
+                file_name,
+                content,
+                revision,
+            },
+            DocumentTemplate::Custom {
+                name,
+                description,
+                file_name,
+                content,
+                revision,
+                ..
+            } => DocumentTemplate::Custom {
+                id,
+                name,
+                description,
+                file_name,
+                content,
+                revision,
+            },
+        };
+        writes.push((path, stored));
+    }
+    for delete in request.deletes {
+        if !valid_template_storage_id(&delete.id) || delete.id.starts_with("builtin-") {
+            return Err(AppError::new(
+                "template_invalid_delete",
+                "templateSaveFailed",
+                Some(delete.id),
+            ));
+        }
+        let path = template_path(&root, &delete.id)?;
+        let actual_revision = fs::read(&path).ok().map(|bytes| template_revision(&bytes));
+        if actual_revision.as_deref() != delete.revision.as_deref() {
+            return Err(AppError::new(
+                "template_conflict",
+                "templateConflict",
+                Some(delete.id),
+            ));
+        }
+        deletes.push(path);
+    }
+    for (path, template) in writes {
+        atomic_write(&path, serialize_template(&template)?.as_bytes())?;
+    }
+    for path in deletes {
+        fs::remove_file(path).map_err(|error| AppError::io("template_delete_failed", error))?;
+    }
+    load_document_templates_inner(&app, &builtins)
+}
+
+#[tauri::command(async)]
+fn document_templates_directory(app: AppHandle) -> CommandResult<String> {
+    Ok(template_root(&app)?.to_string_lossy().to_string())
+}
+
 fn begin_lifecycle(path: &Path, now: u64) -> CommandResult<StartupStatus> {
     let previous = if path.exists() {
         match fs::read(path) {
@@ -1677,6 +2190,9 @@ pub fn run() {
             save_file,
             load_settings,
             save_settings,
+            load_document_templates,
+            apply_document_template_changes,
+            document_templates_directory,
             begin_app_session,
             close_app_window,
             save_session,
@@ -1723,6 +2239,47 @@ mod tests {
         let path = directory.join(format!("{created_at}-{id}.json"));
         fs::write(&path, serde_json::to_vec(&backup).unwrap()).unwrap();
         path
+    }
+
+    #[test]
+    fn round_trips_readable_plain_text_template_files() {
+        let template = DocumentTemplate::Builtin {
+            id: "builtin-meeting-notes.pmtpl".into(),
+            built_in_id: "meeting-notes".into(),
+            file_name: "meeting-notes.txt".into(),
+            content: BTreeMap::from([
+                ("zh-CN".into(), "会议记录\n====\n".into()),
+                ("en".into(), "MEETING NOTES\n=============\n".into()),
+            ]),
+            revision: None,
+        };
+        let source = serialize_template(&template).unwrap();
+        let parsed = parse_template_file(
+            "builtin-meeting-notes.pmtpl".into(),
+            &source,
+            "revision".into(),
+        )
+        .unwrap();
+        match parsed {
+            DocumentTemplate::Builtin {
+                file_name,
+                content,
+                revision,
+                ..
+            } => {
+                assert_eq!(file_name, "meeting-notes.txt");
+                assert_eq!(content.get("zh-CN").unwrap(), "会议记录\n====\n");
+                assert_eq!(revision.as_deref(), Some("revision"));
+            }
+            DocumentTemplate::Custom { .. } => panic!("expected built-in template"),
+        }
+    }
+
+    #[test]
+    fn rejects_unsafe_suggested_template_file_names() {
+        assert!(valid_suggested_file_name("weekly.txt"));
+        assert!(!valid_suggested_file_name("nested/weekly.txt"));
+        assert!(!valid_suggested_file_name("weekly?.txt"));
     }
 
     #[test]

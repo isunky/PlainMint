@@ -238,16 +238,16 @@ describe("tab and split interactions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Templates" }));
     const dialog = screen.getByRole("dialog", { name: "New from template" });
     expect(within(dialog).getAllByRole("button")).toHaveLength(7);
-    expect(within(dialog).getByText("Templates are built into PlainMint and work entirely offline.")).toBeVisible();
+    expect(within(dialog).getByText("Templates are stored locally and work entirely offline.")).toBeVisible();
 
     fireEvent.click(within(dialog).getByRole("button", { name: /Meeting notes/ }));
 
     expect(screen.queryByRole("dialog", { name: "New from template" })).not.toBeInTheDocument();
-    const created = Object.values(useAppStore.getState().documents).find((document) => document.fileName === "meeting-notes.md");
+    const created = Object.values(useAppStore.getState().documents).find((document) => document.fileName === "meeting-notes.txt");
     expect(created?.filePath).toBeUndefined();
     expect(created).toMatchObject({
-      content: expect.stringContaining("# Meeting notes"),
-      languageMode: "markdown",
+      content: expect.stringContaining("MEETING NOTES"),
+      languageMode: "plain",
       dirty: true,
     });
   });

@@ -37,7 +37,15 @@ import i18n, { resolveLocale } from "./i18n";
 import { isAutoSaveEligible, isAutoSaveRevisionSuppressed } from "./autoSavePolicy";
 import { needsExitSaveConfirmation, needsSaveConfirmation } from "./closePolicy";
 import { displayDocumentName } from "./documentName";
-import { createDocumentTemplate, documentTemplates, type DocumentTemplateId } from "./documentTemplates";
+import {
+  builtInDocumentTemplates,
+  createDocumentTemplate,
+  templateDescription,
+  templateDisplayName,
+  type DocumentTemplate,
+  type DocumentTemplateCatalog,
+  type DocumentTemplateChanges,
+} from "./documentTemplates";
 import { buildEditorFontFamily } from "./fontSettings";
 import { createWorkspaceSession, decideStartupRecovery } from "./recoveryPolicy";
 import { resolveInitialSaveFolder } from "./saveFolderPolicy";
@@ -60,6 +68,7 @@ import {
 
 import {
   beginAppSession,
+  applyDocumentTemplateChanges,
   appErrorCode,
   checkForUpdates,
   chooseAndOpenDocuments,
@@ -78,6 +87,7 @@ import {
   listRecoveries,
   loadRecentFiles,
   loadRecentlyClosedTabs,
+  loadDocumentTemplates,
   loadSession,
   loadSettings,
   minimizeWindow,
@@ -87,6 +97,7 @@ import {
   persistSettings,
   pruneRecoveries,
   openDocumentPath,
+  openDocumentTemplatesDirectory,
   revealFileInDirectory,
   restoreRecoveries,
   saveDocument,
@@ -1176,11 +1187,15 @@ function EditorPane({ pane, onCloseTab, onActivateTab, onTabPointerDown, onTabCo
   );
 }
 
-function TemplateModal({ onClose, onSelect }: {
+function TemplateModal({ templates, loading, issues, onClose, onSelect }: {
+  templates: DocumentTemplate[];
+  loading: boolean;
+  issues: number;
   onClose: () => void;
-  onSelect: (id: DocumentTemplateId) => void;
+  onSelect: (template: DocumentTemplate) => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = resolveLocale(i18n.language === "zh-CN" ? "zh-CN" : "en");
   return (
     <div className="modal-backdrop">
       <section className="confirm-modal template-modal" role="dialog" aria-modal="true" aria-labelledby="template-modal-title">
@@ -1191,19 +1206,19 @@ function TemplateModal({ onClose, onSelect }: {
           </div>
           <IconButton label={t("close")} onClick={onClose}><X size={19} /></IconButton>
         </header>
-        <div className="template-grid">
-          {documentTemplates.map((template) => (
-            <button key={template.id} type="button" className="template-card" onClick={() => onSelect(template.id)}>
+        {loading && templates.length === 0 ? <p className="template-loading">{t("loadingTemplates")}</p> : <div className="template-grid">
+          {templates.map((template) => (
+            <button key={template.id} type="button" className="template-card" onClick={() => onSelect(template)}>
               <span className="template-card-icon"><FileText size={21} /></span>
               <span className="template-card-copy">
-                <strong>{t(`templateName_${template.id}`)}</strong>
-                <span>{t(`templateDescription_${template.id}`)}</span>
+                <strong>{templateDisplayName(template, locale, t)}</strong>
+                <span>{templateDescription(template, locale, t)}</span>
                 <small>{template.fileName}</small>
               </span>
             </button>
           ))}
-        </div>
-        <p className="template-privacy-note">{t("templatePrivacyNote")}</p>
+        </div>}
+        <p className="template-privacy-note">{t("templatePrivacyNote")}{issues > 0 ? ` ${t("templateIssues", { count: issues })}` : ""}</p>
       </section>
     </div>
   );
@@ -1665,6 +1680,9 @@ export function App() {
   const [hydrated, setHydrated] = useState(false);
   const [directoryChecks, setDirectoryChecks] = useState<Record<DirectoryField, DirectoryCheck>>(emptyDirectoryChecks);
   const [settingsApplying, setSettingsApplying] = useState(false);
+  const [templateCatalog, setTemplateCatalog] = useState<DocumentTemplateCatalog>(() => ({ templates: structuredClone(builtInDocumentTemplates), issues: [] }));
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [templatesError, setTemplatesError] = useState("");
   const [tabDrag, setTabDrag] = useState<TabDragView | null>(null);
   const [tabContextMenu, setTabContextMenu] = useState<TabContextMenuState | null>(null);
   const [resizingSplit, setResizingSplit] = useState(false);
@@ -1699,9 +1717,28 @@ export function App() {
   const settingsMetadataRequested = useRef(false);
   const sessionPersistenceStarted = useRef(false);
 
+  const refreshTemplates = useCallback(async () => {
+    setTemplatesLoading(true);
+    try {
+      const catalog = await loadDocumentTemplates(builtInDocumentTemplates);
+      setTemplateCatalog(catalog);
+      setTemplatesError("");
+      return catalog;
+    } catch {
+      setTemplatesError(t("templatesLoadFailed"));
+      return undefined;
+    } finally {
+      setTemplatesLoading(false);
+    }
+  }, [t]);
+
   useEffect(() => {
     document.getElementById("startup-titlebar")?.remove();
   }, []);
+
+  useEffect(() => {
+    if (modal.type === "templates" || modal.type === "settings") void refreshTemplates();
+  }, [modal.type, refreshTemplates]);
 
   const requestEditorRuntime = useCallback((pane?: PaneId) => {
     setEditorRuntimeReady(true);
@@ -2324,7 +2361,7 @@ export function App() {
     void validateSettingsDirectory("cloudSyncFolder", settings.cloudSyncFolder);
   }, [modal.type, settings.defaultSaveFolder, settings.cloudSyncFolder, validateSettingsDirectory]);
 
-  const applySettings = useCallback(async () => {
+  const applySettings = useCallback(async (templateChanges?: DocumentTemplateChanges) => {
     if (settingsApplying) return;
     setSettingsApplying(true);
     const nextSettings = useAppStore.getState().settings;
@@ -2334,6 +2371,10 @@ export function App() {
         validateSettingsDirectory("cloudSyncFolder", nextSettings.cloudSyncFolder),
       ]);
       if (!defaultValid || !cloudValid) return;
+      if (templateChanges && (templateChanges.upserts.length > 0 || templateChanges.deletes.length > 0)) {
+        const catalog = await applyDocumentTemplateChanges(builtInDocumentTemplates, templateChanges);
+        setTemplateCatalog(catalog);
+      }
       await Promise.all([persistSettings(nextSettings), pruneRecoveries(nextSettings)]);
       setModal({ type: "none" });
       flash(t("settingsSaved"));
@@ -2967,10 +3008,13 @@ export function App() {
 
       {modal.type === "templates" && (
         <TemplateModal
+          templates={templateCatalog.templates}
+          loading={templatesLoading}
+          issues={templateCatalog.issues.length}
           onClose={() => setModal({ type: "none" })}
-          onSelect={(id) => {
+          onSelect={(template) => {
             const pane = modal.pane;
-            createDocument(pane, createDocumentTemplate(id, resolveLocale(settings.locale)));
+            createDocument(pane, createDocumentTemplate(template, resolveLocale(settings.locale)));
             setModal({ type: "none" });
             requestEditorRuntime(pane);
           }}
@@ -2989,7 +3033,7 @@ export function App() {
             !settings[field] || directoryChecks[field].status === "valid"
           ))}
           onChange={updateSettings}
-          onApply={() => void applySettings()}
+          onApply={(changes) => void applySettings(changes)}
           onCancel={() => { loadSettingsIntoStore(modal.snapshot); setModal({ type: "none" }); }}
           onChooseDirectory={(field) => void chooseDirectory().then((path) => {
             if (!path) return;
@@ -3004,6 +3048,11 @@ export function App() {
           contextMenuStatus={contextMenuStatus}
           contextMenuBusy={contextMenuBusy}
           onContextMenuChange={(enabled) => void changeContextMenu(enabled)}
+          templates={templateCatalog}
+          templatesLoading={templatesLoading}
+          templatesError={templatesError}
+          onRefreshTemplates={() => void refreshTemplates()}
+          onOpenTemplatesDirectory={() => void openDocumentTemplatesDirectory().catch(() => flash(t("templatesFolderFailed")))}
         />
       )}
       {modal.type === "recovery" && <RecoveryModal onClose={() => setModal({ type: "none" })} />}

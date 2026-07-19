@@ -6,7 +6,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
+import { openPath, openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
 import { isUntitledDocument, untitledSaveFileName } from "../documentName";
@@ -27,6 +27,7 @@ import type {
   UserSettings,
   WorkspaceSession,
 } from "../types";
+import type { DocumentTemplateCatalog, DocumentTemplateChanges, DocumentTemplate } from "../documentTemplates";
 
 export interface SaveDocumentOptions {
   forceSaveAs?: boolean;
@@ -61,6 +62,8 @@ export type UpdateCheckResult = {
 };
 
 export const isTauri = () => Boolean(window.__TAURI_INTERNALS__);
+
+const templateStorageKey = "plainmint.document-templates";
 
 let webStartupStatus: StartupStatus | undefined;
 
@@ -413,6 +416,45 @@ export async function toggleMaximizeWindow() {
 
 export async function startDraggingWindow() {
   if (isTauri()) await getCurrentWindow().startDragging();
+}
+
+export async function loadDocumentTemplates(defaults: DocumentTemplate[]): Promise<DocumentTemplateCatalog> {
+  if (!isTauri()) {
+    const raw = localStorage.getItem(templateStorageKey);
+    if (!raw) return { templates: structuredClone(defaults), issues: [] };
+    try {
+      const catalog = JSON.parse(raw) as DocumentTemplateCatalog;
+      return { templates: catalog.templates?.length ? catalog.templates : structuredClone(defaults), issues: catalog.issues ?? [] };
+    } catch {
+      return { templates: structuredClone(defaults), issues: [] };
+    }
+  }
+  return invoke<DocumentTemplateCatalog>("load_document_templates", { defaults });
+}
+
+export async function applyDocumentTemplateChanges(
+  defaults: DocumentTemplate[],
+  changes: DocumentTemplateChanges,
+): Promise<DocumentTemplateCatalog> {
+  if (!isTauri()) {
+    const current = await loadDocumentTemplates(defaults);
+    const currentById = new Map(current.templates.map((template) => [template.id, template]));
+    for (const template of changes.upserts) currentById.set(template.id, structuredClone(template));
+    for (const deleted of changes.deletes) currentById.delete(deleted.id);
+    const templates = [...currentById.values()];
+    const catalog = { templates, issues: [] } satisfies DocumentTemplateCatalog;
+    localStorage.setItem(templateStorageKey, JSON.stringify(catalog));
+    return catalog;
+  }
+  return invoke<DocumentTemplateCatalog>("apply_document_template_changes", {
+    request: { defaults, ...changes },
+  });
+}
+
+export async function openDocumentTemplatesDirectory() {
+  if (!isTauri()) return;
+  const path = await invoke<string>("document_templates_directory");
+  await openPath(path);
 }
 
 export async function readClipboardText() {

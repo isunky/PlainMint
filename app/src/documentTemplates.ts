@@ -1,6 +1,9 @@
-import type { LanguageMode } from "./types";
+import { detectLanguage } from "./languageMetadata";
+import type { LanguageId } from "./types";
 
-export type DocumentTemplateId =
+export type TemplateLocale = "zh-CN" | "en";
+
+export type BuiltInDocumentTemplateId =
   | "meeting-notes"
   | "daily-note"
   | "todo-list"
@@ -8,88 +11,154 @@ export type DocumentTemplateId =
   | "issue-report"
   | "readme";
 
-export interface DocumentTemplateDefinition {
-  id: DocumentTemplateId;
+export type DocumentTemplateId = string;
+
+export interface BuiltInDocumentTemplate {
+  id: string;
+  kind: "builtin";
+  builtInId: BuiltInDocumentTemplateId;
   fileName: string;
-  languageMode: Exclude<LanguageMode, "auto">;
+  content: Record<TemplateLocale, string>;
+  revision?: string;
+}
+
+export interface CustomDocumentTemplate {
+  id: string;
+  kind: "custom";
+  name: string;
+  description?: string;
+  fileName: string;
+  content: string;
+  revision?: string;
+}
+
+export type DocumentTemplate = BuiltInDocumentTemplate | CustomDocumentTemplate;
+
+export interface TemplateIssue {
+  fileName: string;
+  message: string;
+}
+
+export interface DocumentTemplateCatalog {
+  templates: DocumentTemplate[];
+  issues: TemplateIssue[];
+  directoryPath?: string;
+}
+
+export interface TemplateDeleteRequest {
+  id: string;
+  revision?: string;
+}
+
+export interface DocumentTemplateChanges {
+  upserts: DocumentTemplate[];
+  deletes: TemplateDeleteRequest[];
 }
 
 export interface DocumentTemplatePreset {
   fileName: string;
   content: string;
-  languageMode: Exclude<LanguageMode, "auto">;
+  languageMode: LanguageId;
 }
 
-export const documentTemplates: DocumentTemplateDefinition[] = [
-  { id: "meeting-notes", fileName: "meeting-notes.md", languageMode: "markdown" },
-  { id: "daily-note", fileName: "daily-note.md", languageMode: "markdown" },
-  { id: "todo-list", fileName: "todo-list.md", languageMode: "markdown" },
-  { id: "project-plan", fileName: "project-plan.md", languageMode: "markdown" },
-  { id: "issue-report", fileName: "issue-report.md", languageMode: "markdown" },
-  { id: "readme", fileName: "README.md", languageMode: "markdown" },
-];
+const builtInTemplateContent: Record<BuiltInDocumentTemplateId, Record<TemplateLocale, string>> = {
+  "meeting-notes": {
+    "zh-CN": "会议记录\n========\n\n日期：{{date}}\n主题：\n参与者：\n\n议程\n----\n• \n\n讨论要点\n--------\n• \n\n决议\n----\n• \n\n后续行动\n--------\n事项：\n负责人：\n截止日期：\n",
+    en: "MEETING NOTES\n=============\n\nDate: {{date}}\nTopic:\nAttendees:\n\nAGENDA\n------\n• \n\nDISCUSSION\n----------\n• \n\nDECISIONS\n---------\n• \n\nACTION ITEMS\n------------\nItem:\nOwner:\nDue date:\n",
+  },
+  "daily-note": {
+    "zh-CN": "每日记录 {{date}}\n==================\n\n今日重点\n--------\n1. \n2. \n3. \n\n随手记录\n--------\n\n待办\n----\n• \n\n今日回顾\n--------\n完成：\n阻碍：\n明日：\n",
+    en: "DAILY NOTE — {{date}}\n=====================\n\nTOP PRIORITIES\n--------------\n1. \n2. \n3. \n\nNOTES\n-----\n\nTASKS\n-----\n• \n\nREFLECTION\n----------\nCompleted:\nBlocked by:\nTomorrow:\n",
+  },
+  "todo-list": {
+    "zh-CN": "待办清单\n========\n\n收集箱\n------\n• \n\n今天\n----\n• \n\n稍后\n----\n• \n\n已完成\n------\n• \n",
+    en: "TO-DO LIST\n==========\n\nINBOX\n-----\n• \n\nTODAY\n-----\n• \n\nLATER\n-----\n• \n\nCOMPLETED\n---------\n• \n",
+  },
+  "project-plan": {
+    "zh-CN": "项目计划\n========\n\n目标\n----\n\n范围\n----\n包含：\n\n不包含：\n\n里程碑\n------\n名称：\n日期：\n\n任务\n----\n事项：\n负责人：\n\n风险与对策\n----------\n风险：\n对策：\n",
+    en: "PROJECT PLAN\n============\n\nOBJECTIVE\n---------\n\nSCOPE\n-----\nIncluded:\n\nNot included:\n\nMILESTONES\n----------\nName:\nDate:\n\nTASKS\n-----\nItem:\nOwner:\n\nRISKS AND RESPONSES\n-------------------\nRisk:\nResponse:\n",
+  },
+  "issue-report": {
+    "zh-CN": "问题记录\n========\n\n日期：{{date}}\n\n摘要\n----\n\n环境\n----\n系统：\nPlainMint 版本：\n文件类型与编码：\n\n复现步骤\n--------\n1. \n2. \n3. \n\n预期结果\n--------\n\n实际结果\n--------\n\n补充信息\n--------\n",
+    en: "ISSUE REPORT\n============\n\nDate: {{date}}\n\nSUMMARY\n-------\n\nENVIRONMENT\n-----------\nSystem:\nPlainMint version:\nFile type and encoding:\n\nSTEPS TO REPRODUCE\n------------------\n1. \n2. \n3. \n\nEXPECTED RESULT\n---------------\n\nACTUAL RESULT\n-------------\n\nADDITIONAL CONTEXT\n------------------\n",
+  },
+  readme: {
+    "zh-CN": "项目名称\n========\n\n一句话介绍项目。\n\n功能\n----\n• \n\n使用方法\n--------\n\n配置\n----\n\n许可证\n------\n",
+    en: "PROJECT NAME\n============\n\nA short project description.\n\nFEATURES\n--------\n• \n\nUSAGE\n-----\n\nCONFIGURATION\n-------------\n\nLICENSE\n-------\n",
+  },
+};
 
-function localDate(now: Date) {
+const builtInFileNames: Record<BuiltInDocumentTemplateId, string> = {
+  "meeting-notes": "meeting-notes.txt",
+  "daily-note": "daily-note.txt",
+  "todo-list": "todo-list.txt",
+  "project-plan": "project-plan.txt",
+  "issue-report": "issue-report.txt",
+  readme: "README.txt",
+};
+
+export const builtInDocumentTemplates: BuiltInDocumentTemplate[] = (Object.keys(builtInFileNames) as BuiltInDocumentTemplateId[]).map((builtInId) => ({
+  id: `builtin-${builtInId}.pmtpl`,
+  kind: "builtin",
+  builtInId,
+  fileName: builtInFileNames[builtInId],
+  content: builtInTemplateContent[builtInId],
+}));
+
+export const documentTemplates = builtInDocumentTemplates;
+
+export function cloneTemplate<T extends DocumentTemplate>(template: T): T {
+  return structuredClone(template);
+}
+
+export function cloneTemplateCatalog(catalog: DocumentTemplateCatalog): DocumentTemplateCatalog {
+  return structuredClone(catalog);
+}
+
+export function localDate(now: Date) {
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, "0");
   const day = String(now.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
 
-function contentFor(id: DocumentTemplateId, locale: "zh-CN" | "en", date: string) {
-  const zh = locale === "zh-CN";
-  const templates: Record<DocumentTemplateId, string[]> = zh ? {
-    "meeting-notes": [
-      "# 会议记录", "", `日期：${date}`, "主题：", "参与者：", "", "## 议程", "- ", "", "## 讨论要点", "- ", "", "## 决议", "- ", "", "## 后续行动", "- [ ] 事项 — 负责人： — 截止日期：",
-    ],
-    "daily-note": [
-      `# 每日记录 · ${date}`, "", "## 今日重点", "1. ", "2. ", "3. ", "", "## 随手记录", "- ", "", "## 待办", "- [ ] ", "", "## 今日回顾", "- 完成：", "- 阻碍：", "- 明日：",
-    ],
-    "todo-list": [
-      "# 待办清单", "", "## 收集箱", "- [ ] ", "", "## 今天", "- [ ] ", "", "## 稍后", "- [ ] ", "", "## 已完成", "- [x] ",
-    ],
-    "project-plan": [
-      "# 项目计划", "", "## 目标", "", "## 范围", "### 包含", "- ", "", "### 不包含", "- ", "", "## 里程碑", "- [ ] 里程碑 1 — 日期：", "", "## 任务", "- [ ] 事项 — 负责人：", "", "## 风险与对策", "- 风险：", "  - 对策：",
-    ],
-    "issue-report": [
-      "# 问题记录", "", `日期：${date}`, "", "## 摘要", "", "## 环境", "- 系统：", "- PlainMint 版本：", "- 文件类型与编码：", "", "## 复现步骤", "1. ", "2. ", "3. ", "", "## 预期结果", "", "## 实际结果", "", "## 补充信息", "",
-    ],
-    readme: [
-      "# 项目名称", "", "一句话介绍项目。", "", "## 功能", "- ", "", "## 使用方法", "```text", "在此填写使用说明", "```", "", "## 配置", "- ", "", "## 许可证", "",
-    ],
-  } : {
-    "meeting-notes": [
-      "# Meeting notes", "", `Date: ${date}`, "Topic:", "Attendees:", "", "## Agenda", "- ", "", "## Discussion", "- ", "", "## Decisions", "- ", "", "## Action items", "- [ ] Item — Owner: — Due:",
-    ],
-    "daily-note": [
-      `# Daily note · ${date}`, "", "## Top priorities", "1. ", "2. ", "3. ", "", "## Notes", "- ", "", "## Tasks", "- [ ] ", "", "## Reflection", "- Completed:", "- Blocked by:", "- Tomorrow:",
-    ],
-    "todo-list": [
-      "# To-do list", "", "## Inbox", "- [ ] ", "", "## Today", "- [ ] ", "", "## Later", "- [ ] ", "", "## Completed", "- [x] ",
-    ],
-    "project-plan": [
-      "# Project plan", "", "## Objective", "", "## Scope", "### Included", "- ", "", "### Not included", "- ", "", "## Milestones", "- [ ] Milestone 1 — Date:", "", "## Tasks", "- [ ] Item — Owner:", "", "## Risks and responses", "- Risk:", "  - Response:",
-    ],
-    "issue-report": [
-      "# Issue report", "", `Date: ${date}`, "", "## Summary", "", "## Environment", "- System:", "- PlainMint version:", "- File type and encoding:", "", "## Steps to reproduce", "1. ", "2. ", "3. ", "", "## Expected result", "", "## Actual result", "", "## Additional context", "",
-    ],
-    readme: [
-      "# Project name", "", "A short project description.", "", "## Features", "- ", "", "## Usage", "```text", "Add usage instructions here", "```", "", "## Configuration", "- ", "", "## License", "",
-    ],
-  };
-  return `${templates[id].join("\n")}\n`;
+export function templateDisplayName(template: DocumentTemplate, locale: TemplateLocale, translate: (key: string) => string) {
+  return template.kind === "builtin" ? translate(`templateName_${template.builtInId}`) : template.name;
 }
 
-export function createDocumentTemplate(
-  id: DocumentTemplateId,
-  locale: "zh-CN" | "en",
-  now = new Date(),
-): DocumentTemplatePreset {
-  const template = documentTemplates.find((candidate) => candidate.id === id);
-  if (!template) throw new Error(`Unknown document template: ${id}`);
+export function templateDescription(template: DocumentTemplate, locale: TemplateLocale, translate: (key: string) => string) {
+  void locale;
+  return template.kind === "builtin" ? translate(`templateDescription_${template.builtInId}`) : template.description;
+}
+
+function contentFor(template: DocumentTemplate, locale: TemplateLocale) {
+  return template.kind === "builtin" ? template.content[locale] : template.content;
+}
+
+export function createDocumentTemplate(template: DocumentTemplate, locale: TemplateLocale, now = new Date()): DocumentTemplatePreset {
+  const content = contentFor(template, locale).replaceAll("{{date}}", localDate(now));
   return {
     fileName: template.fileName,
-    languageMode: template.languageMode,
-    content: contentFor(id, locale, localDate(now)),
+    content,
+    languageMode: detectLanguage(template.fileName, content),
   };
+}
+
+export function isSafeSuggestedFileName(fileName: string) {
+  const value = fileName.trim();
+  return Boolean(value)
+    && value !== "."
+    && value !== ".."
+    && !/[\\/:*?"<>|\u0000-\u001F]/.test(value)
+    && !/[.\s]$/.test(value);
+}
+
+export function templateChanges(before: DocumentTemplateCatalog, after: DocumentTemplateCatalog): DocumentTemplateChanges {
+  const beforeById = new Map(before.templates.map((template) => [template.id, template]));
+  const afterById = new Map(after.templates.map((template) => [template.id, template]));
+  const upserts = after.templates.filter((template) => JSON.stringify(template) !== JSON.stringify(beforeById.get(template.id)));
+  const deletes = before.templates
+    .filter((template) => template.kind === "custom" && !afterById.has(template.id))
+    .map((template) => ({ id: template.id, revision: template.revision }));
+  return { upserts, deletes };
 }

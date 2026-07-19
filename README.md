@@ -35,7 +35,7 @@ PlainMint 是一款面向 Windows 与 macOS 的轻量纯文本编辑器。它在
 ### 核心功能
 
 - **清爽而高效** — 多标签、左右分屏、查找替换与撤销重做，让常用操作顺手完成
-- **提笔即可开始** — 内置会议、每日记录、待办、项目计划、问题记录与 README 模板
+- **提笔即可开始** — 内置会议、每日记录、待办、项目计划、问题记录与 README 纯文本模板，并可在设置中自定义
 - **安心不打扰** — 自动备份、会话恢复与外部变更检测，默默守护每次编辑
 - **忠于原文件** — 保留 UTF-8 / UTF-16 编码，以及 LF / CRLF / CR 换行格式
 - **观感随心** — 自动换行、行号、明暗主题与五种强调色，舒适而克制
@@ -59,7 +59,7 @@ PlainMint is a lightweight plain-text editor for Windows and macOS. It keeps jus
 ### Highlights
 
 - **Clean and efficient** — Tabs, split view, find and replace, undo and redo
-- **Ready when you are** — Built-in templates for meetings, daily notes, tasks, project plans, issues, and READMEs
+- **Ready when you are** — Built-in plain-text templates for meetings, daily notes, tasks, project plans, issues, and READMEs, customizable in Settings
 - **Quietly dependable** — Automatic backups, session recovery, and external-change detection
 - **Faithful to your files** — Preserves UTF-8 / UTF-16 and LF / CRLF / CR
 - **Comfortable by design** — Word wrap, line numbers, light and dark modes, and five accents

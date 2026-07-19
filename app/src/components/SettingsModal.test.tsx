@@ -123,7 +123,7 @@ describe("settings runtime controls", () => {
     />);
 
     expect(Array.from(container.querySelectorAll(".settings-sidebar nav button")).map((button) => button.textContent)).toEqual([
-      "General", "Editor", "Files & folders", "Backup & recovery", "Appearance", "Keyboard shortcuts", "About",
+      "General", "Editor", "Files & folders", "Templates", "Backup & recovery", "Appearance", "Keyboard shortcuts", "About",
     ]);
 
     fireEvent.click(screen.getByRole("button", { name: "Keyboard shortcuts" }));
@@ -138,6 +138,28 @@ describe("settings runtime controls", () => {
     expect(website).toHaveAttribute("href", "http://www.sunky.net");
     fireEvent.click(website);
     expect(handlers.onOpenAuthorWebsite).toHaveBeenCalledOnce();
+  });
+
+  it("stages a custom plain-text template until settings are applied", () => {
+    render(<SettingsModal
+      settings={{ ...defaultSettings }}
+      directoryChecks={{ defaultSaveFolder: { status: "idle" }, cloudSyncFolder: { status: "idle" } }}
+      applying={false}
+      canApply
+      {...handlers}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Templates" }));
+    fireEvent.click(screen.getByRole("button", { name: "New template" }));
+    fireEvent.change(screen.getByLabelText("Template name"), { target: { value: "Weekly review" } });
+    fireEvent.change(screen.getByLabelText("Suggested file name"), { target: { value: "weekly-review.txt" } });
+    fireEvent.change(screen.getByLabelText("Template content"), { target: { value: "WEEKLY REVIEW\n=============\n" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    expect(handlers.onApply).toHaveBeenLastCalledWith(expect.objectContaining({
+      upserts: [expect.objectContaining({ kind: "custom", name: "Weekly review", fileName: "weekly-review.txt" })],
+      deletes: [],
+    }));
   });
 
   it("keeps contextual help in hoverable setting icons", () => {

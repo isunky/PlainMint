@@ -1,26 +1,42 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import {
   ArrowsClockwise,
   CloudArrowUp,
   FolderSimple,
+  Files,
   GearSix,
   Info,
   Keyboard,
   PaintBrush,
   PencilSimple,
+  Plus,
   Question,
   ShieldCheck,
+  Trash,
   X,
 } from "@phosphor-icons/react";
 import type { AccentTheme, AppLocale, AppearanceMode, ContextMenuStatus, DirectoryValidationResult, Encoding, LineEnding, UserSettings } from "../types";
 import { cjkFontOptions, latinFontOptions, systemCjkFont, systemMonospaceFont } from "../fontSettings";
 import { defaultSettings } from "../store";
+import {
+  builtInDocumentTemplates,
+  cloneTemplateCatalog,
+  isSafeSuggestedFileName,
+  templateChanges,
+  templateDescription,
+  templateDisplayName,
+  type DocumentTemplate,
+  type DocumentTemplateCatalog,
+  type DocumentTemplateChanges,
+  type TemplateLocale,
+} from "../documentTemplates";
 
-type SettingsSection = "general" | "editor" | "files" | "backup" | "appearance" | "shortcuts" | "about";
+type SettingsSection = "general" | "editor" | "files" | "templates" | "backup" | "appearance" | "shortcuts" | "about";
 
 const resettableSections = new Set<SettingsSection>(["general", "editor", "files", "backup", "appearance"]);
+const fallbackTemplateCatalog: DocumentTemplateCatalog = { templates: builtInDocumentTemplates, issues: [] };
 
 function defaultsForSection(section: SettingsSection): Partial<UserSettings> {
   switch (section) {
@@ -55,7 +71,7 @@ interface SettingsModalProps {
   checkingForUpdates?: boolean;
   updateCheckStatus?: "idle" | "latest" | "failed";
   onChange: (patch: Partial<UserSettings>) => void;
-  onApply: () => void;
+  onApply: (templateChanges: DocumentTemplateChanges) => void;
   onCancel: () => void;
   onChooseDirectory: (field: "defaultSaveFolder" | "cloudSyncFolder") => void;
   onClearDirectory: (field: "defaultSaveFolder" | "cloudSyncFolder") => void;
@@ -66,6 +82,11 @@ interface SettingsModalProps {
   contextMenuStatus?: ContextMenuStatus;
   contextMenuBusy?: boolean;
   onContextMenuChange?: (enabled: boolean) => void;
+  templates?: DocumentTemplateCatalog;
+  templatesLoading?: boolean;
+  templatesError?: string;
+  onRefreshTemplates?: () => void;
+  onOpenTemplatesDirectory?: () => void;
 }
 
 function formatBytes(bytes: number, locale: string) {
@@ -195,13 +216,50 @@ export function SettingsModal({
   contextMenuStatus = { supported: false, enabled: false },
   contextMenuBusy = false,
   onContextMenuChange,
+  templates = fallbackTemplateCatalog,
+  templatesLoading = false,
+  templatesError = "",
+  onRefreshTemplates = () => undefined,
+  onOpenTemplatesDirectory = () => undefined,
 }: SettingsModalProps) {
   const { t, i18n } = useTranslation();
   const [section, setSection] = useState<SettingsSection>("general");
+  const [templateDraft, setTemplateDraft] = useState<DocumentTemplateCatalog>(() => cloneTemplateCatalog(templates));
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | undefined>(() => templates.templates[0]?.id);
+  const [templateLocale, setTemplateLocale] = useState<TemplateLocale>("zh-CN");
+  useEffect(() => {
+    setTemplateDraft(cloneTemplateCatalog(templates));
+    setSelectedTemplateId((current) => templates.templates.some((template) => template.id === current) ? current : templates.templates[0]?.id);
+  }, [templates]);
+  const pendingTemplateChanges = useMemo(() => templateChanges(templates, templateDraft), [templateDraft, templates]);
+  const hasTemplateChanges = pendingTemplateChanges.upserts.length > 0 || pendingTemplateChanges.deletes.length > 0;
+  const selectedTemplate = templateDraft.templates.find((template) => template.id === selectedTemplateId);
+  const selectedTemplateInvalid = Boolean(selectedTemplate && (!isSafeSuggestedFileName(selectedTemplate.fileName) || (selectedTemplate.kind === "custom" && !selectedTemplate.name.trim())));
+  const templatesValid = templateDraft.templates.every((template) => isSafeSuggestedFileName(template.fileName) && (template.kind === "builtin" || Boolean(template.name.trim())));
+  const updateTemplate = (id: string, updater: (template: DocumentTemplate) => DocumentTemplate) => {
+    setTemplateDraft((current) => ({ ...current, templates: current.templates.map((template) => template.id === id ? updater(template) : template) }));
+  };
+  const addTemplate = () => {
+    const id = `draft-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setTemplateDraft((current) => ({ ...current, templates: [...current.templates, { id, kind: "custom", name: "", fileName: "template.txt", content: "" }] }));
+    setSelectedTemplateId(id);
+  };
+  const deleteSelectedTemplate = () => {
+    if (!selectedTemplate || selectedTemplate.kind !== "custom") return;
+    setTemplateDraft((current) => ({ ...current, templates: current.templates.filter((template) => template.id !== selectedTemplate.id) }));
+    setSelectedTemplateId(templateDraft.templates.find((template) => template.id !== selectedTemplate.id)?.id);
+  };
+  const restoreSelectedBuiltin = () => {
+    if (!selectedTemplate || selectedTemplate.kind !== "builtin") return;
+    const fallback = builtInDocumentTemplates.find((template) => template.builtInId === selectedTemplate.builtInId);
+    if (!fallback) return;
+    updateTemplate(selectedTemplate.id, () => ({ ...structuredClone(fallback), revision: selectedTemplate.revision }));
+  };
   const navigation: Array<{ id: SettingsSection; label: string; icon: typeof GearSix }> = [
     { id: "general", label: t("general"), icon: GearSix },
     { id: "editor", label: t("editor"), icon: PencilSimple },
     { id: "files", label: t("filesFolders"), icon: FolderSimple },
+    { id: "templates", label: t("templates"), icon: Files },
     { id: "backup", label: t("backupRecovery"), icon: CloudArrowUp },
     { id: "appearance", label: t("appearance"), icon: PaintBrush },
     { id: "shortcuts", label: t("keyboardShortcuts"), icon: Keyboard },
@@ -373,6 +431,57 @@ export function SettingsModal({
               </div>
             )}
 
+            {section === "templates" && (
+              <div className="template-settings">
+                <section className="settings-card template-settings-intro">
+                  <div>
+                    <h4>{t("manageTemplates")}</h4>
+                    <p>{t("templatesDescription")}</p>
+                  </div>
+                  <div className="template-settings-actions">
+                    <button type="button" className="button-secondary" onClick={onOpenTemplatesDirectory}>{t("openTemplatesFolder")}</button>
+                    <button type="button" className="button-secondary" disabled={templatesLoading || hasTemplateChanges} title={hasTemplateChanges ? t("templatesRefreshPending") : undefined} onClick={onRefreshTemplates}>{t("refresh")}</button>
+                    <button type="button" className="button-primary" onClick={addTemplate}><Plus size={16} />{t("newTemplate")}</button>
+                  </div>
+                </section>
+                {(templatesError || templateDraft.issues.length > 0) && <p className="template-settings-warning">{templatesError || t("templateIssues", { count: templateDraft.issues.length })}</p>}
+                <div className="template-settings-workspace">
+                  <aside className="template-settings-list" aria-label={t("templates")}>
+                    {templateDraft.templates.map((template) => (
+                      <button type="button" key={template.id} className={selectedTemplateId === template.id ? "active" : ""} onClick={() => setSelectedTemplateId(template.id)}>
+                        <Files size={17} />
+                        <span><strong>{templateDisplayName(template, templateLocale, t)}</strong><small>{template.fileName}</small></span>
+                      </button>
+                    ))}
+                  </aside>
+                  <section className="settings-card template-editor">
+                    {!selectedTemplate ? <p>{t("selectTemplate")}</p> : selectedTemplate.kind === "builtin" ? <>
+                      <div className="template-editor-heading">
+                        <div><h4>{templateDisplayName(selectedTemplate, templateLocale, t)}</h4><p>{templateDescription(selectedTemplate, templateLocale, t)}</p></div>
+                        <button type="button" className="button-secondary" onClick={restoreSelectedBuiltin}>{t("restoreTemplate")}</button>
+                      </div>
+                      <label className="field-label"><span>{t("templateFileName")}</span><input value={selectedTemplate.fileName} onChange={(event) => updateTemplate(selectedTemplate.id, (template) => ({ ...template, fileName: event.target.value }))} /></label>
+                      {selectedTemplateInvalid && <small className="directory-status invalid">{t("templateValidation")}</small>}
+                      <div className="template-locale-switch" aria-label={t("templateLanguage")}>
+                        {(["zh-CN", "en"] as TemplateLocale[]).map((locale) => <button type="button" key={locale} className={templateLocale === locale ? "active" : ""} onClick={() => setTemplateLocale(locale)}>{locale === "zh-CN" ? "中文" : "English"}</button>)}
+                      </div>
+                      <label className="field-label"><span>{t("templateContent")}</span><textarea className="template-content-input" value={selectedTemplate.content[templateLocale]} onChange={(event) => updateTemplate(selectedTemplate.id, (template) => template.kind === "builtin" ? { ...template, content: { ...template.content, [templateLocale]: event.target.value } } : template)} /></label>
+                    </> : <>
+                      <div className="template-editor-heading"><div><h4>{t("customTemplate")}</h4><p>{t("customTemplateDescription")}</p></div><button type="button" className="button-danger" onClick={deleteSelectedTemplate}><Trash size={16} />{t("delete")}</button></div>
+                      <div className="field-grid">
+                        <label className="field-label"><span>{t("templateName")}</span><input value={selectedTemplate.name} onChange={(event) => updateTemplate(selectedTemplate.id, (template) => template.kind === "custom" ? { ...template, name: event.target.value } : template)} /></label>
+                        <label className="field-label"><span>{t("templateFileName")}</span><input value={selectedTemplate.fileName} onChange={(event) => updateTemplate(selectedTemplate.id, (template) => template.kind === "custom" ? { ...template, fileName: event.target.value } : template)} /></label>
+                      </div>
+                      <label className="field-label"><span>{t("templateDescription")}</span><input value={selectedTemplate.description ?? ""} onChange={(event) => updateTemplate(selectedTemplate.id, (template) => template.kind === "custom" ? { ...template, description: event.target.value } : template)} /></label>
+                      {selectedTemplateInvalid && <small className="directory-status invalid">{t("templateValidation")}</small>}
+                      <label className="field-label"><span>{t("templateContent")}</span><textarea className="template-content-input" value={selectedTemplate.content} onChange={(event) => updateTemplate(selectedTemplate.id, (template) => template.kind === "custom" ? { ...template, content: event.target.value } : template)} /></label>
+                    </>}
+                    <p className="template-variable-hint">{t("templateVariableHint")}</p>
+                  </section>
+                </div>
+              </div>
+            )}
+
             {section === "backup" && (
               <div className="settings-grid">
                 <section className="settings-card settings-card-wide">
@@ -489,7 +598,7 @@ export function SettingsModal({
             )}
             <div className="settings-footer-actions">
               <button type="button" className="button-secondary" disabled={applying} onClick={onCancel}>{t("cancel")}</button>
-              <button type="button" className="button-primary" disabled={!canApply || applying} onClick={onApply}>{applying ? t("applying") : t("apply")}</button>
+              <button type="button" className="button-primary" disabled={!canApply || !templatesValid || applying || templatesLoading} onClick={() => onApply(pendingTemplateChanges)}>{applying ? t("applying") : t("apply")}</button>
             </div>
           </footer>
         </div>
