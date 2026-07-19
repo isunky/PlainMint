@@ -26,6 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       value: ${{ steps.next.outputs.value }}
+      release_body: ${{ steps.notes.outputs.body }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -46,6 +47,22 @@ jobs:
             patch) patch=$((patch + 1)) ;;
           esac
           echo "value=${major}.${minor}.${patch}" >> "$GITHUB_OUTPUT"
+          echo "previous_tag=${latest}" >> "$GITHUB_OUTPUT"
+      - name: Generate release notes
+        id: notes
+        shell: bash
+        env:
+          PREVIOUS_TAG: ${{ steps.next.outputs.previous_tag }}
+          RELEASE_TAG: v${{ steps.next.outputs.value }}
+        run: |
+          notes_file="$RUNNER_TEMP/release-notes.md"
+          node .github/scripts/generate-release-notes.mjs > "$notes_file"
+          delimiter="release_notes_$(date +%s%N)_${RANDOM}"
+          {
+            echo "body<<${delimiter}"
+            cat "$notes_file"
+            echo "${delimiter}"
+          } >> "$GITHUB_OUTPUT"
 
   publish:
     needs: version
@@ -84,10 +101,7 @@ jobs:
           projectPath: app
           tagName: v${{ needs.version.outputs.value }}
           releaseName: PlainMint v${{ needs.version.outputs.value }}
-          releaseBody: |
-            PlainMint v${{ needs.version.outputs.value }}
-
-            Download the installer for your platform below.
+          releaseBody: ${{ needs.version.outputs.release_body }}
           releaseDraft: false
           prerelease: ${{ inputs.prerelease }}
           args: ${{ matrix.args }}
