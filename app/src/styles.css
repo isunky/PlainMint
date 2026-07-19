@@ -1427,7 +1427,6 @@ select:focus-visible {
   place-items: center;
   padding: 36px;
   background: rgba(27, 38, 39, 0.16);
-  backdrop-filter: blur(2px);
 }
 
 .settings-modal {
