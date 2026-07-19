@@ -34,7 +34,7 @@ import {
 import type { Icon } from "@phosphor-icons/react";
 import i18n, { resolveLocale } from "./i18n";
 import { isAutoSaveEligible, isAutoSaveRevisionSuppressed } from "./autoSavePolicy";
-import { needsSaveConfirmation } from "./closePolicy";
+import { needsExitSaveConfirmation, needsSaveConfirmation } from "./closePolicy";
 import { displayDocumentName } from "./documentName";
 import { buildEditorFontFamily } from "./fontSettings";
 import { createWorkspaceSession, decideStartupRecovery } from "./recoveryPolicy";
@@ -2520,15 +2520,25 @@ export function App() {
     return () => window.clearTimeout(timer);
   }, [hydrated, recentlyClosedTabs]);
 
-  const finishClose = useCallback(async (discardDirty = false) => {
+  const finishClose = useCallback(async (discardedDocumentIds: Iterable<string> = []) => {
     closingRef.current = true;
     const state = useAppStore.getState();
-    await persistSession(createWorkspaceSession(state, discardDirty)).catch(() => undefined);
-    await closeWindow();
-  }, []);
+    try {
+      await persistSession(createWorkspaceSession(state, new Set(discardedDocumentIds)));
+    } catch {
+      closingRef.current = false;
+      flash(t("sessionSaveFailed"));
+      return;
+    }
+    try {
+      await closeWindow();
+    } catch {
+      closingRef.current = false;
+    }
+  }, [flash, t]);
 
   const requestCloseWindow = useCallback(() => {
-    const dirty = Object.values(documents).filter(needsSaveConfirmation);
+    const dirty = Object.values(documents).filter(needsExitSaveConfirmation);
     if (dirty.length) setModal({ type: "exit", documents: dirty });
     else void finishClose();
   }, [documents, finishClose]);
@@ -2970,7 +2980,7 @@ export function App() {
         <ExitModal
           documents={modal.documents}
           onCancel={() => setModal({ type: "none" })}
-          onDiscard={() => void finishClose(true)}
+          onDiscard={() => void finishClose(modal.documents.map((document) => document.id))}
           onSave={() => void saveAllAndExit(modal.documents)}
         />
       )}

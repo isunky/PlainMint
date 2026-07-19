@@ -46,7 +46,7 @@ describe("startup recovery policy", () => {
 });
 
 describe("clean exit session snapshot", () => {
-  it("omits discarded dirty documents and their tabs", () => {
+  it("omits only explicitly discarded documents and keeps untitled drafts", () => {
     const clean: DocumentRecord = {
       id: "clean",
       fileName: "clean.txt",
@@ -63,22 +63,26 @@ describe("clean exit session snapshot", () => {
       revision: 0,
       createdAt: 1,
     };
-    const dirty = { ...clean, id: "dirty", fileName: "draft.txt", dirty: true };
+    const dirty = { ...clean, id: "dirty", filePath: "C:\\draft.txt", fileName: "draft.txt", dirty: true };
+    const untitled = { ...clean, id: "untitled", fileName: "Untitled 1", content: "draft", dirty: true };
     const snapshot = createWorkspaceSession({
       split: true,
       splitRatio: 0.64,
-      documents: { clean, dirty },
+      documents: { clean, dirty, untitled },
       tabs: {
         left: [{ id: "tab-clean", documentId: "clean", pane: "left", order: 0 }],
-        right: [{ id: "tab-dirty", documentId: "dirty", pane: "right", order: 0 }],
+        right: [
+          { id: "tab-dirty", documentId: "dirty", pane: "right", order: 0 },
+          { id: "tab-untitled", documentId: "untitled", pane: "right", order: 1 },
+        ],
       },
       activeTab: { left: "tab-clean", right: "tab-dirty" },
-    }, true);
+    }, new Set(["dirty"]));
 
-    expect(snapshot.documents.map((document) => document.id)).toEqual(["clean"]);
-    expect(snapshot.tabs.right).toEqual([]);
-    expect(snapshot.activeTab.right).toBeNull();
-    expect(snapshot.split).toBe(false);
+    expect(snapshot.documents.map((document) => document.id)).toEqual(["clean", "untitled"]);
+    expect(snapshot.tabs.right.map((tab) => tab.documentId)).toEqual(["untitled"]);
+    expect(snapshot.activeTab.right).toBe("tab-untitled");
+    expect(snapshot.split).toBe(true);
     expect(snapshot.splitRatio).toBe(0.64);
   });
 });

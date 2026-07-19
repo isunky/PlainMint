@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { needsSaveConfirmation } from "./closePolicy";
+import { needsExitSaveConfirmation, needsSaveConfirmation } from "./closePolicy";
 import type { DocumentRecord } from "./types";
 
 function documentWith(content: string, dirty = true): DocumentRecord {
@@ -33,5 +33,10 @@ describe("close confirmation policy", () => {
 
   it("does not confirm for a clean document", () => {
     expect(needsSaveConfirmation(documentWith("PlainMint", false))).toBe(false);
+  });
+
+  it("only requests an exit confirmation for dirty documents with a saved path", () => {
+    expect(needsExitSaveConfirmation(documentWith("untitled draft"))).toBe(false);
+    expect(needsExitSaveConfirmation({ ...documentWith("saved draft"), filePath: "C:\\draft.txt" })).toBe(true);
   });
 });

@@ -10,6 +10,7 @@ vi.mock("./services/runtime", async (importOriginal) => {
   return {
     ...actual,
     beginAppSession: vi.fn().mockResolvedValue({ previousExitWasUnclean: false }),
+    closeWindow: vi.fn().mockResolvedValue(undefined),
     loadSettings: vi.fn().mockResolvedValue(null),
     loadSession: vi.fn().mockResolvedValue(null),
     loadRecentFiles: vi.fn().mockResolvedValue([]),
@@ -30,7 +31,7 @@ vi.mock("./services/runtime", async (importOriginal) => {
 
 import { App } from "./App";
 import { selectNextOccurrenceInPane } from "./components/TextEditor";
-import { inspectFileMetadata, loadRecentFiles, openDocumentPath, persistRecentFiles, revealFileInDirectory, startDraggingWindow, toggleMaximizeWindow } from "./services/runtime";
+import { closeWindow, inspectFileMetadata, loadRecentFiles, openDocumentPath, persistRecentFiles, persistSession, revealFileInDirectory, startDraggingWindow, toggleMaximizeWindow } from "./services/runtime";
 
 function doc(id: string): DocumentRecord {
   return {
@@ -95,11 +96,101 @@ beforeEach(async () => {
     fingerprint: { modifiedAt: 1, size: 6, hash: "recent" },
   }));
   vi.mocked(revealFileInDirectory).mockResolvedValue(undefined);
+  vi.mocked(persistSession).mockReset().mockResolvedValue(undefined);
+  vi.mocked(closeWindow).mockReset().mockResolvedValue(undefined);
 });
 
 afterEach(cleanup);
 
 describe("tab and split interactions", () => {
+  it("exits without a prompt while preserving an untitled draft in the workspace session", async () => {
+    const draft: DocumentRecord = {
+      ...doc("draft"),
+      filePath: undefined,
+      fileName: "Untitled 1",
+      untitledNumber: 1,
+      content: "temporary draft",
+      dirty: true,
+      autoLanguageDetectionComplete: false,
+    };
+    useAppStore.setState({
+      documents: { draft },
+      tabs: { left: [{ id: "tab-draft", documentId: "draft", pane: "left", order: 0 }], right: [] },
+      activeTab: { left: "tab-draft", right: null },
+    });
+    render(<App />);
+    await settle();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+    await waitFor(() => expect(closeWindow).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    const session = vi.mocked(persistSession).mock.calls.at(-1)?.[0] as { documents: DocumentRecord[] };
+    expect(session.documents).toEqual([expect.objectContaining({ id: "draft", content: "temporary draft", dirty: true })]);
+  });
+
+  it("keeps untitled drafts when discarding changed files during exit", async () => {
+    const saved = { ...doc("saved"), content: "changed saved file", dirty: true };
+    const draft: DocumentRecord = {
+      ...doc("draft"),
+      filePath: undefined,
+      fileName: "Untitled 1",
+      untitledNumber: 1,
+      content: "temporary draft",
+      dirty: true,
+      autoLanguageDetectionComplete: false,
+    };
+    useAppStore.setState({
+      documents: { saved, draft },
+      tabs: {
+        left: [
+          { id: "tab-saved", documentId: "saved", pane: "left", order: 0 },
+          { id: "tab-draft", documentId: "draft", pane: "left", order: 1 },
+        ],
+        right: [],
+      },
+      activeTab: { left: "tab-saved", right: null },
+    });
+    render(<App />);
+    await settle();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+    const dialog = screen.getByRole("alertdialog");
+    expect(within(dialog).getByText("1 open file(s) have unsaved changes.")).toBeVisible();
+    expect(within(dialog).queryByText("Untitled 1")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Discard all and exit" }));
+
+    await waitFor(() => expect(closeWindow).toHaveBeenCalledTimes(1));
+    const session = vi.mocked(persistSession).mock.calls.at(-1)?.[0] as { documents: DocumentRecord[] };
+    expect(session.documents).toEqual([expect.objectContaining({ id: "draft", content: "temporary draft" })]);
+  });
+
+  it("keeps the app open when the final temporary-draft session save fails", async () => {
+    const draft: DocumentRecord = {
+      ...doc("draft"),
+      filePath: undefined,
+      fileName: "Untitled 1",
+      untitledNumber: 1,
+      content: "temporary draft",
+      dirty: true,
+      autoLanguageDetectionComplete: false,
+    };
+    useAppStore.setState({
+      documents: { draft },
+      tabs: { left: [{ id: "tab-draft", documentId: "draft", pane: "left", order: 0 }], right: [] },
+      activeTab: { left: "tab-draft", right: null },
+    });
+    vi.mocked(persistSession).mockRejectedValueOnce(new Error("disk full"));
+    render(<App />);
+    await settle();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Could not save temporary drafts. PlainMint is still open."));
+    expect(closeWindow).not.toHaveBeenCalled();
+  });
+
   it("maximizes on a title-bar double click without starting a drag", async () => {
     const { container } = render(<App />);
     await settle();

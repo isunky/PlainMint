@@ -31,10 +31,10 @@ export function createWorkspaceSession(
     tabs: Record<PaneId, EditorTab[]>;
     documents: Record<string, DocumentRecord>;
   },
-  discardDirty = false,
+  discardedDocumentIds: ReadonlySet<string> = new Set(),
 ): WorkspaceSession {
   const documents = Object.values(state.documents)
-    .filter((document) => !discardDirty || !document.dirty)
+    .filter((document) => !discardedDocumentIds.has(document.id))
     .map(({ patch: _patch, ...document }) => document);
   const documentIds = new Set(documents.map((document) => document.id));
   const tabsFor = (pane: PaneId) => state.tabs[pane]
