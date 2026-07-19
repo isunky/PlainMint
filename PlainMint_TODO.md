@@ -3,7 +3,7 @@
 > 管理方式：按实现状态维护的唯一待办清单
 > 对应需求：[`PlainMint_PRD.md`](PlainMint_PRD.md)
 > 更新日期：2026-07-19
-> 当前基线：`v0.3.2` + `4b96aa3`
+> 当前基线：`v0.3.2` + `71c76d8`
 
 ---
 
@@ -71,9 +71,11 @@
 
 ## P2：质量、更新与发布
 
-- [ ] **TODO-Q01｜CI 覆盖 Rust 验证**
+- [x] **TODO-Q01｜CI 覆盖 Rust 验证**
   PRD：§24、§25
   完成条件：CI 运行 `cargo fmt --check`、Rust 编译和 Rust 单元测试，并能清晰定位前端或 Rust 失败阶段。
+  已完成：前端与 Rust 验证拆分为独立 CI 任务；Rust 任务安装 Tauri Linux 构建依赖后运行格式检查、编译检查和单元测试。
+  实现：`71c76d8`；验证：`cargo fmt --check`、`cargo check --locked`、`cargo test --locked`（17 tests）。
 
 - [ ] **TODO-Q02｜端到端与跨平台回归测试**
   PRD：§23、§24
