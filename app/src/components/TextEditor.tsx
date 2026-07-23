@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import {
   Annotation,
   Compartment,
+  EditorSelection,
   EditorState,
   type ChangeSet,
 } from "@codemirror/state";
@@ -10,11 +11,13 @@ import {
   drawSelection,
   dropCursor,
   EditorView,
+  crosshairCursor,
   highlightActiveLine,
   highlightActiveLineGutter,
   highlightSpecialChars,
   keymap,
   lineNumbers,
+  rectangularSelection,
 } from "@codemirror/view";
 import { defaultKeymap, indentWithTab } from "@codemirror/commands";
 import {
@@ -110,7 +113,20 @@ export function cutSelectionInPane(pane: PaneId) {
 export function pasteTextInPane(pane: PaneId, text: string) {
   const view = editors[pane];
   if (!view || view.state.facet(EditorState.readOnly)) return false;
-  view.dispatch(view.state.replaceSelection(text));
+  const ranges = view.state.selection.ranges;
+  const lines = text.replace(/\r\n?/g, "\n").split("\n");
+  if (ranges.length > 1 && lines.length === ranges.length) {
+    let index = 0;
+    view.dispatch(view.state.changeByRange((range) => {
+      const insert = lines[index++];
+      return {
+        changes: { from: range.from, to: range.to, insert },
+        range: EditorSelection.cursor(range.from + insert.length),
+      };
+    }));
+  } else {
+    view.dispatch(view.state.replaceSelection(text));
+  }
   return true;
 }
 
@@ -248,6 +264,8 @@ export function TextEditor({
         drawSelection(),
         dropCursor(),
         EditorState.allowMultipleSelections.of(true),
+        rectangularSelection(),
+        crosshairCursor(),
         highlightActiveLine(),
         highlightActiveLineGutter(),
         search({ top: true }),
@@ -290,7 +308,7 @@ export function TextEditor({
             callbacks.current.onCursor(
               line.number,
               selection.head - line.from + 1,
-              Math.abs(selection.to - selection.from),
+              update.state.selection.ranges.reduce((total, range) => total + Math.abs(range.to - range.from), 0),
             );
           }
         }),

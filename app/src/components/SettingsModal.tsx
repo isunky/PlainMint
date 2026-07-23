@@ -543,6 +543,7 @@ export function SettingsModal({
                       [t("new"), "Ctrl / ⌘ + N"], [t("open"), "Ctrl / ⌘ + O"], [t("save"), "Ctrl / ⌘ + S"], [t("saveAs"), "Ctrl / ⌘ + Shift + S"],
                       [t("undo"), "Ctrl / ⌘ + Z"], [t("redo"), "Ctrl / ⌘ + Y"], [t("find"), "Ctrl / ⌘ + F"], [t("replace"), "Ctrl / ⌘ + H"],
                       [t("compare"), "Ctrl / ⌘ + Shift + D"], [t("goToLine"), "Ctrl / ⌘ + G"], [t("selectNextOccurrence"), "Ctrl / ⌘ + D"], [t("closeCurrentTab"), "Ctrl / ⌘ + W"], [t("reopenClosedTab"), "Ctrl / ⌘ + Shift + T"],
+                      [t("rectangularSelection"), "Alt / Option + drag"], [t("addVerticalCursor"), "Ctrl + Alt / ⌘ + Option + ↑ / ↓"],
                       [t("split"), "Ctrl / ⌘ + \\"], [t("settings"), "Ctrl / ⌘ + ,"], [t("moveLine"), "Alt / Option + ↑ / ↓"], [t("copyLine"), "Shift + Alt / Option + ↑ / ↓"],
                       [t("deleteLine"), "Ctrl / ⌘ + Shift + K"], [t("indentSelection"), "Tab / Shift + Tab"],
                     ].map(([label, keys]) => <div className="shortcut-row" key={String(label)}><span>{label}</span><kbd>{keys}</kbd></div>)}
