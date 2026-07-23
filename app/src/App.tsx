@@ -170,6 +170,7 @@ type TabContextMenuState = {
 const INITIAL_SESSION_PERSIST_DELAY_MS = 5_000;
 const SESSION_PERSIST_DELAY_MS = 500;
 const STARTUP_MAINTENANCE_DELAY_MS = 10_000;
+const EDITOR_STARTUP_PREVIEW_LIMIT = 64_000;
 
 type DirectoryField = "defaultSaveFolder" | "cloudSyncFolder";
 type DirectoryCheck = {
@@ -1267,6 +1268,32 @@ function StatusBar({ pane, document }: { pane: PaneId; document?: DocumentRecord
   );
 }
 
+function EditorStartupPreview({ document, settings, onRequestEditorRuntime }: {
+  document: DocumentRecord;
+  settings: UserSettings;
+  onRequestEditorRuntime: () => void;
+}) {
+  return (
+    <div
+      className={[
+        "editor-startup-preview",
+        settings.showLineNumbers ? "with-gutter" : "",
+        settings.wordWrapByDefault ? "wrap" : "",
+      ].filter(Boolean).join(" ")}
+      style={{
+        fontSize: settings.fontSize,
+        lineHeight: settings.lineHeight,
+        tabSize: settings.tabSize,
+      }}
+      aria-busy="true"
+      onPointerDown={onRequestEditorRuntime}
+    >
+      {settings.showLineNumbers && <div className="editor-startup-gutter" aria-hidden="true" />}
+      <pre>{document.content.slice(0, EDITOR_STARTUP_PREVIEW_LIMIT)}</pre>
+    </div>
+  );
+}
+
 function EditorPane({ pane, onCloseTab, onActivateTab, onTabPointerDown, onTabContextMenu, drag, editorRuntimeReady, onRequestEditorRuntime, revealTarget, onRevealHandled, fileDropTarget }: {
   pane: PaneId;
   onCloseTab: (pane: PaneId, tabId: string) => void;
@@ -1308,7 +1335,7 @@ function EditorPane({ pane, onCloseTab, onActivateTab, onTabPointerDown, onTabCo
     <section className={"editor-pane " + (fileDropTarget ? "file-drop-target" : "")} data-pane-drop={pane} onPointerDown={() => setActivePane(pane)}>
       <TabBar pane={pane} onClose={onCloseTab} onActivate={onActivateTab} onPointerDown={onTabPointerDown} onContextMenu={onTabContextMenu} drag={drag} />
       {document ? <div className="editor-region">
-        {editorRuntimeReady ? <Suspense fallback={<div className="editor-loading" aria-busy="true">{t("loadingEditor")}</div>}>
+        {editorRuntimeReady ? <Suspense fallback={<EditorStartupPreview document={document} settings={settings} onRequestEditorRuntime={() => onRequestEditorRuntime(pane)} />}>
           <TextEditor
             pane={pane}
             document={document}
@@ -1322,7 +1349,7 @@ function EditorPane({ pane, onCloseTab, onActivateTab, onTabPointerDown, onTabCo
             revealTarget={revealTarget?.documentId === document.id ? revealTarget : undefined}
             onRevealHandled={onRevealHandled}
           />
-        </Suspense> : <button type="button" className="editor-loading editor-loading-button" aria-busy="true" onPointerDown={() => onRequestEditorRuntime(pane)}>{t("loadingEditor")}</button>}
+        </Suspense> : <EditorStartupPreview document={document} settings={settings} onRequestEditorRuntime={() => onRequestEditorRuntime(pane)} />}
       </div> : <div className="editor-empty"><span>{t("emptyPaneHint")}</span></div>}
       <StatusBar pane={pane} document={document} />
     </section>
@@ -1883,27 +1910,14 @@ export function App() {
   }, [modal.type, refreshTemplates]);
 
   const requestEditorRuntime = useCallback((pane?: PaneId) => {
-    setEditorRuntimeReady(true);
-    if (!pane) return;
     void loadTextEditor().then(() => {
-      window.setTimeout(() => focusEditor(pane), 0);
-    });
+      setEditorRuntimeReady(true);
+      if (pane) window.setTimeout(() => focusEditor(pane), 0);
+    }).catch(() => undefined);
   }, []);
 
   useEffect(() => {
-    let idleHandle: number | undefined;
-    const delay = window.setTimeout(() => {
-      const activate = () => requestEditorRuntime();
-      if (window.requestIdleCallback) {
-        idleHandle = window.requestIdleCallback(activate, { timeout: 1_500 });
-      } else {
-        activate();
-      }
-    }, window.__TAURI_INTERNALS__ ? 800 : 0);
-    return () => {
-      window.clearTimeout(delay);
-      if (idleHandle !== undefined) window.cancelIdleCallback?.(idleHandle);
-    };
+    requestEditorRuntime();
   }, [requestEditorRuntime]);
 
   const activeDocumentId = tabs[activePane].find((tab) => tab.id === activeTab[activePane])?.documentId;

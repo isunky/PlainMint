@@ -8,10 +8,15 @@ let loadingModule: Promise<TextEditorModule> | undefined;
 
 export function loadTextEditor(): Promise<TextEditorModule> {
   if (loadedModule) return Promise.resolve(loadedModule);
-  loadingModule ??= import("./components/TextEditor").then((module) => {
-    loadedModule = module;
-    return module;
-  });
+  loadingModule ??= import("./components/TextEditor")
+    .then((module) => {
+      loadedModule = module;
+      return module;
+    })
+    .catch((error) => {
+      loadingModule = undefined;
+      throw error;
+    });
   return loadingModule;
 }
 
