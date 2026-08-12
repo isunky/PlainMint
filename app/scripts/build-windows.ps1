@@ -101,6 +101,9 @@ try {
         Assert-LocalBuildDependencies
     }
 
+    Write-Host "Checking version metadata..." -ForegroundColor Cyan
+    Invoke-NativeCommand -Command "npm.cmd" -Arguments @("run", "version:check")
+
     if (-not $PackageOnly) {
         Write-Host "[2/4] Building MSI and NSIS installers..." -ForegroundColor Cyan
         Invoke-NativeCommand -Command "npm.cmd" -Arguments $BuildArguments

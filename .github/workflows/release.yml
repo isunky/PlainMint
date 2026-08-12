@@ -21,6 +21,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: plainmint-release
+  cancel-in-progress: false
+
 jobs:
   version:
     runs-on: ubuntu-latest
@@ -64,8 +68,34 @@ jobs:
             echo "${delimiter}"
           } >> "$GITHUB_OUTPUT"
 
-  publish:
+  prepare:
     needs: version
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Persist release version
+        run: |
+          node app/scripts/set-version.mjs ${{ needs.version.outputs.value }}
+          node app/scripts/check-version.mjs
+      - name: Commit release version
+        id: commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/package.json app/package-lock.json app/src-tauri/Cargo.toml app/src-tauri/Cargo.lock app/src-tauri/tauri.conf.json
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: bump version to ${{ needs.version.outputs.value }}"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: [version, prepare]
     strategy:
       fail-fast: false
       matrix:
@@ -77,6 +107,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
       - uses: actions/setup-node@v6
         with:
           node-version: 22
@@ -89,9 +121,6 @@ jobs:
       - name: Install dependencies
         working-directory: app
         run: npm ci
-      - name: Apply release version
-        working-directory: app
-        run: node scripts/set-version.mjs ${{ needs.version.outputs.value }}
       - uses: tauri-apps/tauri-action@v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

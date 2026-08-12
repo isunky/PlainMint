@@ -36,4 +36,16 @@ await writeFile(
   "utf8",
 );
 
+const cargoLockPath = path.join(appRoot, "src-tauri", "Cargo.lock");
+const cargoLock = await readFile(cargoLockPath, "utf8");
+const plainMintCargoLockPattern = /(\[\[package\]\]\r?\nname = "plainmint"\r?\nversion = ")[^"]+("\r?\n)/;
+if (!plainMintCargoLockPattern.test(cargoLock)) {
+  throw new Error("PlainMint package entry was not found in Cargo.lock");
+}
+const updatedCargoLock = cargoLock.replace(
+  plainMintCargoLockPattern,
+  `$1${version}$2`,
+);
+await writeFile(cargoLockPath, updatedCargoLock, "utf8");
+
 console.log(`PlainMint version set to ${version}`);
