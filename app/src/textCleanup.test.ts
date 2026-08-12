@@ -8,7 +8,7 @@ function apply(content: string, action: Parameters<typeof buildTextCleanupChange
 }
 
 describe("text cleanup", () => {
-  it("uses stable natural sorting in both directions", () => {
+  it("uses stable natural sorting in both directions across the whole document when nothing is selected", () => {
     expect(apply("item-10\nitem-2\nAlpha\nalpha", "sortAscending")).toBe("Alpha\nalpha\nitem-2\nitem-10");
     expect(apply("item-10\nitem-2\nAlpha\nalpha", "sortDescending")).toBe("item-10\nitem-2\nAlpha\nalpha");
   });
@@ -19,9 +19,14 @@ describe("text cleanup", () => {
     expect(apply(" a \t\n\u00a0 \t", "trimTrailingWhitespace")).toBe(" a\n\u00a0");
   });
 
-  it("expands selections to whole lines, excludes a next-line boundary, and merges adjacent blocks", () => {
-    expect(apply("c\nb\na\nd", "sortAscending", [{ from: 0, to: 2 }])).toBe("c\nb\na\nd");
-    expect(apply("c\nb\na\nd", "sortAscending", [{ from: 0, to: 1 }, { from: 2, to: 3 }])).toBe("b\nc\na\nd");
+  it("changes only the exact selected characters without expanding to whole lines", () => {
+    expect(apply("Xc\nbY", "sortAscending", [{ from: 1, to: 4 }])).toBe("Xb\ncY");
+    expect(apply("AA  \nBB  \nCC  ", "trimTrailingWhitespace", [{ from: 5, to: 9 }])).toBe("AA  \nBB\nCC  ");
+    expect(apply("a\n\nb", "removeBlankLines", [{ from: 2, to: 3 }])).toBe("a\nb");
+  });
+
+  it("processes multiple selections independently", () => {
+    expect(apply("c\nb--z\ny", "sortAscending", [{ from: 0, to: 3 }, { from: 5, to: 8 }])).toBe("b\nc--y\nz");
   });
 
   it("does not produce a change when cleanup has no visible effect", () => {
