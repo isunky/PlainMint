@@ -6,7 +6,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { openPath, openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
+import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
 import { isUntitledDocument, untitledSaveFileName } from "../documentName";
@@ -453,8 +453,7 @@ export async function applyDocumentTemplateChanges(
 
 export async function openDocumentTemplatesDirectory() {
   if (!isTauri()) return;
-  const path = await invoke<string>("document_templates_directory");
-  await openPath(path);
+  await invoke("open_document_templates_directory");
 }
 
 export async function readClipboardText() {

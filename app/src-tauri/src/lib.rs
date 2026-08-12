@@ -25,6 +25,7 @@ use std::{
 #[cfg(target_os = "windows")]
 use tauri::Emitter;
 use tauri::{AppHandle, Manager};
+use tauri_plugin_opener::OpenerExt;
 use uuid::Uuid;
 
 const DIRECTORY_SPACE_RESERVE: u64 = 1024 * 1024;
@@ -1415,8 +1416,17 @@ fn apply_document_template_changes(
 }
 
 #[tauri::command(async)]
-fn document_templates_directory(app: AppHandle) -> CommandResult<String> {
-    Ok(template_root(&app)?.to_string_lossy().to_string())
+fn open_document_templates_directory(app: AppHandle) -> CommandResult<()> {
+    let path = template_root(&app)?;
+    app.opener()
+        .open_path(path.to_string_lossy(), None::<&str>)
+        .map_err(|error| {
+            AppError::new(
+                "template_directory_open_failed",
+                "templatesFolderFailed",
+                Some(error.to_string()),
+            )
+        })
 }
 
 fn begin_lifecycle(path: &Path, now: u64) -> CommandResult<StartupStatus> {
@@ -2192,7 +2202,7 @@ pub fn run() {
             save_settings,
             load_document_templates,
             apply_document_template_changes,
-            document_templates_directory,
+            open_document_templates_directory,
             begin_app_session,
             close_app_window,
             save_session,

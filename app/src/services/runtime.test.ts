@@ -29,7 +29,7 @@ vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({ startDragging: mocks.startDragging }),
 }));
 
-import { checkForUpdates, encodedByteLength, getAppVersion, inspectFileMetadata, listenForFileWatchChanges, revealFileInDirectory, saveDocument, startDraggingWindow, syncFileWatches, writeSafetyRecovery } from "./runtime";
+import { checkForUpdates, encodedByteLength, getAppVersion, inspectFileMetadata, listenForFileWatchChanges, openDocumentTemplatesDirectory, revealFileInDirectory, saveDocument, startDraggingWindow, syncFileWatches, writeSafetyRecovery } from "./runtime";
 
 function document(patch: Partial<DocumentRecord> = {}): DocumentRecord {
   return {
@@ -99,6 +99,12 @@ describe("file location runtime bridge", () => {
     await revealFileInDirectory("C:\\Notes\\alpha.txt");
 
     expect(mocks.revealItemInDir).toHaveBeenCalledWith("C:\\Notes\\alpha.txt");
+  });
+
+  it("opens the templates directory through the restricted Rust command", async () => {
+    await openDocumentTemplatesDirectory();
+
+    expect(mocks.invoke).toHaveBeenCalledWith("open_document_templates_directory");
   });
 
 });
