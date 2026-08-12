@@ -64,6 +64,8 @@ export type UpdateCheckResult = {
 export const isTauri = () => Boolean(window.__TAURI_INTERNALS__);
 
 const templateStorageKey = "plainmint.document-templates";
+const templateGenerationKey = "plainmint.document-templates-generation";
+const currentTemplateGeneration = "2";
 
 let webStartupStatus: StartupStatus | undefined;
 
@@ -426,10 +428,23 @@ export async function startDraggingWindow() {
 export async function loadDocumentTemplates(defaults: DocumentTemplate[]): Promise<DocumentTemplateCatalog> {
   if (!isTauri()) {
     const raw = localStorage.getItem(templateStorageKey);
-    if (!raw) return { templates: structuredClone(defaults), issues: [] };
+    if (!raw) {
+      const result = { templates: structuredClone(defaults), issues: [] };
+      localStorage.setItem(templateStorageKey, JSON.stringify(result));
+      localStorage.setItem(templateGenerationKey, currentTemplateGeneration);
+      return result;
+    }
     try {
       const catalog = JSON.parse(raw) as DocumentTemplateCatalog;
-      return { templates: catalog.templates?.length ? catalog.templates : structuredClone(defaults), issues: catalog.issues ?? [] };
+      if (localStorage.getItem(templateGenerationKey) === currentTemplateGeneration) {
+        return { templates: catalog.templates?.length ? catalog.templates : structuredClone(defaults), issues: catalog.issues ?? [] };
+      }
+      const stored = catalog.templates ?? [];
+      const templates = [...structuredClone(defaults), ...stored.filter((template) => template.kind === "custom")];
+      const result = { templates, issues: catalog.issues ?? [] };
+      localStorage.setItem(templateStorageKey, JSON.stringify(result));
+      localStorage.setItem(templateGenerationKey, currentTemplateGeneration);
+      return result;
     } catch {
       return { templates: structuredClone(defaults), issues: [] };
     }

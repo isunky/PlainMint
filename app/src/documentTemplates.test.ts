@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { createDocumentTemplate, documentTemplates, isSafeSuggestedFileName } from "./documentTemplates";
+import {
+  createDocumentTemplate,
+  documentTemplates,
+  isSafeSuggestedFileName,
+  isSafeTemplateFileName,
+} from "./documentTemplates";
 
 describe("built-in document templates", () => {
   it("provides six unique offline templates", () => {
@@ -9,17 +14,17 @@ describe("built-in document templates", () => {
   });
 
   it("creates localized plain-text content with the current date", () => {
-    const now = new Date(2026, 6, 19);
+    const now = new Date(2026, 6, 19, 9, 7);
     const meetingNotes = documentTemplates.find((template) => template.kind === "builtin" && template.builtInId === "meeting-notes");
     const dailyNote = documentTemplates.find((template) => template.kind === "builtin" && template.builtInId === "daily-note");
     expect(meetingNotes).toBeDefined();
     expect(dailyNote).toBeDefined();
     expect(createDocumentTemplate(meetingNotes!, "zh-CN", now)).toMatchObject({
-      fileName: "meeting-notes.txt",
+      fileName: "meeting-notes-2026-07-19.txt",
       languageMode: "plain",
-      content: expect.stringContaining("会议记录\n========\n\n日期：2026-07-19"),
+      content: expect.stringContaining("会议时间：2026-07-19 09:07（星期日）"),
     });
-    expect(createDocumentTemplate(dailyNote!, "en", now).content).toContain("DAILY NOTE — 2026-07-19");
+    expect(createDocumentTemplate(dailyNote!, "en", now).content).toContain("DAILY NOTE | 2026-07-19 Sunday");
   });
 
   it("renders custom plain-text templates and validates suggested file names", () => {
@@ -31,5 +36,7 @@ describe("built-in document templates", () => {
     });
     expect(isSafeSuggestedFileName("notes.txt")).toBe(true);
     expect(isSafeSuggestedFileName("nested/notes.txt")).toBe(false);
+    expect(isSafeTemplateFileName("notes-{{date}}.txt")).toBe(true);
+    expect(isSafeTemplateFileName("notes-{{time}}.txt")).toBe(false);
   });
 });

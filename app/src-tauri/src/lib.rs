@@ -180,6 +180,7 @@ struct DocumentTemplateCatalog {
 #[serde(rename_all = "camelCase")]
 struct TemplateHeader {
     version: u8,
+    generation: Option<u8>,
     kind: String,
     built_in_id: Option<String>,
     name: Option<String>,
@@ -1003,6 +1004,11 @@ fn valid_suggested_file_name(file_name: &str) -> bool {
         && !value.ends_with(['.', ' '])
 }
 
+fn valid_template_file_name(file_name: &str) -> bool {
+    let expanded = file_name.replace("{{date}}", "2026-01-01");
+    !expanded.contains("{{") && !expanded.contains("}}") && valid_suggested_file_name(&expanded)
+}
+
 fn template_path(root: &Path, id: &str) -> CommandResult<PathBuf> {
     if !valid_template_storage_id(id) {
         return Err(AppError::new(
@@ -1029,6 +1035,17 @@ fn template_header(value: Value) -> CommandResult<String> {
     Ok(format!("<!-- plainmint-template: {serialized} -->"))
 }
 
+fn stored_template_generation(path: &Path) -> Option<u8> {
+    let source = fs::read_to_string(path).ok()?;
+    let header_line = source.lines().next()?;
+    let json_source = header_line
+        .strip_prefix("<!-- plainmint-template: ")?
+        .strip_suffix(" -->")?;
+    serde_json::from_str::<TemplateHeader>(json_source)
+        .ok()?
+        .generation
+}
+
 fn validate_template(
     template: &DocumentTemplate,
     defaults: &[DocumentTemplate],
@@ -1043,7 +1060,7 @@ fn validate_template(
         } => {
             if !valid_template_storage_id(id)
                 || !id.starts_with("builtin-")
-                || !valid_suggested_file_name(file_name)
+                || !valid_template_file_name(file_name)
             {
                 return Err(AppError::new(
                     "template_invalid",
@@ -1072,7 +1089,7 @@ fn validate_template(
         DocumentTemplate::Custom {
             name, file_name, ..
         } => {
-            if name.trim().is_empty() || !valid_suggested_file_name(file_name) {
+            if name.trim().is_empty() || !valid_template_file_name(file_name) {
                 return Err(AppError::new(
                     "template_invalid",
                     "templateSaveFailed",
@@ -1094,6 +1111,7 @@ fn serialize_template(template: &DocumentTemplate) -> CommandResult<String> {
         } => {
             let header = template_header(json!({
                 "version": 1,
+                "generation": 2,
                 "kind": "builtin",
                 "builtInId": built_in_id,
                 "fileName": file_name.trim(),
@@ -1138,7 +1156,7 @@ fn parse_template_file(
         .ok_or_else(|| "Missing PlainMint template header".to_string())?;
     let header: TemplateHeader =
         serde_json::from_str(json_source).map_err(|error| error.to_string())?;
-    if header.version != 1 || !valid_suggested_file_name(&header.file_name) {
+    if header.version != 1 || !valid_template_file_name(&header.file_name) {
         return Err("Unsupported or invalid template metadata".to_string());
     }
     match header.kind.as_str() {
@@ -1192,6 +1210,7 @@ fn default_builtins(defaults: &[DocumentTemplate]) -> CommandResult<Vec<Document
 fn load_document_templates_inner(
     app: &AppHandle,
     defaults: &[DocumentTemplate],
+    refresh_builtins: bool,
 ) -> CommandResult<DocumentTemplateCatalog> {
     let root = template_root(app)?;
     let builtins = default_builtins(defaults)?;
@@ -1201,7 +1220,7 @@ fn load_document_templates_inner(
             _ => unreachable!(),
         };
         let path = template_path(&root, id)?;
-        if !path.exists() {
+        if !path.exists() || (refresh_builtins && stored_template_generation(&path) != Some(2)) {
             atomic_write(&path, serialize_template(template)?.as_bytes())?;
         }
     }
@@ -1321,7 +1340,7 @@ fn load_document_templates(
     app: AppHandle,
     defaults: Vec<DocumentTemplate>,
 ) -> CommandResult<DocumentTemplateCatalog> {
-    load_document_templates_inner(&app, &defaults)
+    load_document_templates_inner(&app, &defaults, true)
 }
 
 #[tauri::command(async)]
@@ -1412,7 +1431,7 @@ fn apply_document_template_changes(
     for path in deletes {
         fs::remove_file(path).map_err(|error| AppError::io("template_delete_failed", error))?;
     }
-    load_document_templates_inner(&app, &builtins)
+    load_document_templates_inner(&app, &builtins, false)
 }
 
 #[tauri::command(async)]
@@ -2436,6 +2455,8 @@ mod tests {
         assert!(valid_suggested_file_name("weekly.txt"));
         assert!(!valid_suggested_file_name("nested/weekly.txt"));
         assert!(!valid_suggested_file_name("weekly?.txt"));
+        assert!(valid_template_file_name("weekly-{{date}}.txt"));
+        assert!(!valid_template_file_name("weekly-{{time}}.txt"));
     }
 
     #[test]

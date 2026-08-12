@@ -23,7 +23,7 @@ import { defaultSettings } from "../store";
 import {
   builtInDocumentTemplates,
   cloneTemplateCatalog,
-  isSafeSuggestedFileName,
+  isSafeTemplateFileName,
   templateChanges,
   templateDescription,
   templateDisplayName,
@@ -234,8 +234,8 @@ export function SettingsModal({
   const pendingTemplateChanges = useMemo(() => templateChanges(templates, templateDraft), [templateDraft, templates]);
   const hasTemplateChanges = pendingTemplateChanges.upserts.length > 0 || pendingTemplateChanges.deletes.length > 0;
   const selectedTemplate = templateDraft.templates.find((template) => template.id === selectedTemplateId);
-  const selectedTemplateInvalid = Boolean(selectedTemplate && (!isSafeSuggestedFileName(selectedTemplate.fileName) || (selectedTemplate.kind === "custom" && !selectedTemplate.name.trim())));
-  const templatesValid = templateDraft.templates.every((template) => isSafeSuggestedFileName(template.fileName) && (template.kind === "builtin" || Boolean(template.name.trim())));
+  const selectedTemplateInvalid = Boolean(selectedTemplate && (!isSafeTemplateFileName(selectedTemplate.fileName) || (selectedTemplate.kind === "custom" && !selectedTemplate.name.trim())));
+  const templatesValid = templateDraft.templates.every((template) => isSafeTemplateFileName(template.fileName) && (template.kind === "builtin" || Boolean(template.name.trim())));
   const updateTemplate = (id: string, updater: (template: DocumentTemplate) => DocumentTemplate) => {
     setTemplateDraft((current) => ({ ...current, templates: current.templates.map((template) => template.id === id ? updater(template) : template) }));
   };

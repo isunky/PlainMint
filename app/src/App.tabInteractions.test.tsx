@@ -240,13 +240,14 @@ describe("tab and split interactions", () => {
     fireEvent.click(screen.getByRole("button", { name: "New options" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "New from template" }));
     const dialog = screen.getByRole("dialog", { name: "New from template" });
-    expect(within(dialog).getAllByRole("button")).toHaveLength(7);
+    expect(within(dialog).getAllByRole("option")).toHaveLength(6);
     expect(within(dialog).getByText("Templates are stored locally and work entirely offline.")).toBeVisible();
+    expect(within(dialog).getByRole("region", { name: "Preview" })).toHaveTextContent("MEETING NOTES");
 
-    fireEvent.click(within(dialog).getByRole("button", { name: /Meeting notes/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Use template" }));
 
     expect(screen.queryByRole("dialog", { name: "New from template" })).not.toBeInTheDocument();
-    const created = Object.values(useAppStore.getState().documents).find((document) => document.fileName === "meeting-notes.txt");
+    const created = Object.values(useAppStore.getState().documents).find((document) => /^meeting-notes-\d{4}-\d{2}-\d{2}\.txt$/.test(document.fileName));
     expect(created?.filePath).toBeUndefined();
     expect(created).toMatchObject({
       content: expect.stringContaining("MEETING NOTES"),

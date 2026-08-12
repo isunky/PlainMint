@@ -44,6 +44,7 @@ import {
   type DocumentTemplate,
   type DocumentTemplateCatalog,
   type DocumentTemplateChanges,
+  type DocumentTemplatePreset,
 } from "./documentTemplates";
 import { buildEditorFontFamily } from "./fontSettings";
 import { createWorkspaceSession, decideStartupRecovery } from "./recoveryPolicy";
@@ -1362,10 +1363,26 @@ function TemplateModal({ templates, loading, issues, onClose, onSelect }: {
   loading: boolean;
   issues: number;
   onClose: () => void;
-  onSelect: (template: DocumentTemplate) => void;
+  onSelect: (preset: DocumentTemplatePreset) => void;
 }) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language === "zh-CN" ? "zh-CN" : "en");
+  const [selectedId, setSelectedId] = useState(() => templates[0]?.id ?? "");
+  const [snapshot] = useState(() => new Date());
+  const selectedTemplate = templates.find((template) => template.id === selectedId) ?? templates[0];
+  const preview = useMemo(
+    () => selectedTemplate ? createDocumentTemplate(selectedTemplate, locale, snapshot) : undefined,
+    [locale, selectedTemplate, snapshot],
+  );
+
+  useEffect(() => {
+    if (!templates.some((template) => template.id === selectedId)) setSelectedId(templates[0]?.id ?? "");
+  }, [selectedId, templates]);
+
+  const useSelectedTemplate = () => {
+    if (preview) onSelect(preview);
+  };
+
   return (
     <div className="modal-backdrop">
       <section className="confirm-modal template-modal" role="dialog" aria-modal="true" aria-labelledby="template-modal-title">
@@ -1376,19 +1393,50 @@ function TemplateModal({ templates, loading, issues, onClose, onSelect }: {
           </div>
           <IconButton label={t("close")} onClick={onClose}><X size={19} /></IconButton>
         </header>
-        {loading && templates.length === 0 ? <p className="template-loading">{t("loadingTemplates")}</p> : <div className="template-grid">
-          {templates.map((template) => (
-            <button key={template.id} type="button" className="template-card" onClick={() => onSelect(template)}>
-              <span className="template-card-icon"><FileText size={21} /></span>
-              <span className="template-card-copy">
-                <strong>{templateDisplayName(template, locale, t)}</strong>
-                <span>{templateDescription(template, locale, t)}</span>
-                <small>{template.fileName}</small>
-              </span>
-            </button>
-          ))}
+        {loading && templates.length === 0 ? <p className="template-loading">{t("loadingTemplates")}</p> : <div className="template-browser">
+          <div className="template-list" role="listbox" aria-label={t("templateList")}>
+            {templates.map((template) => {
+              const selected = template.id === selectedTemplate?.id;
+              return (
+                <button
+                  key={template.id}
+                  type="button"
+                  role="option"
+                  aria-selected={selected}
+                  className={`template-card ${selected ? "is-selected" : ""}`}
+                  onClick={() => setSelectedId(template.id)}
+                  onDoubleClick={() => onSelect(createDocumentTemplate(template, locale, snapshot))}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      onSelect(createDocumentTemplate(template, locale, snapshot));
+                    }
+                  }}
+                >
+                  <span className="template-card-icon"><FileText size={20} /></span>
+                  <span className="template-card-copy">
+                    <strong>{templateDisplayName(template, locale, t)}</strong>
+                    <span>{templateDescription(template, locale, t)}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          {preview ? <section className="template-preview" aria-label={t("templatePreview")}>
+            <header>
+              <strong>{t("templatePreview")}</strong>
+              <small>{preview.fileName}</small>
+            </header>
+            <pre className="template-preview-content" tabIndex={0}>{preview.content}</pre>
+          </section> : null}
         </div>}
-        <p className="template-privacy-note">{t("templatePrivacyNote")}{issues > 0 ? ` ${t("templateIssues", { count: issues })}` : ""}</p>
+        <footer className="template-modal-footer">
+          <p className="template-privacy-note">{t("templatePrivacyNote")}{issues > 0 ? ` ${t("templateIssues", { count: issues })}` : ""}</p>
+          <div className="modal-actions">
+            <button type="button" className="button-secondary" onClick={onClose}>{t("cancel")}</button>
+            <button type="button" className="button-primary" disabled={!preview} onClick={useSelectedTemplate}>{t("useTemplate")}</button>
+          </div>
+        </footer>
       </section>
     </div>
   );
@@ -3192,9 +3240,9 @@ export function App() {
           loading={templatesLoading}
           issues={templateCatalog.issues.length}
           onClose={() => setModal({ type: "none" })}
-          onSelect={(template) => {
+          onSelect={(preset) => {
             const pane = modal.pane;
-            createDocument(pane, createDocumentTemplate(template, resolveLocale(settings.locale)));
+            createDocument(pane, preset);
             setModal({ type: "none" });
             requestEditorRuntime(pane);
           }}
