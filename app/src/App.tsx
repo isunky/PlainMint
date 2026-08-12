@@ -79,10 +79,11 @@ import {
   encodedByteLength,
   getAppVersion,
   getContextMenuStatus,
-  getStartupOpenPaths,
+  takePendingOpenPaths,
   listenForWindowClose,
   listenForFileDrop,
   listenForFileWatchChanges,
+  listenForPendingOpenFiles,
   listRecoveries,
   loadRecentFiles,
   loadRecentlyClosedTabs,
@@ -1882,7 +1883,8 @@ export function App() {
   const suppressTabClickRef = useRef<{ tabId: string; until: number } | null>(null);
   const splitResizePointerRef = useRef<number | null>(null);
   const updateCheckInFlight = useRef(false);
-  const startupOpenPathsHandled = useRef(false);
+  const pendingOpenRequestInFlight = useRef(false);
+  const pendingOpenRequestAgain = useRef(false);
   const settingsMetadataRequested = useRef(false);
   const sessionPersistenceStarted = useRef(false);
 
@@ -2323,19 +2325,41 @@ export function App() {
     setPrintJob({ title: localizedDocumentName(activeDocument, t), content: activeDocument.content });
   }, [activeDocument, t]);
 
-  useEffect(() => {
-    if (!hydrated || startupOpenPathsHandled.current) return;
-    startupOpenPathsHandled.current = true;
-    void getStartupOpenPaths().then(async (paths) => {
-      const opened = (await Promise.all(paths.map((path) => openDocumentPath(path).catch(() => null))))
-        .filter((document): document is OpenedDocument => Boolean(document));
-      opened.forEach((document) => addOpenedDocument(document, useAppStore.getState().activePane));
-      if (opened.length) {
-        rememberRecent(opened.map((document) => document.path));
-        flash(t("opened"));
-      }
-    }).catch(() => undefined);
+  const consumePendingOpenPaths = useCallback(async () => {
+    if (!hydrated) return;
+    if (pendingOpenRequestInFlight.current) {
+      pendingOpenRequestAgain.current = true;
+      return;
+    }
+    pendingOpenRequestInFlight.current = true;
+    try {
+      do {
+        pendingOpenRequestAgain.current = false;
+        const paths = await takePendingOpenPaths();
+        const opened = (await Promise.all(paths.map((path) => openDocumentPath(path).catch(() => null))))
+          .filter((document): document is OpenedDocument => Boolean(document));
+        opened.forEach((document) => addOpenedDocument(document, useAppStore.getState().activePane));
+        if (opened.length) {
+          rememberRecent(opened.map((document) => document.path));
+          flash(t("opened"));
+        }
+      } while (pendingOpenRequestAgain.current);
+    } finally {
+      pendingOpenRequestInFlight.current = false;
+    }
   }, [addOpenedDocument, flash, hydrated, rememberRecent, t]);
+
+  useEffect(() => {
+    if (hydrated) void consumePendingOpenPaths();
+  }, [consumePendingOpenPaths, hydrated]);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: () => void = () => undefined;
+    void listenForPendingOpenFiles(() => { void consumePendingOpenPaths(); })
+      .then((dispose) => { if (disposed) dispose(); else unlisten = dispose; });
+    return () => { disposed = true; unlisten(); };
+  }, [consumePendingOpenPaths]);
 
   const reopenClosedTab = useCallback(async () => {
     const entry = useAppStore.getState().recentlyClosedTabs[0];

@@ -8,9 +8,14 @@ const runtimeMocks = vi.hoisted(() => ({
   openDocumentPath: vi.fn(),
   syncFileWatches: vi.fn(),
   listenForFileWatchChanges: vi.fn(),
+  listenForPendingOpenFiles: vi.fn(),
   unlistenFileWatch: vi.fn(),
+  unlistenPendingOpenFiles: vi.fn(),
   saveDocument: vi.fn(),
   fileWatchHandler: undefined as ((paths: string[]) => void) | undefined,
+  pendingOpenHandler: undefined as (() => void) | undefined,
+  pendingOpenPaths: [] as string[],
+  takePendingOpenPaths: vi.fn(),
 }));
 
 vi.mock("./services/runtime", async (importOriginal) => {
@@ -32,6 +37,8 @@ vi.mock("./services/runtime", async (importOriginal) => {
     openDocumentPath: runtimeMocks.openDocumentPath,
     syncFileWatches: runtimeMocks.syncFileWatches,
     listenForFileWatchChanges: runtimeMocks.listenForFileWatchChanges,
+    listenForPendingOpenFiles: runtimeMocks.listenForPendingOpenFiles,
+    takePendingOpenPaths: runtimeMocks.takePendingOpenPaths,
     saveDocument: runtimeMocks.saveDocument,
   };
 });
@@ -85,10 +92,14 @@ beforeEach(() => {
   vi.useFakeTimers();
   localStorage.clear();
   runtimeMocks.fileWatchHandler = undefined;
+  runtimeMocks.pendingOpenHandler = undefined;
+  runtimeMocks.pendingOpenPaths = [];
   runtimeMocks.inspectFileMetadata.mockReset().mockResolvedValue({ exists: true, modifiedAt: 10, size: 7, readOnly: false });
   runtimeMocks.openDocumentPath.mockReset().mockImplementation(async (path: string) => opened(path.includes("beta") ? "beta" : "alpha"));
   runtimeMocks.syncFileWatches.mockReset().mockResolvedValue({ available: true, watchedFiles: 1, watchedDirectories: 1, failedDirectories: [] });
   runtimeMocks.unlistenFileWatch.mockReset();
+  runtimeMocks.unlistenPendingOpenFiles.mockReset();
+  runtimeMocks.takePendingOpenPaths.mockReset().mockImplementation(async () => runtimeMocks.pendingOpenPaths.splice(0));
   runtimeMocks.saveDocument.mockReset().mockImplementation(async (value: DocumentRecord) => ({
     path: value.filePath,
     fingerprint: { modifiedAt: 30, size: value.content.length, hash: "saved" },
@@ -97,6 +108,10 @@ beforeEach(() => {
   runtimeMocks.listenForFileWatchChanges.mockReset().mockImplementation(async (handler: (paths: string[]) => void) => {
     runtimeMocks.fileWatchHandler = handler;
     return runtimeMocks.unlistenFileWatch;
+  });
+  runtimeMocks.listenForPendingOpenFiles.mockReset().mockImplementation(async (handler: () => void) => {
+    runtimeMocks.pendingOpenHandler = handler;
+    return runtimeMocks.unlistenPendingOpenFiles;
   });
   const alpha = document("alpha");
   useAppStore.setState({
@@ -116,6 +131,23 @@ afterEach(() => {
 });
 
 describe("event-driven external file checks", () => {
+  it("opens files forwarded by a second application instance", async () => {
+    render(<App />);
+    await settle();
+    runtimeMocks.openDocumentPath.mockClear();
+    runtimeMocks.pendingOpenPaths.push("C:\\Notes\\beta.txt");
+
+    await act(async () => {
+      runtimeMocks.pendingOpenHandler?.();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(runtimeMocks.openDocumentPath).toHaveBeenCalledWith("C:\\Notes\\beta.txt");
+    expect(Object.values(useAppStore.getState().documents).some((entry) => entry.filePath === "C:\\Notes\\beta.txt")).toBe(true);
+  });
+
   it("does not read files at four seconds and uses metadata only at sixty seconds", async () => {
     render(<App />);
     await settle();

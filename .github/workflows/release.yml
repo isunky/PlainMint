@@ -101,7 +101,7 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            args: --bundles msi,nsis
+            args: --bundles nsis
           - os: macos-14
             args: --bundles dmg
     runs-on: ${{ matrix.os }}
@@ -135,7 +135,6 @@ jobs:
           prerelease: ${{ inputs.prerelease }}
           args: ${{ matrix.args }}
           includeUpdaterJson: true
-          updaterJsonPreferNsis: true
           assetNamePattern: PlainMint_[version]_[platform]_[arch][_setup].[ext]
       - name: Package Windows portable edition
         if: runner.os == 'Windows'

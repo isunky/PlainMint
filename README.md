@@ -41,6 +41,7 @@ PlainMint 是一款面向 Windows 与 macOS 的轻量纯文本编辑器。无论
 - **关闭窗口也不慌** — 未命名草稿会被保留，会话恢复、自动备份和外部修改提醒默默守护正在编辑的内容
 - **从打开到输出都顺手** — 支持最近文件、拖放打开、查找替换和系统打印，常用操作简单直接
 - **更新不来打扰** — 只在你主动检查时获取新版本，是否下载和安装由你决定
+- **融入 Windows 文件打开流程** — NSIS 安装时可选择常见文本格式，PlainMint 会注册到“打开方式”并引导你确认默认应用
 
 ### 下载
 
@@ -65,6 +66,7 @@ PlainMint is a lightweight plain-text editor for Windows and macOS. Whether you 
 - **Close without losing your train of thought** — Untitled drafts are preserved, while session recovery, automatic backups, and external-change alerts quietly protect your work
 - **Keep everyday actions close** — Recent files, drag and drop, find and replace, and system printing are ready when you need them
 - **Check for updates on your terms** — PlainMint looks for a new version only when you ask, leaving download and installation in your control
+- **Fit into Windows file opening** — The NSIS installer can register selected text formats with Open with and guide you to confirm defaults in Windows
 
 ### Download
 
@@ -93,9 +95,9 @@ npm run check          # 类型检查与测试 / Type checks and tests
 npm run tauri:build    # 构建安装包 / Build desktop installers
 ```
 
-Windows 可在仓库根目录双击 `build-windows.cmd`，一次生成 MSI、EXE 安装程序与免安装绿色 ZIP；产物统一位于 `artifacts/windows`。
+Windows 可在仓库根目录双击 `build-windows.cmd`，生成 NSIS EXE 安装程序与免安装绿色 ZIP；产物统一位于 `artifacts/windows`。
 
-On Windows, double-click `build-windows.cmd` in the repository root to produce MSI and EXE installers plus a portable ZIP in `artifacts/windows`.
+On Windows, double-click `build-windows.cmd` in the repository root to produce an NSIS EXE installer plus a portable ZIP in `artifacts/windows`.
 
 ### 发布 / Release
 

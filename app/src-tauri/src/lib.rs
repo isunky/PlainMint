@@ -9,6 +9,7 @@ use std::os::windows::process::CommandExt;
 use std::process::Command;
 use std::{
     collections::BTreeMap,
+    ffi::OsStr,
     fs::{self, File, OpenOptions},
     io::{Read, Write},
     path::{Path, PathBuf},
@@ -22,13 +23,12 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-#[cfg(target_os = "windows")]
-use tauri::Emitter;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_opener::OpenerExt;
 use uuid::Uuid;
 
 const DIRECTORY_SPACE_RESERVE: u64 = 1024 * 1024;
+const PENDING_OPEN_FILES_EVENT: &str = "plainmint-open-files-pending";
 #[cfg(target_os = "windows")]
 const FILE_WATCH_EVENT: &str = "plainmint-file-watch-change";
 #[cfg(target_os = "windows")]
@@ -1429,6 +1429,105 @@ fn open_document_templates_directory(app: AppHandle) -> CommandResult<()> {
         })
 }
 
+#[derive(Default)]
+struct PendingOpenPaths {
+    paths: Mutex<Vec<String>>,
+}
+
+impl PendingOpenPaths {
+    fn new(paths: Vec<String>) -> Self {
+        Self {
+            paths: Mutex::new(paths),
+        }
+    }
+
+    fn extend(&self, paths: Vec<String>) -> bool {
+        let Ok(mut pending) = self.paths.lock() else {
+            return false;
+        };
+        let mut known = pending
+            .iter()
+            .map(|path| open_path_key(Path::new(path)))
+            .collect::<std::collections::HashSet<_>>();
+        let mut changed = false;
+        for path in paths {
+            if known.insert(open_path_key(Path::new(&path))) {
+                pending.push(path);
+                changed = true;
+            }
+        }
+        changed
+    }
+
+    fn take(&self) -> Vec<String> {
+        self.paths
+            .lock()
+            .map(|mut paths| std::mem::take(&mut *paths))
+            .unwrap_or_default()
+    }
+}
+
+fn open_path_key(path: &Path) -> String {
+    let value = path.to_string_lossy().replace('\\', "/");
+    #[cfg(target_os = "windows")]
+    {
+        return value.to_lowercase();
+    }
+    #[cfg(not(target_os = "windows"))]
+    value
+}
+
+#[cfg(target_os = "windows")]
+fn display_open_path(path: &Path) -> String {
+    let value = path.to_string_lossy();
+    if let Some(rest) = value.strip_prefix(r"\\?\UNC\") {
+        return format!(r"\\{rest}");
+    }
+    value.strip_prefix(r"\\?\").unwrap_or(&value).to_string()
+}
+
+#[cfg(not(target_os = "windows"))]
+fn display_open_path(path: &Path) -> String {
+    path.to_string_lossy().into_owned()
+}
+
+fn resolve_open_paths<I, S>(arguments: I, cwd: &Path) -> Vec<String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    let mut paths = Vec::new();
+    let mut known = std::collections::HashSet::new();
+    for argument in arguments {
+        let supplied = PathBuf::from(argument.as_ref());
+        let candidate = if supplied.is_absolute() {
+            supplied
+        } else {
+            cwd.join(supplied)
+        };
+        let Ok(metadata) = fs::metadata(&candidate) else {
+            continue;
+        };
+        if !metadata.is_file() {
+            continue;
+        }
+        let canonical = fs::canonicalize(&candidate).unwrap_or(candidate);
+        let path = display_open_path(&canonical);
+        if known.insert(open_path_key(Path::new(&path))) {
+            paths.push(path);
+        }
+    }
+    paths
+}
+
+fn focus_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
 fn begin_lifecycle(path: &Path, now: u64) -> CommandResult<StartupStatus> {
     let previous = if path.exists() {
         match fs::read(path) {
@@ -1683,17 +1782,8 @@ fn set_context_menu_enabled(enabled: bool) -> CommandResult<ContextMenuStatus> {
 }
 
 #[tauri::command(async)]
-fn get_startup_open_paths() -> Vec<String> {
-    std::env::args_os()
-        .skip(1)
-        .map(PathBuf::from)
-        .filter(|path| {
-            fs::metadata(path)
-                .map(|metadata| metadata.is_file())
-                .unwrap_or(false)
-        })
-        .map(|path| path.to_string_lossy().to_string())
-        .collect()
+fn take_pending_open_paths(state: tauri::State<'_, PendingOpenPaths>) -> Vec<String> {
+    state.take()
 }
 
 #[tauri::command(async)]
@@ -2179,7 +2269,22 @@ fn delete_recovery(app: AppHandle, id: String) -> CommandResult<()> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let initial_paths = resolve_open_paths(
+        std::env::args_os().skip(1),
+        &std::env::current_dir().unwrap_or_default(),
+    );
     tauri::Builder::default()
+        .manage(PendingOpenPaths::new(initial_paths))
+        .plugin(tauri_plugin_single_instance::init(|app, arguments, cwd| {
+            let paths = resolve_open_paths(arguments.into_iter().skip(1), Path::new(&cwd));
+            if !paths.is_empty() {
+                let state = app.state::<PendingOpenPaths>();
+                if state.extend(paths) {
+                    let _ = app.emit(PENDING_OPEN_FILES_EVENT, ());
+                }
+            }
+            focus_main_window(app);
+        }))
         .setup(|app| {
             app.manage(create_file_watch_state(app.handle().clone()));
             Ok(())
@@ -2195,7 +2300,7 @@ pub fn run() {
             validate_directory,
             get_context_menu_status,
             set_context_menu_enabled,
-            get_startup_open_paths,
+            take_pending_open_paths,
             open_file,
             save_file,
             load_settings,
@@ -2232,6 +2337,47 @@ mod tests {
         let path = std::env::temp_dir().join(format!("plainmint-{label}-{}", Uuid::new_v4()));
         fs::create_dir_all(&path).unwrap();
         path
+    }
+
+    #[test]
+    fn open_paths_resolve_relative_files_and_ignore_invalid_entries() {
+        let directory = test_directory("open-paths");
+        let file = directory.join("中文 note.txt");
+        fs::write(&file, "hello").unwrap();
+        let paths = resolve_open_paths(
+            ["中文 note.txt", ".", "missing.txt", "中文 note.txt"],
+            &directory,
+        );
+        assert_eq!(
+            paths,
+            vec![display_open_path(&fs::canonicalize(&file).unwrap())]
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn pending_open_paths_are_deduplicated_and_drained_atomically() {
+        let directory = test_directory("pending-open-paths");
+        let first = directory.join("first.txt");
+        let second = directory.join("second.txt");
+        fs::write(&first, "one").unwrap();
+        fs::write(&second, "two").unwrap();
+        let first = display_open_path(&fs::canonicalize(first).unwrap());
+        let second = display_open_path(&fs::canonicalize(second).unwrap());
+        let pending = PendingOpenPaths::new(vec![first.clone()]);
+        assert!(pending.extend(vec![first.clone(), second.clone()]));
+        assert_eq!(pending.take(), vec![first, second]);
+        assert!(pending.take().is_empty());
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn open_path_keys_ignore_windows_case_and_separators() {
+        assert_eq!(
+            open_path_key(Path::new(r"C:\Notes\Draft.TXT")),
+            open_path_key(Path::new("c:/notes/draft.txt"))
+        );
     }
 
     fn write_test_backup(directory: &Path, created_at: u64, id: &str) -> PathBuf {

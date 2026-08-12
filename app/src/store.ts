@@ -309,7 +309,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   addOpenedDocument: (opened, pane = get().activePane) => {
     const existing = opened.path && !opened.recovered
-      ? Object.values(get().documents).find((document) => document.filePath === opened.path)
+      ? Object.values(get().documents).find((document) => document.filePath && pathKey(document.filePath) === pathKey(opened.path))
       : undefined;
     if (existing) {
       const state = get();

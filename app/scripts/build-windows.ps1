@@ -26,7 +26,7 @@ $Architecture = switch ($env:PROCESSOR_ARCHITECTURE) {
 }
 $BaseName = "PlainMint_${Version}_windows_${Architecture}"
 $LoadedLocalSigningKey = $false
-$BuildArguments = @("run", "tauri", "--", "build", "--bundles", "msi,nsis")
+$BuildArguments = @("run", "tauri", "--", "build", "--bundles", "nsis")
 
 if (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
     $LocalKey = Join-Path $HOME ".tauri\plainmint-updater.key"
@@ -105,26 +105,22 @@ try {
     Invoke-NativeCommand -Command "npm.cmd" -Arguments @("run", "version:check")
 
     if (-not $PackageOnly) {
-        Write-Host "[2/4] Building MSI and NSIS installers..." -ForegroundColor Cyan
+        Write-Host "[2/4] Building the NSIS installer..." -ForegroundColor Cyan
         Invoke-NativeCommand -Command "npm.cmd" -Arguments $BuildArguments
     } else {
-        Write-Host "[2/4] Existing MSI and NSIS installers selected." -ForegroundColor DarkCyan
+        Write-Host "[2/4] Existing NSIS installer selected." -ForegroundColor DarkCyan
     }
 
     $Application = Join-Path $TargetRoot "plainmint.exe"
-    $Msi = Get-ChildItem (Join-Path $TargetRoot "bundle\msi") -Filter "*.msi" -File |
-        Sort-Object LastWriteTime -Descending | Select-Object -First 1
     $Nsis = Get-ChildItem (Join-Path $TargetRoot "bundle\nsis") -Filter "*.exe" -File |
         Sort-Object LastWriteTime -Descending | Select-Object -First 1
 
-    if (-not (Test-Path -LiteralPath $Application) -or -not $Msi -or -not $Nsis) {
-        throw "The build completed without all expected Windows artifacts."
+    if (-not (Test-Path -LiteralPath $Application) -or -not $Nsis) {
+        throw "The build completed without the expected Windows artifacts."
     }
 
     Write-Host "[3/4] Collecting installers and portable package..." -ForegroundColor Cyan
-    $MsiOutput = Join-Path $OutputRoot "${BaseName}.msi"
     $ExeOutput = Join-Path $OutputRoot "${BaseName}_setup.exe"
-    Copy-Item -LiteralPath $Msi.FullName -Destination $MsiOutput
     Copy-Item -LiteralPath $Nsis.FullName -Destination $ExeOutput
 
     $PortableFolderName = "${BaseName}_portable"
@@ -147,7 +143,7 @@ Settings and recovery data are still stored in the current Windows user's applic
     Remove-Item -LiteralPath $PortableStage -Recurse -Force
 
     Write-Host "[4/4] Writing SHA-256 checksums..." -ForegroundColor Cyan
-    $Artifacts = @($MsiOutput, $ExeOutput, $PortableOutput)
+    $Artifacts = @($ExeOutput, $PortableOutput)
     $Checksums = foreach ($Artifact in $Artifacts) {
         $Hash = Get-FileHash -LiteralPath $Artifact -Algorithm SHA256
         "$($Hash.Hash.ToLowerInvariant())  $([System.IO.Path]::GetFileName($Artifact))"

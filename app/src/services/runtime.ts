@@ -397,9 +397,14 @@ export async function setContextMenuEnabled(enabled: boolean): Promise<ContextMe
   return invoke<ContextMenuStatus>("set_context_menu_enabled", { enabled });
 }
 
-export async function getStartupOpenPaths(): Promise<string[]> {
+export async function takePendingOpenPaths(): Promise<string[]> {
   if (!isTauri()) return [];
-  return invoke<string[]>("get_startup_open_paths");
+  return invoke<string[]>("take_pending_open_paths");
+}
+
+export async function listenForPendingOpenFiles(handler: () => void): Promise<() => void> {
+  if (!isTauri()) return () => undefined;
+  return listen("plainmint-open-files-pending", handler);
 }
 
 export async function showAuthorWebsite() {

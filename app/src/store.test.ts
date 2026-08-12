@@ -493,3 +493,25 @@ describe("recently closed tabs", () => {
     expect(normalized[0].fileName).toBe("0.txt");
   });
 });
+
+describe("opened document paths", () => {
+  it("activates an existing tab for equivalent Windows paths", () => {
+    const opened = {
+      path: "C:\\Notes\\Draft.txt",
+      name: "Draft.txt",
+      content: "first",
+      encoding: "utf-8" as const,
+      lineEnding: "crlf" as const,
+      readOnly: false,
+    };
+    useAppStore.getState().addOpenedDocument(opened, "left");
+    useAppStore.getState().addOpenedDocument({ ...opened, path: "c:/notes/DRAFT.txt" }, "right");
+
+    const state = useAppStore.getState();
+    const matchingDocuments = Object.values(state.documents)
+      .filter((document) => document.filePath?.replace(/\\/g, "/").toLowerCase() === "c:/notes/draft.txt");
+    expect(matchingDocuments).toHaveLength(1);
+    expect([...state.tabs.left, ...state.tabs.right].filter((tab) => tab.documentId === matchingDocuments[0].id)).toHaveLength(1);
+    expect(useAppStore.getState().activePane).toBe("left");
+  });
+});
