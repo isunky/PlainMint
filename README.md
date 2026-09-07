@@ -36,7 +36,7 @@ PlainMint 是一款面向 Windows 与 macOS 的轻量纯文本编辑器。无论
 
 - **文档再多也清楚** — 用多标签和左右分屏同时处理文件，还能并排比较差异、一次查找所有已打开文档
 - **整理文本不用折腾** — 快速排序、去重、删除空行和行尾空格，配合多光标与矩形列编辑，批量修改更省事
-- **从模板快速开始** — 六种实用模板覆盖会议、每日记录、待办、项目、问题和 README；创建前可预览，并自动填入日期时间
+- **从模板快速开始** — 十种实用模板覆盖会议纪要、客户沟通、需求、项目、日报周报与交接；创建前可搜索预览，并自动填入日期时间
 - **阅读和编辑更舒服** — 语法高亮、自动换行、行号、明暗主题与多种强调色，让不同内容都清晰好读
 - **关闭窗口也不慌** — 未命名草稿会被保留，会话恢复、自动备份和外部修改提醒默默守护正在编辑的内容
 - **从打开到输出都顺手** — 支持最近文件、拖放打开、查找替换和系统打印，常用操作简单直接
@@ -61,7 +61,7 @@ PlainMint is a lightweight plain-text editor for Windows and macOS. Whether you 
 
 - **Stay clear across many documents** — Work with tabs and split view, compare files side by side, and search every open document at once
 - **Clean up text without the busywork** — Sort lines, remove duplicates, blank lines, and trailing spaces, then make batch edits with multiple cursors and column selection
-- **Start quickly with templates** — Six practical templates cover meetings, daily notes, tasks, projects, issues, and README files, with previews and automatic date/time fields
+- **Start quickly with templates** — Ten practical templates cover meeting minutes, customer communication, requirements, projects, reports, and handovers, with search, previews, and automatic date/time fields
 - **Make every file easier to read** — Syntax highlighting, word wrap, line numbers, light and dark modes, and several accent colors keep content comfortable and clear
 - **Close without losing your train of thought** — Untitled drafts are preserved, while session recovery, automatic backups, and external-change alerts quietly protect your work
 - **Keep everyday actions close** — Recent files, drag and drop, find and replace, and system printing are ready when you need them

@@ -162,6 +162,22 @@ describe("settings runtime controls", () => {
     }));
   });
 
+  it("copies a built-in template into an editable custom template", () => {
+    render(<SettingsModal
+      settings={{ ...defaultSettings }}
+      directoryChecks={{ defaultSaveFolder: { status: "idle" }, cloudSyncFolder: { status: "idle" } }}
+      applying={false}
+      canApply
+      {...handlers}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Templates" }));
+    fireEvent.click(screen.getByRole("button", { name: "Copy as custom" }));
+    expect(screen.getByLabelText("Template name")).toHaveValue("Meeting notes (copy)");
+    expect(screen.getByLabelText("Suggested file name")).toHaveValue("会议纪要-{{date}}.txt");
+    expect((screen.getByLabelText("Template content") as HTMLTextAreaElement).value).toContain("会议主题");
+  });
+
   it("keeps contextual help in hoverable setting icons", () => {
     render(<SettingsModal
       settings={{ ...defaultSettings }}

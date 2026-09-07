@@ -7,10 +7,10 @@ import {
 } from "./documentTemplates";
 
 describe("built-in document templates", () => {
-  it("provides six unique offline templates", () => {
-    expect(documentTemplates).toHaveLength(6);
-    expect(new Set(documentTemplates.map((template) => template.id)).size).toBe(6);
-    expect(new Set(documentTemplates.map((template) => template.fileName)).size).toBe(6);
+  it("provides ten unique business and project templates", () => {
+    expect(documentTemplates).toHaveLength(10);
+    expect(new Set(documentTemplates.map((template) => template.id)).size).toBe(10);
+    expect(new Set(documentTemplates.map((template) => template.fileName)).size).toBe(10);
   });
 
   it("creates localized plain-text content with the current date", () => {
@@ -20,11 +20,11 @@ describe("built-in document templates", () => {
     expect(meetingNotes).toBeDefined();
     expect(dailyNote).toBeDefined();
     expect(createDocumentTemplate(meetingNotes!, "zh-CN", now)).toMatchObject({
-      fileName: "meeting-notes-2026-07-19.txt",
+      fileName: "会议纪要-2026-07-19.txt",
       languageMode: "plain",
-      content: expect.stringContaining("会议时间：2026-07-19 09:07（星期日）"),
+      content: expect.stringContaining("会议时间：2026年7月19日 09:07（星期日）"),
     });
-    expect(createDocumentTemplate(dailyNote!, "en", now).content).toContain("DAILY NOTE | 2026-07-19 Sunday");
+    expect(createDocumentTemplate(dailyNote!, "en", now).content).toContain("DAILY REPORT");
   });
 
   it("renders custom plain-text templates and validates suggested file names", () => {

@@ -41,6 +41,7 @@ import {
   createDocumentTemplate,
   templateDescription,
   templateDisplayName,
+  templateSuggestedFileName,
   type DocumentTemplate,
   type DocumentTemplateCatalog,
   type DocumentTemplateChanges,
@@ -129,7 +130,7 @@ import type { TextCleanupAction } from "./textCleanup";
 
 type ModalState =
   | { type: "none" }
-  | { type: "settings"; snapshot: UserSettings }
+  | { type: "settings"; snapshot: UserSettings; templateId?: string }
   | { type: "recovery" }
   | { type: "startup-recovery"; session: WorkspaceSession }
   | { type: "templates"; pane: PaneId }
@@ -1358,26 +1359,37 @@ function EditorPane({ pane, onCloseTab, onActivateTab, onTabPointerDown, onTabCo
   );
 }
 
-function TemplateModal({ templates, loading, issues, onClose, onSelect }: {
+function TemplateModal({ templates, loading, issues, onClose, onSelect, onManage }: {
   templates: DocumentTemplate[];
   loading: boolean;
   issues: number;
   onClose: () => void;
   onSelect: (preset: DocumentTemplatePreset) => void;
+  onManage: (templateId: string) => void;
 }) {
   const { t, i18n } = useTranslation();
   const locale = resolveLocale(i18n.language === "zh-CN" ? "zh-CN" : "en");
   const [selectedId, setSelectedId] = useState(() => templates[0]?.id ?? "");
+  const [query, setQuery] = useState("");
   const [snapshot] = useState(() => new Date());
-  const selectedTemplate = templates.find((template) => template.id === selectedId) ?? templates[0];
+  const visibleTemplates = useMemo(() => {
+    const needle = query.trim().toLocaleLowerCase(locale);
+    if (!needle) return templates;
+    return templates.filter((template) => [
+      templateDisplayName(template, locale, t),
+      templateDescription(template, locale, t),
+      templateSuggestedFileName(template, locale),
+    ].some((value) => value?.toLocaleLowerCase(locale).includes(needle)));
+  }, [locale, query, t, templates]);
+  const selectedTemplate = visibleTemplates.find((template) => template.id === selectedId) ?? visibleTemplates[0];
   const preview = useMemo(
     () => selectedTemplate ? createDocumentTemplate(selectedTemplate, locale, snapshot) : undefined,
     [locale, selectedTemplate, snapshot],
   );
 
   useEffect(() => {
-    if (!templates.some((template) => template.id === selectedId)) setSelectedId(templates[0]?.id ?? "");
-  }, [selectedId, templates]);
+    if (!visibleTemplates.some((template) => template.id === selectedId)) setSelectedId(visibleTemplates[0]?.id ?? "");
+  }, [selectedId, visibleTemplates]);
 
   const useSelectedTemplate = () => {
     if (preview) onSelect(preview);
@@ -1394,8 +1406,10 @@ function TemplateModal({ templates, loading, issues, onClose, onSelect }: {
           <IconButton label={t("close")} onClick={onClose}><X size={19} /></IconButton>
         </header>
         {loading && templates.length === 0 ? <p className="template-loading">{t("loadingTemplates")}</p> : <div className="template-browser">
-          <div className="template-list" role="listbox" aria-label={t("templateList")}>
-            {templates.map((template) => {
+          <div className="template-list-wrap">
+            <label className="template-search"><MagnifyingGlass size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("searchTemplates")} aria-label={t("searchTemplates")} /></label>
+            <div className="template-list" role="listbox" aria-label={t("templateList")}>
+            {visibleTemplates.map((template) => {
               const selected = template.id === selectedTemplate?.id;
               return (
                 <button
@@ -1421,6 +1435,8 @@ function TemplateModal({ templates, loading, issues, onClose, onSelect }: {
                 </button>
               );
             })}
+            {!visibleTemplates.length && <p className="template-empty">{t("noTemplatesFound")}</p>}
+            </div>
           </div>
           {preview ? <section className="template-preview" aria-label={t("templatePreview")}>
             <header>
@@ -1433,6 +1449,7 @@ function TemplateModal({ templates, loading, issues, onClose, onSelect }: {
         <footer className="template-modal-footer">
           <p className="template-privacy-note">{t("templatePrivacyNote")}{issues > 0 ? ` ${t("templateIssues", { count: issues })}` : ""}</p>
           <div className="modal-actions">
+            <button type="button" className="button-secondary" disabled={!selectedTemplate} onClick={() => selectedTemplate && onManage(selectedTemplate.id)}>{t("manageTemplates")}</button>
             <button type="button" className="button-secondary" onClick={onClose}>{t("cancel")}</button>
             <button type="button" className="button-primary" disabled={!preview} onClick={useSelectedTemplate}>{t("useTemplate")}</button>
           </div>
@@ -3240,6 +3257,7 @@ export function App() {
           loading={templatesLoading}
           issues={templateCatalog.issues.length}
           onClose={() => setModal({ type: "none" })}
+          onManage={(templateId) => setModal({ type: "settings", snapshot: settings, templateId })}
           onSelect={(preset) => {
             const pane = modal.pane;
             createDocument(pane, preset);
@@ -3279,6 +3297,7 @@ export function App() {
           templates={templateCatalog}
           templatesLoading={templatesLoading}
           templatesError={templatesError}
+          initialTemplateId={modal.templateId}
           onRefreshTemplates={() => void refreshTemplates()}
           onOpenTemplatesDirectory={() => void openDocumentTemplatesDirectory().catch(() => flash(t("templatesFolderFailed")))}
         />
