@@ -1,6 +1,6 @@
 [package]
 name = "plainmint"
-version = "0.6.0"
+version = "0.6.1"
 description = "Plain text, freshly simple."
 authors = ["isunky"]
 edition = "2021"
