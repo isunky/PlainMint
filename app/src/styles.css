@@ -2197,7 +2197,10 @@ select:focus-visible {
 
 .template-modal {
   width: min(900px, calc(100vw - 72px));
+  height: min(620px, calc(100vh - 120px));
   padding: 24px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 .template-modal-header {
@@ -2213,11 +2216,12 @@ select:focus-visible {
 }
 
 .template-browser {
-  min-height: 390px;
-  max-height: min(540px, calc(100vh - 250px));
+  min-height: 0;
   display: grid;
   grid-template-columns: minmax(230px, 0.72fr) minmax(0, 1.28fr);
+  grid-template-rows: minmax(0, 1fr);
   gap: 14px;
+  overflow: hidden;
 }
 
 .template-list {
@@ -2226,6 +2230,8 @@ select:focus-visible {
   flex-direction: column;
   gap: 7px;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   padding: 1px;
 }
 
@@ -2234,6 +2240,7 @@ select:focus-visible {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 9px;
+  overflow: hidden;
 }
 
 .template-search {
