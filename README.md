@@ -109,4 +109,4 @@ Run **Release** manually in GitHub Actions and choose `patch`, `minor`, or `majo
 
 ## License
 
-[Apache License 2.0](LICENSE)
+[GNU General Public License v3.0](LICENSE)
