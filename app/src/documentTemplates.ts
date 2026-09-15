@@ -9,7 +9,13 @@ export type BuiltInDocumentTemplateId =
   | "todo-list"
   | "project-plan"
   | "issue-report"
-  | "readme";
+  | "readme"
+  | "customer-communication"
+  | "requirement-record"
+  | "weekly-report"
+  | "handover";
+
+type LegacyBuiltInDocumentTemplateId = Exclude<BuiltInDocumentTemplateId, "customer-communication" | "requirement-record" | "weekly-report" | "handover">;
 
 export type DocumentTemplateId = string;
 
@@ -18,6 +24,7 @@ export interface BuiltInDocumentTemplate {
   kind: "builtin";
   builtInId: BuiltInDocumentTemplateId;
   fileName: string;
+  fileNames?: Partial<Record<TemplateLocale, string>>;
   content: Record<TemplateLocale, string>;
   revision?: string;
 }
@@ -61,7 +68,7 @@ export interface DocumentTemplatePreset {
   languageMode: LanguageId;
 }
 
-const builtInTemplateContent: Record<BuiltInDocumentTemplateId, Record<TemplateLocale, string>> = {
+const previousBuiltInTemplateContent: Record<LegacyBuiltInDocumentTemplateId, Record<TemplateLocale, string>> = {
   "meeting-notes": {
     "zh-CN": "会议记录\n========\n\n会议时间：{{datetime}}（{{weekday}}）\n会议主题：\n主持人：\n记录人：\n参与者：\n\n会议目标\n--------\n本次会议需要解决：\n\n议程\n----\n1. \n2. \n3. \n\n讨论与结论\n----------\n议题：\n讨论要点：\n结论：\n\n决议\n----\n• 决议：\n  依据：\n\n行动项\n------\n□ 事项｜负责人｜截止日期｜状态\n\n待确认事项\n----------\n• \n\n下次会议\n--------\n时间：\n主题：\n会前准备：\n",
     en: "MEETING NOTES\n=============\n\nTime: {{datetime}} ({{weekday}})\nTopic:\nFacilitator:\nNote taker:\nAttendees:\n\nMEETING GOAL\n------------\nWhat this meeting needs to resolve:\n\nAGENDA\n------\n1. \n2. \n3. \n\nDISCUSSION AND CONCLUSIONS\n--------------------------\nTopic:\nKey points:\nConclusion:\n\nDECISIONS\n---------\n• Decision:\n  Rationale:\n\nACTION ITEMS\n------------\n□ Task | Owner | Due date | Status\n\nPENDING CONFIRMATION\n--------------------\n• \n\nNEXT MEETING\n------------\nTime:\nTopic:\nPreparation:\n",
@@ -88,7 +95,7 @@ const builtInTemplateContent: Record<BuiltInDocumentTemplateId, Record<TemplateL
   },
 };
 
-const builtInFileNames: Record<BuiltInDocumentTemplateId, string> = {
+const previousBuiltInFileNames: Record<LegacyBuiltInDocumentTemplateId, string> = {
   "meeting-notes": "meeting-notes-{{date}}.txt",
   "daily-note": "daily-note-{{date}}.txt",
   "todo-list": "todo-list.txt",
@@ -97,11 +104,89 @@ const builtInFileNames: Record<BuiltInDocumentTemplateId, string> = {
   readme: "README.txt",
 };
 
+export const previousBuiltInDocumentTemplates: BuiltInDocumentTemplate[] = (Object.keys(previousBuiltInFileNames) as LegacyBuiltInDocumentTemplateId[]).map((builtInId) => ({
+  id: `builtin-${builtInId}.pmtpl`,
+  kind: "builtin",
+  builtInId,
+  fileName: previousBuiltInFileNames[builtInId],
+  content: previousBuiltInTemplateContent[builtInId],
+}));
+
+const builtInTemplateContent: Record<BuiltInDocumentTemplateId, Record<TemplateLocale, string>> = {
+  "meeting-notes": {
+    "zh-CN": "会议纪要\n\n会议主题：\n会议时间：{{date_cn}} {{time}}（{{weekday}}）\n参会人员：\n记录人：\n\n一、沟通重点\n1. \n2. \n\n二、确定事项\n1. \n2. \n\n三、待办事项\n1. 事项：\n   负责人：\n   完成时间：\n\n四、待确认问题\n1. \n\n下次沟通：\n",
+    en: "MEETING MINUTES\n\nTopic:\nTime: {{datetime}} ({{weekday}})\nAttendees:\nNote taker:\n\nKEY DISCUSSION\n1. \n2. \n\nDECISIONS\n1. \n2. \n\nACTION ITEMS\n1. Task:\n   Owner:\n   Due date:\n\nOPEN QUESTIONS\n1. \n\nNEXT FOLLOW-UP:\n",
+  },
+  "daily-note": {
+    "zh-CN": "工作日报\n日期：{{date_cn}} {{weekday}}\n\n今日完成\n1. \n2. \n\n进行中事项\n1. 事项：\n   当前进展：\n   下一步：\n\n待协调问题\n1. \n\n明日安排\n1. \n",
+    en: "DAILY REPORT\nDate: {{date}} {{weekday}}\n\nCOMPLETED TODAY\n1. \n2. \n\nIN PROGRESS\n1. Item:\n   Progress:\n   Next step:\n\nNEEDS COORDINATION\n1. \n\nPLAN FOR TOMORROW\n1. \n",
+  },
+  "todo-list": {
+    "zh-CN": "事项跟进\n更新日期：{{date_cn}}\n\n今日处理\n□ 事项：\n  负责人：\n  完成时间：\n\n近期安排\n□ 事项：\n  负责人：\n  完成时间：\n\n等待反馈\n□ 事项：\n  等待对象：\n  跟进时间：\n\n已完成\n☑ \n",
+    en: "TASK FOLLOW-UP\nUpdated: {{date}}\n\nTODAY\n□ Task:\n  Owner:\n  Due date:\n\nUPCOMING\n□ Task:\n  Owner:\n  Due date:\n\nWAITING FOR RESPONSE\n□ Task:\n  Contact:\n  Follow-up date:\n\nCOMPLETED\n☑ \n",
+  },
+  "project-plan": {
+    "zh-CN": "项目计划\n\n项目名称：\n项目负责人：\n当前阶段：\n更新时间：{{date_cn}}\n\n项目目标\n\n交付内容\n1. \n2. \n\n时间安排\n1. 事项：\n   完成时间：\n\n当前进展\n\n待协调问题\n1. \n\n下一步安排\n1. \n",
+    en: "PROJECT PLAN\n\nProject name:\nOwner:\nCurrent stage:\nUpdated: {{date}}\n\nGOAL\n\nDELIVERABLES\n1. \n2. \n\nTIMELINE\n1. Item:\n   Due date:\n\nCURRENT PROGRESS\n\nNEEDS COORDINATION\n1. \n\nNEXT STEPS\n1. \n",
+  },
+  "issue-report": {
+    "zh-CN": "问题跟进\n\n问题名称：\n发现时间：{{date_cn}} {{time}}\n影响范围：\n处理人：\n\n问题描述\n\n当前处理情况\n\n处理措施\n1. \n\n预计完成时间：\n\n验证结果\n\n后续跟进\n1. \n",
+    en: "ISSUE FOLLOW-UP\n\nIssue:\nReported: {{datetime}}\nImpact:\nOwner:\n\nDESCRIPTION\n\nCURRENT STATUS\n\nACTIONS\n1. \n\nEXPECTED COMPLETION:\n\nVERIFICATION\n\nFOLLOW-UP\n1. \n",
+  },
+  readme: {
+    "zh-CN": "项目说明\n\n项目名称：\n项目负责人：\n更新时间：{{date_cn}}\n\n项目用途\n\n主要内容\n1. \n2. \n\n使用方式\n1. \n2. \n\n相关资料\n1. \n\n联系人\n\n备注\n",
+    en: "PROJECT BRIEF\n\nProject name:\nOwner:\nUpdated: {{date}}\n\nPURPOSE\n\nMAIN CONTENT\n1. \n2. \n\nHOW TO USE\n1. \n2. \n\nRELATED MATERIALS\n1. \n\nCONTACT\n\nNOTES\n",
+  },
+  "customer-communication": {
+    "zh-CN": "客户沟通记录\n\n客户名称：\n联系人：\n沟通时间：{{date_cn}} {{time}}\n沟通方式：\n我方参与人：\n\n客户诉求\n1. \n\n沟通结论\n1. \n\n待确认事项\n1. \n\n下一步跟进\n1. 事项：\n   负责人：\n   跟进时间：\n",
+    en: "CUSTOMER COMMUNICATION\n\nCustomer:\nContact:\nTime: {{datetime}}\nChannel:\nOur attendees:\n\nCUSTOMER REQUESTS\n1. \n\nCONCLUSIONS\n1. \n\nITEMS TO CONFIRM\n1. \n\nNEXT FOLLOW-UP\n1. Task:\n   Owner:\n   Follow-up date:\n",
+  },
+  "requirement-record": {
+    "zh-CN": "需求记录\n\n需求名称：\n需求来源：\n记录时间：{{date_cn}}\n记录人：\n优先级：高 / 中 / 低\n\n使用场景\n\n具体要求\n1. \n\n验收要求\n1. \n\n待确认问题\n1. \n\n确认人：\n确认时间：\n",
+    en: "REQUIREMENT RECORD\n\nRequirement:\nSource:\nRecorded: {{date}}\nOwner:\nPriority: High / Medium / Low\n\nSCENARIO\n\nDETAILS\n1. \n\nACCEPTANCE CRITERIA\n1. \n\nOPEN QUESTIONS\n1. \n\nCONFIRMED BY:\nCONFIRMED AT:\n",
+  },
+  "weekly-report": {
+    "zh-CN": "工作周报\n汇报周期：\n提交日期：{{date_cn}}\n\n本周完成\n1. \n2. \n\n项目进展\n1. 项目：\n   进展：\n   下一步：\n\n待协调问题\n1. \n\n下周计划\n1. \n",
+    en: "WEEKLY REPORT\nPeriod:\nSubmitted: {{date}}\n\nCOMPLETED THIS WEEK\n1. \n2. \n\nPROJECT PROGRESS\n1. Project:\n   Progress:\n   Next step:\n\nNEEDS COORDINATION\n1. \n\nPLAN FOR NEXT WEEK\n1. \n",
+  },
+  handover: {
+    "zh-CN": "工作交接\n\n交接事项：\n交接人：\n接收人：\n交接日期：{{date_cn}}\n\n进行中事项\n1. 事项：\n   当前进展：\n   下一步：\n   负责人：\n\n资料位置\n1. \n\n重要时间点\n1. \n\n待确认事项\n1. \n",
+    en: "WORK HANDOVER\n\nSubject:\nHanded over by:\nReceived by:\nDate: {{date}}\n\nIN-PROGRESS ITEMS\n1. Item:\n   Progress:\n   Next step:\n   Owner:\n\nMATERIAL LOCATIONS\n1. \n\nIMPORTANT DATES\n1. \n\nITEMS TO CONFIRM\n1. \n",
+  },
+};
+
+const builtInFileNames: Record<BuiltInDocumentTemplateId, string> = {
+  "meeting-notes": "meeting-minutes-{{date}}.txt",
+  "daily-note": "daily-report-{{date}}.txt",
+  "todo-list": "task-follow-up.txt",
+  "project-plan": "project-plan-{{date}}.txt",
+  "issue-report": "issue-follow-up-{{date}}.txt",
+  readme: "project-brief.txt",
+  "customer-communication": "customer-communication-{{date}}.txt",
+  "requirement-record": "requirement-record-{{date}}.txt",
+  "weekly-report": "weekly-report-{{date}}.txt",
+  handover: "work-handover-{{date}}.txt",
+};
+
+const builtInLocalizedFileNames: Record<BuiltInDocumentTemplateId, Record<TemplateLocale, string>> = {
+  "meeting-notes": { "zh-CN": "会议纪要-{{date}}.txt", en: builtInFileNames["meeting-notes"] },
+  "daily-note": { "zh-CN": "工作日报-{{date}}.txt", en: builtInFileNames["daily-note"] },
+  "todo-list": { "zh-CN": "事项跟进.txt", en: builtInFileNames["todo-list"] },
+  "project-plan": { "zh-CN": "项目计划-{{date}}.txt", en: builtInFileNames["project-plan"] },
+  "issue-report": { "zh-CN": "问题跟进-{{date}}.txt", en: builtInFileNames["issue-report"] },
+  readme: { "zh-CN": "项目说明.txt", en: builtInFileNames.readme },
+  "customer-communication": { "zh-CN": "客户沟通记录-{{date}}.txt", en: builtInFileNames["customer-communication"] },
+  "requirement-record": { "zh-CN": "需求记录-{{date}}.txt", en: builtInFileNames["requirement-record"] },
+  "weekly-report": { "zh-CN": "工作周报-{{date}}.txt", en: builtInFileNames["weekly-report"] },
+  handover: { "zh-CN": "工作交接-{{date}}.txt", en: builtInFileNames.handover },
+};
+
 export const builtInDocumentTemplates: BuiltInDocumentTemplate[] = (Object.keys(builtInFileNames) as BuiltInDocumentTemplateId[]).map((builtInId) => ({
   id: `builtin-${builtInId}.pmtpl`,
   kind: "builtin",
   builtInId,
   fileName: builtInFileNames[builtInId],
+  fileNames: builtInLocalizedFileNames[builtInId],
   content: builtInTemplateContent[builtInId],
 }));
 
@@ -122,6 +207,10 @@ export function localDate(now: Date) {
   return `${year}-${month}-${day}`;
 }
 
+export function localChineseDate(now: Date) {
+  return `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日`;
+}
+
 export function localTime(now: Date) {
   return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
 }
@@ -139,6 +228,7 @@ export function renderTemplateVariables(value: string, locale: TemplateLocale, n
   return value
     .replaceAll("{{datetime}}", `${date} ${time}`)
     .replaceAll("{{weekday}}", localWeekday(now, locale))
+    .replaceAll("{{date_cn}}", localChineseDate(now))
     .replaceAll("{{date}}", date)
     .replaceAll("{{time}}", time);
 }
@@ -156,9 +246,13 @@ function contentFor(template: DocumentTemplate, locale: TemplateLocale) {
   return template.kind === "builtin" ? template.content[locale] : template.content;
 }
 
+export function templateSuggestedFileName(template: DocumentTemplate, locale: TemplateLocale) {
+  return template.kind === "builtin" ? template.fileNames?.[locale] ?? template.fileName : template.fileName;
+}
+
 export function createDocumentTemplate(template: DocumentTemplate, locale: TemplateLocale, now = new Date()): DocumentTemplatePreset {
   const content = renderTemplateVariables(contentFor(template, locale), locale, now);
-  const fileName = template.fileName.replaceAll("{{date}}", localDate(now));
+  const fileName = templateSuggestedFileName(template, locale).replaceAll("{{date}}", localDate(now));
   return {
     fileName,
     content,

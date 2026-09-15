@@ -27,7 +27,7 @@ import type {
   UserSettings,
   WorkspaceSession,
 } from "../types";
-import type { DocumentTemplateCatalog, DocumentTemplateChanges, DocumentTemplate } from "../documentTemplates";
+import { previousBuiltInDocumentTemplates, type DocumentTemplateCatalog, type DocumentTemplateChanges, type DocumentTemplate } from "../documentTemplates";
 
 export interface SaveDocumentOptions {
   forceSaveAs?: boolean;
@@ -65,7 +65,21 @@ export const isTauri = () => Boolean(window.__TAURI_INTERNALS__);
 
 const templateStorageKey = "plainmint.document-templates";
 const templateGenerationKey = "plainmint.document-templates-generation";
-const currentTemplateGeneration = "2";
+const currentTemplateGeneration = "3";
+
+function upgradeWebTemplateCatalog(defaults: DocumentTemplate[], catalog: DocumentTemplateCatalog) {
+  const storedById = new Map((catalog.templates ?? []).map((template) => [template.id, template]));
+  const previousById = new Map(previousBuiltInDocumentTemplates.map((template) => [template.id, template]));
+  const upgradedBuiltIns = defaults.filter((template): template is Extract<DocumentTemplate, { kind: "builtin" }> => template.kind === "builtin").map((template) => {
+    const stored = storedById.get(template.id);
+    const previous = previousById.get(template.id);
+    return stored && previous && JSON.stringify({ ...stored, revision: undefined }) !== JSON.stringify({ ...previous, revision: undefined }) ? stored : template;
+  });
+  return {
+    templates: [...upgradedBuiltIns, ...(catalog.templates ?? []).filter((template) => template.kind === "custom")],
+    issues: catalog.issues ?? [],
+  } satisfies DocumentTemplateCatalog;
+}
 
 let webStartupStatus: StartupStatus | undefined;
 
@@ -439,9 +453,7 @@ export async function loadDocumentTemplates(defaults: DocumentTemplate[]): Promi
       if (localStorage.getItem(templateGenerationKey) === currentTemplateGeneration) {
         return { templates: catalog.templates?.length ? catalog.templates : structuredClone(defaults), issues: catalog.issues ?? [] };
       }
-      const stored = catalog.templates ?? [];
-      const templates = [...structuredClone(defaults), ...stored.filter((template) => template.kind === "custom")];
-      const result = { templates, issues: catalog.issues ?? [] };
+      const result = upgradeWebTemplateCatalog(structuredClone(defaults), catalog);
       localStorage.setItem(templateStorageKey, JSON.stringify(result));
       localStorage.setItem(templateGenerationKey, currentTemplateGeneration);
       return result;
@@ -449,7 +461,7 @@ export async function loadDocumentTemplates(defaults: DocumentTemplate[]): Promi
       return { templates: structuredClone(defaults), issues: [] };
     }
   }
-  return invoke<DocumentTemplateCatalog>("load_document_templates", { defaults });
+  return invoke<DocumentTemplateCatalog>("load_document_templates", { defaults, previousDefaults: previousBuiltInDocumentTemplates });
 }
 
 export async function applyDocumentTemplateChanges(

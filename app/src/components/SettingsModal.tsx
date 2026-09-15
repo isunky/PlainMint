@@ -12,6 +12,7 @@ import {
   PaintBrush,
   PencilSimple,
   Plus,
+  Copy,
   Question,
   ShieldCheck,
   Trash,
@@ -27,6 +28,7 @@ import {
   templateChanges,
   templateDescription,
   templateDisplayName,
+  templateSuggestedFileName,
   type DocumentTemplate,
   type DocumentTemplateCatalog,
   type DocumentTemplateChanges,
@@ -87,6 +89,7 @@ interface SettingsModalProps {
   templatesError?: string;
   onRefreshTemplates?: () => void;
   onOpenTemplatesDirectory?: () => void;
+  initialTemplateId?: string;
 }
 
 function formatBytes(bytes: number, locale: string) {
@@ -221,27 +224,63 @@ export function SettingsModal({
   templatesError = "",
   onRefreshTemplates = () => undefined,
   onOpenTemplatesDirectory = () => undefined,
+  initialTemplateId,
 }: SettingsModalProps) {
   const { t, i18n } = useTranslation();
   const [section, setSection] = useState<SettingsSection>("general");
   const [templateDraft, setTemplateDraft] = useState<DocumentTemplateCatalog>(() => cloneTemplateCatalog(templates));
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | undefined>(() => templates.templates[0]?.id);
   const [templateLocale, setTemplateLocale] = useState<TemplateLocale>("zh-CN");
+  const [templateSearchQuery, setTemplateSearchQuery] = useState("");
   useEffect(() => {
     setTemplateDraft(cloneTemplateCatalog(templates));
     setSelectedTemplateId((current) => templates.templates.some((template) => template.id === current) ? current : templates.templates[0]?.id);
   }, [templates]);
+  useEffect(() => {
+    if (!initialTemplateId || !templates.templates.some((template) => template.id === initialTemplateId)) return;
+    setSection("templates");
+    setSelectedTemplateId(initialTemplateId);
+  }, [initialTemplateId, templates.templates]);
   const pendingTemplateChanges = useMemo(() => templateChanges(templates, templateDraft), [templateDraft, templates]);
   const hasTemplateChanges = pendingTemplateChanges.upserts.length > 0 || pendingTemplateChanges.deletes.length > 0;
   const selectedTemplate = templateDraft.templates.find((template) => template.id === selectedTemplateId);
-  const selectedTemplateInvalid = Boolean(selectedTemplate && (!isSafeTemplateFileName(selectedTemplate.fileName) || (selectedTemplate.kind === "custom" && !selectedTemplate.name.trim())));
-  const templatesValid = templateDraft.templates.every((template) => isSafeTemplateFileName(template.fileName) && (template.kind === "builtin" || Boolean(template.name.trim())));
+  const selectedTemplateInvalid = Boolean(selectedTemplate && (!isSafeTemplateFileName(templateSuggestedFileName(selectedTemplate, templateLocale)) || (selectedTemplate.kind === "custom" && !selectedTemplate.name.trim())));
+  const templatesValid = templateDraft.templates.every((template) => isSafeTemplateFileName(template.fileName)
+    && (template.kind !== "builtin" || Object.values(template.fileNames ?? {}).every(isSafeTemplateFileName))
+    && (template.kind === "builtin" || Boolean(template.name.trim())));
+  const visibleTemplates = useMemo(() => {
+    const needle = templateSearchQuery.trim().toLocaleLowerCase(templateLocale);
+    if (!needle) return templateDraft.templates;
+    return templateDraft.templates.filter((template) => [
+      templateDisplayName(template, templateLocale, t),
+      templateDescription(template, templateLocale, t),
+      templateSuggestedFileName(template, templateLocale),
+    ].some((value) => value?.toLocaleLowerCase(templateLocale).includes(needle)));
+  }, [t, templateDraft.templates, templateLocale, templateSearchQuery]);
+  useEffect(() => {
+    if (!visibleTemplates.some((template) => template.id === selectedTemplateId)) setSelectedTemplateId(visibleTemplates[0]?.id);
+  }, [selectedTemplateId, visibleTemplates]);
   const updateTemplate = (id: string, updater: (template: DocumentTemplate) => DocumentTemplate) => {
     setTemplateDraft((current) => ({ ...current, templates: current.templates.map((template) => template.id === id ? updater(template) : template) }));
   };
   const addTemplate = () => {
     const id = `draft-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     setTemplateDraft((current) => ({ ...current, templates: [...current.templates, { id, kind: "custom", name: "", fileName: "template.txt", content: "" }] }));
+    setSelectedTemplateId(id);
+  };
+  const copySelectedTemplate = () => {
+    if (!selectedTemplate) return;
+    const id = `draft-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const content = selectedTemplate.kind === "builtin" ? selectedTemplate.content[templateLocale] : selectedTemplate.content;
+    setTemplateDraft((current) => ({ ...current, templates: [...current.templates, {
+      id,
+      kind: "custom",
+      name: `${templateDisplayName(selectedTemplate, templateLocale, t)} ${t("templateCopySuffix")}`,
+      description: templateDescription(selectedTemplate, templateLocale, t),
+      fileName: templateSuggestedFileName(selectedTemplate, templateLocale),
+      content,
+    }] }));
+    setTemplateSearchQuery("");
     setSelectedTemplateId(id);
   };
   const deleteSelectedTemplate = () => {
@@ -447,27 +486,29 @@ export function SettingsModal({
                 {(templatesError || templateDraft.issues.length > 0) && <p className="template-settings-warning">{templatesError || t("templateIssues", { count: templateDraft.issues.length })}</p>}
                 <div className="template-settings-workspace">
                   <aside className="template-settings-list" aria-label={t("templates")}>
-                    {templateDraft.templates.map((template) => (
+                    <label className="template-search settings-template-search"><input value={templateSearchQuery} onChange={(event) => setTemplateSearchQuery(event.target.value)} placeholder={t("searchTemplates")} aria-label={t("searchTemplates")} /></label>
+                    {visibleTemplates.map((template) => (
                       <button type="button" key={template.id} className={selectedTemplateId === template.id ? "active" : ""} onClick={() => setSelectedTemplateId(template.id)}>
                         <Files size={17} />
-                        <span><strong>{templateDisplayName(template, templateLocale, t)}</strong><small>{template.fileName}</small></span>
+                        <span><strong>{templateDisplayName(template, templateLocale, t)}</strong><small>{templateSuggestedFileName(template, templateLocale)}</small></span>
                       </button>
                     ))}
+                    {!visibleTemplates.length && <p className="template-empty">{t("noTemplatesFound")}</p>}
                   </aside>
                   <section className="settings-card template-editor">
                     {!selectedTemplate ? <p>{t("selectTemplate")}</p> : selectedTemplate.kind === "builtin" ? <>
                       <div className="template-editor-heading">
                         <div><h4>{templateDisplayName(selectedTemplate, templateLocale, t)}</h4><p>{templateDescription(selectedTemplate, templateLocale, t)}</p></div>
-                        <button type="button" className="button-secondary" onClick={restoreSelectedBuiltin}>{t("restoreTemplate")}</button>
+                        <div className="template-editor-actions"><button type="button" className="button-secondary" onClick={copySelectedTemplate}><Copy size={16} />{t("copyAsCustomTemplate")}</button><button type="button" className="button-secondary" onClick={restoreSelectedBuiltin}>{t("restoreTemplate")}</button></div>
                       </div>
-                      <label className="field-label"><span>{t("templateFileName")}</span><input value={selectedTemplate.fileName} onChange={(event) => updateTemplate(selectedTemplate.id, (template) => ({ ...template, fileName: event.target.value }))} /></label>
+                      <label className="field-label"><span>{t("templateFileName")}</span><input value={templateSuggestedFileName(selectedTemplate, templateLocale)} onChange={(event) => updateTemplate(selectedTemplate.id, (template) => template.kind === "builtin" ? { ...template, fileNames: { ...template.fileNames, [templateLocale]: event.target.value } } : template)} /></label>
                       {selectedTemplateInvalid && <small className="directory-status invalid">{t("templateValidation")}</small>}
                       <div className="template-locale-switch" aria-label={t("templateLanguage")}>
                         {(["zh-CN", "en"] as TemplateLocale[]).map((locale) => <button type="button" key={locale} className={templateLocale === locale ? "active" : ""} onClick={() => setTemplateLocale(locale)}>{locale === "zh-CN" ? "中文" : "English"}</button>)}
                       </div>
                       <label className="field-label"><span>{t("templateContent")}</span><textarea className="template-content-input" value={selectedTemplate.content[templateLocale]} onChange={(event) => updateTemplate(selectedTemplate.id, (template) => template.kind === "builtin" ? { ...template, content: { ...template.content, [templateLocale]: event.target.value } } : template)} /></label>
                     </> : <>
-                      <div className="template-editor-heading"><div><h4>{t("customTemplate")}</h4><p>{t("customTemplateDescription")}</p></div><button type="button" className="button-danger" onClick={deleteSelectedTemplate}><Trash size={16} />{t("delete")}</button></div>
+                      <div className="template-editor-heading"><div><h4>{t("customTemplate")}</h4><p>{t("customTemplateDescription")}</p></div><div className="template-editor-actions"><button type="button" className="button-secondary" onClick={copySelectedTemplate}><Copy size={16} />{t("copyAsCustomTemplate")}</button><button type="button" className="button-danger" onClick={deleteSelectedTemplate}><Trash size={16} />{t("delete")}</button></div></div>
                       <div className="field-grid">
                         <label className="field-label"><span>{t("templateName")}</span><input value={selectedTemplate.name} onChange={(event) => updateTemplate(selectedTemplate.id, (template) => template.kind === "custom" ? { ...template, name: event.target.value } : template)} /></label>
                         <label className="field-label"><span>{t("templateFileName")}</span><input value={selectedTemplate.fileName} onChange={(event) => updateTemplate(selectedTemplate.id, (template) => template.kind === "custom" ? { ...template, fileName: event.target.value } : template)} /></label>

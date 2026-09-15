@@ -2197,7 +2197,10 @@ select:focus-visible {
 
 .template-modal {
   width: min(900px, calc(100vw - 72px));
+  height: min(620px, calc(100vh - 120px));
   padding: 24px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 .template-modal-header {
@@ -2213,11 +2216,12 @@ select:focus-visible {
 }
 
 .template-browser {
-  min-height: 390px;
-  max-height: min(540px, calc(100vh - 250px));
+  min-height: 0;
   display: grid;
   grid-template-columns: minmax(230px, 0.72fr) minmax(0, 1.28fr);
+  grid-template-rows: minmax(0, 1fr);
   gap: 14px;
+  overflow: hidden;
 }
 
 .template-list {
@@ -2226,7 +2230,48 @@ select:focus-visible {
   flex-direction: column;
   gap: 7px;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   padding: 1px;
+}
+
+.template-list-wrap {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 9px;
+  overflow: hidden;
+}
+
+.template-search {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  color: var(--text-muted);
+  background: var(--surface-editor);
+}
+
+.template-search input {
+  width: 100%;
+  height: 34px;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+}
+
+.template-empty {
+  margin: 16px 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
 }
 
 .template-card {
@@ -2442,6 +2487,25 @@ select:focus-visible {
   border: 1px solid var(--border-subtle);
   border-radius: 10px;
   background: var(--surface-toolbar);
+}
+
+.settings-template-search {
+  margin: 2px 2px 6px;
+  flex: 0 0 auto;
+}
+
+.template-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.template-editor-actions .button-secondary,
+.template-editor-actions .button-danger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 
 .template-settings-list button {

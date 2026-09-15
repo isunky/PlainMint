@@ -131,6 +131,8 @@ enum DocumentTemplate {
         id: String,
         built_in_id: String,
         file_name: String,
+        #[serde(default)]
+        file_names: Option<BTreeMap<String, String>>,
         content: BTreeMap<String, String>,
         #[serde(default)]
         revision: Option<String>,
@@ -186,6 +188,8 @@ struct TemplateHeader {
     name: Option<String>,
     description: Option<String>,
     file_name: String,
+    #[serde(default)]
+    file_names: Option<BTreeMap<String, String>>,
 }
 
 #[cfg(target_os = "windows")]
@@ -1055,12 +1059,16 @@ fn validate_template(
             id,
             built_in_id,
             file_name,
+            file_names,
             content,
             ..
         } => {
             if !valid_template_storage_id(id)
                 || !id.starts_with("builtin-")
                 || !valid_template_file_name(file_name)
+                || file_names
+                    .as_ref()
+                    .is_some_and(|names| names.values().any(|name| !valid_template_file_name(name)))
             {
                 return Err(AppError::new(
                     "template_invalid",
@@ -1106,15 +1114,17 @@ fn serialize_template(template: &DocumentTemplate) -> CommandResult<String> {
         DocumentTemplate::Builtin {
             built_in_id,
             file_name,
+            file_names,
             content,
             ..
         } => {
             let header = template_header(json!({
                 "version": 1,
-                "generation": 2,
+                "generation": 3,
                 "kind": "builtin",
                 "builtInId": built_in_id,
                 "fileName": file_name.trim(),
+                "fileNames": file_names,
             }))?;
             let zh = normalize_template_content(
                 content.get("zh-CN").map(String::as_str).unwrap_or_default(),
@@ -1176,6 +1186,7 @@ fn parse_template_file(
                 id,
                 built_in_id,
                 file_name: header.file_name,
+                file_names: header.file_names,
                 content: BTreeMap::from([
                     ("zh-CN".to_string(), zh.to_string()),
                     ("en".to_string(), en.to_string()),
@@ -1207,9 +1218,68 @@ fn default_builtins(defaults: &[DocumentTemplate]) -> CommandResult<Vec<Document
     Ok(builtins)
 }
 
+fn same_builtin_template(left: &DocumentTemplate, right: &DocumentTemplate) -> bool {
+    match (left, right) {
+        (
+            DocumentTemplate::Builtin {
+                id: left_id,
+                built_in_id: left_builtin_id,
+                file_name: left_file_name,
+                file_names: left_file_names,
+                content: left_content,
+                ..
+            },
+            DocumentTemplate::Builtin {
+                id: right_id,
+                built_in_id: right_builtin_id,
+                file_name: right_file_name,
+                file_names: right_file_names,
+                content: right_content,
+                ..
+            },
+        ) => {
+            left_id == right_id
+                && left_builtin_id == right_builtin_id
+                && left_file_name == right_file_name
+                && left_file_names == right_file_names
+                && left_content == right_content
+        }
+        _ => false,
+    }
+}
+
+fn should_upgrade_builtin(path: &Path, previous_defaults: &[DocumentTemplate]) -> bool {
+    if !path.exists() {
+        return true;
+    }
+    if stored_template_generation(path) == Some(3) {
+        return false;
+    }
+    let source = match fs::read_to_string(path) {
+        Ok(source) => source,
+        Err(_) => return false,
+    };
+    let revision = template_revision(source.as_bytes());
+    let stored = match parse_template_file(
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default()
+            .to_string(),
+        &source,
+        revision,
+    ) {
+        Ok(stored) => stored,
+        Err(_) => return false,
+    };
+    previous_defaults
+        .iter()
+        .any(|previous| same_builtin_template(&stored, previous))
+}
+
 fn load_document_templates_inner(
     app: &AppHandle,
     defaults: &[DocumentTemplate],
+    previous_defaults: &[DocumentTemplate],
     refresh_builtins: bool,
 ) -> CommandResult<DocumentTemplateCatalog> {
     let root = template_root(app)?;
@@ -1220,7 +1290,8 @@ fn load_document_templates_inner(
             _ => unreachable!(),
         };
         let path = template_path(&root, id)?;
-        if !path.exists() || (refresh_builtins && stored_template_generation(&path) != Some(2)) {
+        if !path.exists() || (refresh_builtins && should_upgrade_builtin(&path, previous_defaults))
+        {
             atomic_write(&path, serialize_template(template)?.as_bytes())?;
         }
     }
@@ -1339,8 +1410,9 @@ fn load_document_templates_inner(
 fn load_document_templates(
     app: AppHandle,
     defaults: Vec<DocumentTemplate>,
+    previous_defaults: Vec<DocumentTemplate>,
 ) -> CommandResult<DocumentTemplateCatalog> {
-    load_document_templates_inner(&app, &defaults, true)
+    load_document_templates_inner(&app, &defaults, &previous_defaults, true)
 }
 
 #[tauri::command(async)]
@@ -1378,6 +1450,7 @@ fn apply_document_template_changes(
             DocumentTemplate::Builtin {
                 built_in_id,
                 file_name,
+                file_names,
                 content,
                 revision,
                 ..
@@ -1385,6 +1458,7 @@ fn apply_document_template_changes(
                 id,
                 built_in_id,
                 file_name,
+                file_names,
                 content,
                 revision,
             },
@@ -1431,7 +1505,7 @@ fn apply_document_template_changes(
     for path in deletes {
         fs::remove_file(path).map_err(|error| AppError::io("template_delete_failed", error))?;
     }
-    load_document_templates_inner(&app, &builtins, false)
+    load_document_templates_inner(&app, &builtins, &[], false)
 }
 
 #[tauri::command(async)]
@@ -2422,6 +2496,7 @@ mod tests {
             id: "builtin-meeting-notes.pmtpl".into(),
             built_in_id: "meeting-notes".into(),
             file_name: "meeting-notes.txt".into(),
+            file_names: Some(BTreeMap::from([("zh-CN".into(), "会议纪要.txt".into())])),
             content: BTreeMap::from([
                 ("zh-CN".into(), "会议记录\n====\n".into()),
                 ("en".into(), "MEETING NOTES\n=============\n".into()),
@@ -2438,11 +2513,13 @@ mod tests {
         match parsed {
             DocumentTemplate::Builtin {
                 file_name,
+                file_names,
                 content,
                 revision,
                 ..
             } => {
                 assert_eq!(file_name, "meeting-notes.txt");
+                assert_eq!(file_names.unwrap().get("zh-CN").unwrap(), "会议纪要.txt");
                 assert_eq!(content.get("zh-CN").unwrap(), "会议记录\n====\n");
                 assert_eq!(revision.as_deref(), Some("revision"));
             }

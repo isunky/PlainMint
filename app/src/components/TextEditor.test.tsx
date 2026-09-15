@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { defaultSettings } from "../store";
 import type { DocumentRecord } from "../types";
-import { pasteTextInPane, TextEditor } from "./TextEditor";
+import { cleanupTextInPane, pasteTextInPane, TextEditor } from "./TextEditor";
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -91,5 +91,22 @@ describe("TextEditor column editing", () => {
 
     expect(pasteTextInPane("left", "X\nY\nZ")).toBe(true);
     expect(view.state.doc.toString()).toBe("aX\nY\nZha\nbX\nY\nZa");
+  });
+});
+
+describe("TextEditor text cleanup scope", () => {
+  it("cleans the whole current document when there is no non-empty selection", () => {
+    const { view } = renderEditor("item-10\nitem-2");
+
+    expect(cleanupTextInPane("left", "sortAscending", "en")).toBe(true);
+    expect(view.state.doc.toString()).toBe("item-2\nitem-10");
+  });
+
+  it("cleans only the selected text when a selection exists", () => {
+    const { view } = renderEditor("Xc\nbY");
+    view.dispatch({ selection: EditorSelection.range(1, 4) });
+
+    expect(cleanupTextInPane("left", "sortAscending", "en")).toBe(true);
+    expect(view.state.doc.toString()).toBe("Xb\ncY");
   });
 });
