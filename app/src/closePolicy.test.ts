@@ -26,6 +26,12 @@ describe("close confirmation policy", () => {
     expect(needsSaveConfirmation(documentWith(""))).toBe(false);
   });
 
+  it("protects deleting the entire content of an existing file", () => {
+    const emptied = { ...documentWith(""), filePath: "C:\\notes.txt" };
+    expect(needsSaveConfirmation(emptied)).toBe(true);
+    expect(needsExitSaveConfirmation(emptied)).toBe(true);
+  });
+
   it("still protects whitespace and other text content", () => {
     expect(needsSaveConfirmation(documentWith(" "))).toBe(true);
     expect(needsSaveConfirmation(documentWith("PlainMint"))).toBe(true);

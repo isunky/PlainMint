@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { defaultSettings } from "../store";
-import type { DocumentRecord } from "../types";
+import type { DocumentRecord, WorkspaceSession } from "../types";
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -29,7 +29,7 @@ vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({ startDragging: mocks.startDragging }),
 }));
 
-import { checkForUpdates, encodedByteLength, getAppVersion, inspectFileMetadata, listenForFileWatchChanges, openDocumentTemplatesDirectory, revealFileInDirectory, saveDocument, startDraggingWindow, syncFileWatches, writeSafetyRecovery } from "./runtime";
+import { checkForUpdates, encodedByteLength, getAppVersion, inspectFileMetadata, listenForFileWatchChanges, openDocumentTemplatesDirectory, persistSession, revealFileInDirectory, saveDocument, startDraggingWindow, syncFileWatches, writeSafetyRecovery } from "./runtime";
 
 function document(patch: Partial<DocumentRecord> = {}): DocumentRecord {
   return {
@@ -186,6 +186,27 @@ describe("conflict safety backups", () => {
     expect(mocks.invoke).toHaveBeenCalledWith("write_backup", expect.objectContaining({
       request: expect.objectContaining({ reason: "conflict-local", content: "safe local copy" }),
     }));
+  });
+});
+
+describe("session write ordering", () => {
+  it("finishes old background writes before the final snapshot, including after a failure", async () => {
+    const snapshot: WorkspaceSession = {
+      savedAt: 1, split: false, activeTab: { left: null, right: null },
+      tabs: { left: [], right: [] }, documents: [document()],
+    };
+    let failFirst!: (error: Error) => void;
+    mocks.invoke.mockImplementationOnce(() => new Promise((_, reject) => { failFirst = reject; }));
+    const background = persistSession(snapshot);
+    const failure = expect(background).rejects.toThrow("disk busy");
+    const final = persistSession({ ...snapshot, savedAt: 2 });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mocks.invoke).toHaveBeenCalledOnce();
+    failFirst(new Error("disk busy"));
+    await failure;
+    await final;
+    expect(mocks.invoke).toHaveBeenNthCalledWith(2, "save_session", { session: { ...snapshot, savedAt: 2 } });
   });
 });
 

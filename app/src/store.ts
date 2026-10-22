@@ -325,7 +325,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const tabId = uniqueId("tab");
     const document: DocumentRecord = {
       id,
-      filePath: opened.path || undefined,
+      filePath: opened.recovered ? undefined : opened.path || undefined,
       fileName: opened.name,
       content: opened.content,
       encoding: opened.encoding,
@@ -334,11 +334,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       detectedLanguage: detectLanguage(opened.name, opened.content),
       autoLanguageDetectionComplete: true,
       dirty: Boolean(opened.recovered),
-      readOnly: opened.readOnly,
+      readOnly: opened.recovered ? false : opened.readOnly,
       missing: false,
       externalModified: false,
       revision: 0,
-      fingerprint: opened.fingerprint,
+      fingerprint: opened.recovered ? undefined : opened.fingerprint,
       createdAt: Date.now(),
     };
     set((state) => ({
@@ -580,6 +580,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           autoLanguageDetectionComplete: true,
           fingerprint,
           dirty: document.revision !== savedRevision,
+          missing: false,
           externalModified: false,
           lastSavedAt: Date.now(),
         },

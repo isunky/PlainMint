@@ -172,6 +172,7 @@ type TabContextMenuState = {
 
 const INITIAL_SESSION_PERSIST_DELAY_MS = 5_000;
 const SESSION_PERSIST_DELAY_MS = 500;
+const SESSION_MAX_WAIT_MS = 5_000;
 const STARTUP_MAINTENANCE_DELAY_MS = 10_000;
 const EDITOR_STARTUP_PREVIEW_LIMIT = 64_000;
 
@@ -1922,6 +1923,8 @@ export function App() {
   const [tabContextMenu, setTabContextMenu] = useState<TabContextMenuState | null>(null);
   const [resizingSplit, setResizingSplit] = useState(false);
   const [autoSaveFailures, setAutoSaveFailures] = useState<Record<string, number>>({});
+  const [sessionSaveFailed, setSessionSaveFailed] = useState(false);
+  const [windowClosing, setWindowClosing] = useState(false);
   const [fileWatchListenerReady, setFileWatchListenerReady] = useState(false);
   const [contextMenuStatus, setContextMenuStatus] = useState<ContextMenuStatus>({ supported: false, enabled: false });
   const [contextMenuBusy, setContextMenuBusy] = useState(false);
@@ -1930,7 +1933,10 @@ export function App() {
   const [revealTarget, setRevealTarget] = useState<EditorRevealTarget | null>(null);
   const [fileDropPane, setFileDropPane] = useState<PaneId | null>(null);
   const [printJob, setPrintJob] = useState<{ title: string; content: string } | null>(null);
-  const backupTimers = useRef<Record<string, number>>({});
+  const backupTimers = useRef<Record<string, { revision: number; timer: number }>>({});
+  const backedUpRevisions = useRef<Record<string, number>>({});
+  const backupFailureNotified = useRef(false);
+  const backupMounted = useRef(true);
   const idleSaveTimers = useRef<Record<string, { revision: number; timer: number }>>({});
   const saveInFlight = useRef(new Map<string, Promise<boolean>>());
   const diskCheckInFlight = useRef(new Set<string>());
@@ -1942,6 +1948,7 @@ export function App() {
   const previousAutoSaveMode = useRef(settings.autoSaveMode);
   const directoryCheckTokens = useRef<Record<DirectoryField, number>>({ defaultSaveFolder: 0, cloudSyncFolder: 0 });
   const closingRef = useRef(false);
+  const closeRequestInFlight = useRef(false);
   const workspaceRef = useRef<HTMLDivElement>(null);
   const dragStartRef = useRef<{ tabId: string; sourcePane: PaneId; pointerId: number; x: number; y: number } | null>(null);
   const dragViewRef = useRef<TabDragView | null>(null);
@@ -1951,7 +1958,6 @@ export function App() {
   const pendingOpenRequestInFlight = useRef(false);
   const pendingOpenRequestAgain = useRef(false);
   const settingsMetadataRequested = useRef(false);
-  const sessionPersistenceStarted = useRef(false);
 
   const refreshTemplates = useCallback(async () => {
     setTemplatesLoading(true);
@@ -2226,9 +2232,16 @@ export function App() {
     }
   }, [flash, t, updateDocumentFlags]);
 
-  const saveDocumentById = useCallback((documentId: string, intent: SaveIntent = {}) => {
+  const saveDocumentById = useCallback(function saveById(documentId: string, intent: SaveIntent = {}): Promise<boolean> {
     const existing = saveInFlight.current.get(documentId);
-    if (existing) return existing;
+    if (existing) {
+      if (intent.automatic) return existing;
+      return existing.then((saved) => {
+        const current = useAppStore.getState().documents[documentId];
+        if (!current) return false;
+        return current.dirty || intent.forceSaveAs ? saveById(documentId, intent) : saved;
+      });
+    }
     const task = (async () => {
       const snapshot = useAppStore.getState().documents[documentId];
       if (!snapshot) return false;
@@ -2237,21 +2250,19 @@ export function App() {
         if (!intent.bypassFailure && isAutoSaveRevisionSuppressed(snapshot, failedAutoSaveRevisions.current[documentId])) return false;
       }
 
-      let defaultSaveFolder: string | undefined;
-      const currentSettings = useAppStore.getState().settings;
-      if (!snapshot.filePath) {
-        const resolution = await resolveInitialSaveFolder(
-          currentSettings,
-          encodedByteLength(snapshot),
-          validateDirectory,
-        );
-        defaultSaveFolder = resolution.path;
-        if (resolution.fallbackFrom) {
-          flash(t(resolution.fallbackFrom === "cloud" ? "cloudFolderFallback" : "defaultFolderFallback"));
-        }
-      }
-
       try {
+        let defaultSaveFolder: string | undefined;
+        if (!snapshot.filePath) {
+          const resolution = await resolveInitialSaveFolder(
+            useAppStore.getState().settings,
+            encodedByteLength(snapshot),
+            validateDirectory,
+          );
+          defaultSaveFolder = resolution.path;
+          if (resolution.fallbackFrom) {
+            flash(t(resolution.fallbackFrom === "cloud" ? "cloudFolderFallback" : "defaultFolderFallback"));
+          }
+        }
         const result = await saveDocument(snapshot, {
           forceSaveAs: intent.forceSaveAs,
           defaultSaveFolder,
@@ -2267,8 +2278,9 @@ export function App() {
           delete next[snapshot.id];
           return next;
         });
-        if (intent.notifySuccess ?? !intent.automatic) flash(t("saved"));
-        return true;
+        const fullySaved = !useAppStore.getState().documents[documentId]?.dirty;
+        if (fullySaved && (intent.notifySuccess ?? !intent.automatic)) flash(t("saved"));
+        return fullySaved;
       } catch (error) {
         if (appErrorCode(error) === "external_conflict") {
           updateDocumentFlags(snapshot.id, { externalModified: true });
@@ -2630,7 +2642,18 @@ export function App() {
     }
   }, [flash, settingsApplying, t, validateSettingsDirectory]);
 
-  const requestCloseTabs = useCallback((targets: TabCloseTarget[], bulk = false) => {
+  const requestCloseTabs = useCallback(async (targets: TabCloseTarget[], bulk = false) => {
+    const initial = useAppStore.getState();
+    const pendingForTargets = () => targets.flatMap(({ pane, tabId }) => {
+      const tab = initial.tabs[pane].find((candidate) => candidate.id === tabId);
+      const task = tab && saveInFlight.current.get(tab.documentId);
+      return task ? [task] : [];
+    });
+    let pending = pendingForTargets();
+    while (pending.length) {
+      await Promise.all(pending);
+      pending = pendingForTargets();
+    }
     const state = useAppStore.getState();
     const seenTabs = new Set<string>();
     const validTargets = targets.filter(({ pane, tabId }) => {
@@ -2639,10 +2662,13 @@ export function App() {
       return true;
     });
     if (validTargets.length === 0) return;
+    const remainingDocumentIds = new Set([...state.tabs.left, ...state.tabs.right]
+      .filter((tab) => !seenTabs.has(tab.id)).map((tab) => tab.documentId));
     const dirtyDocuments = validTargets.reduce<DocumentRecord[]>((result, { pane, tabId }) => {
       const tab = state.tabs[pane].find((candidate) => candidate.id === tabId);
       const document = tab ? state.documents[tab.documentId] : undefined;
-      if (document && needsSaveConfirmation(document) && !result.some((candidate) => candidate.id === document.id)) result.push(document);
+      if (document && !remainingDocumentIds.has(document.id) && needsSaveConfirmation(document)
+        && !result.some((candidate) => candidate.id === document.id)) result.push(document);
       return result;
     }, []);
     if (dirtyDocuments.length === 0) {
@@ -2666,13 +2692,14 @@ export function App() {
       const saved = await saveDocumentById(document.id, { notifySuccess: false });
       if (!saved) return;
     }
+    if (dirtyDocuments.some((document) => useAppStore.getState().documents[document.id]?.dirty)) return;
     closeTargetsNow(targets);
     setModal({ type: "none" });
   }, [closeTargetsNow, saveDocumentById]);
 
   useEffect(() => {
     void Promise.all([
-      beginAppSession(),
+      beginAppSession().catch(() => ({ previousExitWasUnclean: true })),
       loadSettings().catch(() => null),
       loadSession().catch(() => null),
     ]).then(([startupStatus, storedSettings, storedSession]) => {
@@ -2727,16 +2754,56 @@ export function App() {
   }, [settings.locale, settings.appearanceMode, settings.accentTheme, settings.latinFontFamily, settings.cjkFontFamily]);
 
   useEffect(() => {
-    Object.values(documents).forEach((document) => {
-      window.clearTimeout(backupTimers.current[document.id]);
-      if (!document.dirty || !settings.autoBackupEnabled) return;
-      backupTimers.current[document.id] = window.setTimeout(
-        () => void writeRecovery(document, settings),
-        settings.backupDebounceSeconds * 1000,
-      );
+    const timers = backupTimers.current;
+    Object.keys(timers).forEach((id) => {
+      if (!hydrated || !settings.autoBackupEnabled || !documents[id]?.dirty) {
+        window.clearTimeout(timers[id].timer);
+        delete timers[id];
+      }
     });
-    return () => Object.values(backupTimers.current).forEach(window.clearTimeout);
-  }, [documents, settings]);
+    Object.keys(backedUpRevisions.current).forEach((id) => {
+      if (!documents[id]) delete backedUpRevisions.current[id];
+    });
+    if (!hydrated || !settings.autoBackupEnabled) return;
+    const backup = async (id: string) => {
+      delete timers[id];
+      const state = useAppStore.getState();
+      const snapshot = state.documents[id];
+      if (!snapshot?.dirty || !state.settings.autoBackupEnabled || closingRef.current) return;
+      try {
+        await writeRecovery(snapshot, state.settings);
+        if (!backupMounted.current) return;
+        backedUpRevisions.current[id] = snapshot.revision;
+        backupFailureNotified.current = false;
+      } catch {
+        if (!backupMounted.current) return;
+        if (!backupFailureNotified.current) flash(t("backupSaveFailed"));
+        backupFailureNotified.current = true;
+        if (useAppStore.getState().documents[id]?.dirty && !timers[id]) {
+          timers[id] = { revision: snapshot.revision, timer: window.setTimeout(() => void backup(id), SESSION_MAX_WAIT_MS) };
+        }
+      }
+    };
+    Object.values(documents).forEach((document) => {
+      if (!document.dirty || backedUpRevisions.current[document.id] === document.revision) return;
+      const existing = timers[document.id];
+      if (existing?.revision === document.revision) return;
+      if (existing) window.clearTimeout(existing.timer);
+      timers[document.id] = {
+        revision: document.revision,
+        timer: window.setTimeout(() => void backup(document.id), settings.backupDebounceSeconds * 1000),
+      };
+    });
+  }, [documents, flash, hydrated, settings.autoBackupEnabled, settings.backupDebounceSeconds, t]);
+
+  useEffect(() => {
+    backupMounted.current = true;
+    return () => {
+      backupMounted.current = false;
+      Object.values(backupTimers.current).forEach(({ timer }) => window.clearTimeout(timer));
+      backupTimers.current = {};
+    };
+  }, []);
 
   useEffect(() => {
     if (previousAutoSaveMode.current === settings.autoSaveMode) return;
@@ -2828,18 +2895,62 @@ export function App() {
     Object.values(idleSaveTimers.current).forEach(({ timer }) => window.clearTimeout(timer));
   }, []);
 
+  const checkpointWorkspace = useCallback(async () => {
+    try {
+      await persistSession(createWorkspaceSession(useAppStore.getState()));
+      setSessionSaveFailed(false);
+      return true;
+    } catch {
+      setSessionSaveFailed(true);
+      return false;
+    }
+  }, []);
+
   useEffect(() => {
     if (!hydrated) return;
-    const delay = sessionPersistenceStarted.current
-      ? SESSION_PERSIST_DELAY_MS
-      : INITIAL_SESSION_PERSIST_DELAY_MS;
-    sessionPersistenceStarted.current = true;
-    const timer = window.setTimeout(() => {
+    let timer: number | undefined;
+    let deadline: number | undefined;
+    let changed = false;
+    let disposed = false;
+    const clearTimers = () => {
+      window.clearTimeout(timer);
+      window.clearTimeout(deadline);
+      timer = deadline = undefined;
+    };
+    const flush = async () => {
+      clearTimers();
+      if (!changed || closingRef.current || disposed) return;
+      changed = false;
+      if (!await checkpointWorkspace() && !disposed) {
+        changed = true;
+        if (timer === undefined) timer = window.setTimeout(() => void flush(), SESSION_MAX_WAIT_MS);
+      }
+    };
+    const schedule = (delay = SESSION_PERSIST_DELAY_MS) => {
       if (closingRef.current) return;
-      void persistSession(createWorkspaceSession({ split, splitRatio, activeTab, tabs, documents }));
-    }, delay);
-    return () => window.clearTimeout(timer);
-  }, [activeTab, documents, hydrated, split, splitRatio, tabs]);
+      changed = true;
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => void flush(), delay);
+      deadline ??= window.setTimeout(() => void flush(), SESSION_MAX_WAIT_MS);
+    };
+    const unsubscribe = useAppStore.subscribe((current, previous) => {
+      if (current.documents !== previous.documents || current.tabs !== previous.tabs
+        || current.activeTab !== previous.activeTab || current.split !== previous.split
+        || current.splitRatio !== previous.splitRatio) schedule();
+    });
+    const onBlur = () => void flush();
+    const onVisibilityChange = () => { if (document.visibilityState === "hidden") void flush(); };
+    window.addEventListener("blur", onBlur);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    schedule(INITIAL_SESSION_PERSIST_DELAY_MS);
+    return () => {
+      disposed = true;
+      unsubscribe();
+      clearTimers();
+      window.removeEventListener("blur", onBlur);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [checkpointWorkspace, hydrated]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -2848,12 +2959,24 @@ export function App() {
   }, [hydrated, recentlyClosedTabs]);
 
   const finishClose = useCallback(async (discardedDocumentIds: Iterable<string> = []) => {
+    if (closingRef.current) return;
     closingRef.current = true;
-    const state = useAppStore.getState();
+    setWindowClosing(true);
     try {
-      await persistSession(createWorkspaceSession(state, new Set(discardedDocumentIds)));
+      while (saveInFlight.current.size) await Promise.all(saveInFlight.current.values());
+      const discarded = new Set(discardedDocumentIds);
+      const dirty = Object.values(useAppStore.getState().documents)
+        .filter((document) => !discarded.has(document.id) && needsExitSaveConfirmation(document));
+      if (dirty.length) {
+        closingRef.current = false;
+        setWindowClosing(false);
+        setModal({ type: "exit", documents: dirty });
+        return;
+      }
+      await persistSession(createWorkspaceSession(useAppStore.getState(), discarded));
     } catch {
       closingRef.current = false;
+      setWindowClosing(false);
       flash(t("sessionSaveFailed"));
       return;
     }
@@ -2861,14 +2984,22 @@ export function App() {
       await closeWindow();
     } catch {
       closingRef.current = false;
+      setWindowClosing(false);
     }
   }, [flash, t]);
 
-  const requestCloseWindow = useCallback(() => {
-    const dirty = Object.values(documents).filter(needsExitSaveConfirmation);
-    if (dirty.length) setModal({ type: "exit", documents: dirty });
-    else void finishClose();
-  }, [documents, finishClose]);
+  const requestCloseWindow = useCallback(async () => {
+    if (closingRef.current || closeRequestInFlight.current || !hydrated) return;
+    closeRequestInFlight.current = true;
+    try {
+      while (saveInFlight.current.size) await Promise.all(saveInFlight.current.values());
+      const dirty = Object.values(useAppStore.getState().documents).filter(needsExitSaveConfirmation);
+      if (dirty.length) setModal({ type: "exit", documents: dirty });
+      else await finishClose();
+    } finally {
+      closeRequestInFlight.current = false;
+    }
+  }, [finishClose, hydrated]);
 
   const saveAllAndExit = useCallback(async (dirtyDocuments: DocumentRecord[]) => {
     for (const document of dirtyDocuments) {
@@ -3081,6 +3212,7 @@ export function App() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (closingRef.current) { event.preventDefault(); return; }
       const mod = event.ctrlKey || event.metaKey;
       if (event.key === "Escape" && (modal.type === "compare" || modal.type === "templates")) {
         event.preventDefault();
@@ -3133,7 +3265,7 @@ export function App() {
   const dragDocument = dragTab ? documents[dragTab.documentId] : undefined;
 
   return (
-    <main className="app-shell">
+    <main className="app-shell" inert={windowClosing}>
       <TitleBar onClose={requestCloseWindow} />
       <Toolbar
         canUndo={Boolean(history?.undo.length)}
@@ -3184,6 +3316,12 @@ export function App() {
           </div>
         </div>
       )}
+      {sessionSaveFailed && (
+        <div className="notice-bar warning" role="alert">
+          <span>{t("sessionCheckpointFailed")}</span>
+          <button type="button" className="button-secondary" onClick={() => void checkpointWorkspace()}>{t("retry")}</button>
+        </div>
+      )}
 
       <div
         ref={workspaceRef}
@@ -3201,7 +3339,7 @@ export function App() {
             onRemoveRecent={removeRecent}
             onClearRecent={clearRecent}
             onRecovery={() => setModal({ type: "recovery" })}
-            onRestoreSession={() => void loadSession().then((session) => session && restoreSessionIntoStore(session))}
+            onRestoreSession={() => void loadSession().then((session) => session && restoreSessionIntoStore(session)).catch(() => flash(t("recoveryLoadFailed")))}
           />
         ) : <EditorPane pane="left" onCloseTab={requestCloseTab} onActivateTab={activateTab} onTabPointerDown={beginTabDrag} onTabContextMenu={setTabContextMenu} drag={tabDrag} editorRuntimeReady={editorRuntimeReady} onRequestEditorRuntime={requestEditorRuntime} revealTarget={revealTarget} onRevealHandled={(id) => setRevealTarget((target) => target?.id === id ? null : target)} fileDropTarget={fileDropPane === "left"} />}
         {split && (

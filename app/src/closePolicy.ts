@@ -1,7 +1,7 @@
 import type { DocumentRecord } from "./types";
 
 export function needsSaveConfirmation(document: DocumentRecord) {
-  return document.dirty && document.content.length > 0;
+  return document.dirty && (Boolean(document.filePath) || document.content.length > 0);
 }
 
 /** Closing an app can retain untitled drafts in the workspace session. */

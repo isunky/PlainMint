@@ -274,6 +274,16 @@ describe("untitled document naming", () => {
 });
 
 describe("recovered documents", () => {
+  it("keeps recovered copies independent of their original path and auto-save target", () => {
+    const id = useAppStore.getState().addOpenedDocument({
+      path: "C:\\notes.txt", name: "notes.txt", content: "older backup", encoding: "utf-8", lineEnding: "lf",
+      readOnly: true, fingerprint: { modifiedAt: 1, size: 12, hash: "original" }, recovered: true,
+    });
+    expect(useAppStore.getState().documents[id]).toMatchObject({ content: "older backup", dirty: true, readOnly: false });
+    expect(useAppStore.getState().documents[id].filePath).toBeUndefined();
+    expect(useAppStore.getState().documents[id].fingerprint).toBeUndefined();
+  });
+
   it("opens recovered content as an unsaved document without deduplicating unnamed copies", () => {
     const opened = {
       path: "",

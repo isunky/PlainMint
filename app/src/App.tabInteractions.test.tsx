@@ -369,6 +369,23 @@ describe("tab and split interactions", () => {
     expect(screen.getByText("No text differences")).toBeInTheDocument();
   });
 
+  it("only asks to save when the final view of a changed split document closes", async () => {
+    useAppStore.setState({
+      documents: { a: { ...doc("a"), dirty: true } },
+      tabs: { left: [{ id: "tab-a", documentId: "a", pane: "left", order: 0 }], right: [{ id: "tab-a-right", documentId: "a", pane: "right", order: 0 }] },
+      activeTab: { left: "tab-a", right: "tab-a-right" },
+      split: true,
+    });
+    render(<App />);
+    await settle();
+    fireEvent.click(screen.getAllByRole("button", { name: "Close a.txt" })[1]);
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(useAppStore.getState().documents.a.dirty).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Close a.txt" }));
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    expect(useAppStore.getState().documents.a.content).toBe("a");
+  });
+
   it("supports context-menu bulk close and double-click new tab", async () => {
     const { container } = render(<App />);
     await settle();

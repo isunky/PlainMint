@@ -817,11 +817,18 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> CommandResult<()> {
         .write(true)
         .open(&temp_path)
         .map_err(|error| AppError::io("temp_create_failed", error))?;
-    file.write_all(bytes)
-        .map_err(|error| AppError::io("temp_write_failed", error))?;
-    file.sync_all()
-        .map_err(|error| AppError::io("temp_sync_failed", error))?;
+    let written = file
+        .write_all(bytes)
+        .map_err(|error| AppError::io("temp_write_failed", error))
+        .and_then(|()| {
+            file.sync_all()
+                .map_err(|error| AppError::io("temp_sync_failed", error))
+        });
     drop(file);
+    if let Err(error) = written {
+        let _ = fs::remove_file(&temp_path);
+        return Err(error);
+    }
     replace_file(&temp_path, path).map_err(|error| {
         let _ = fs::remove_file(&temp_path);
         AppError::io("atomic_replace_failed", error)
@@ -1959,34 +1966,107 @@ fn save_settings(app: AppHandle, settings: Value) -> CommandResult<()> {
 
 #[tauri::command(async)]
 fn save_session(app: AppHandle, session: Value) -> CommandResult<()> {
+    let _guard = SESSION_STORAGE_LOCK
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
     let path = app_data_file(&app, "session.json")?;
-    let bytes = serde_json::to_vec_pretty(&session).map_err(|error| {
+    write_session_snapshot(&path, &session)
+}
+
+static SESSION_STORAGE_LOCK: Mutex<()> = Mutex::new(());
+
+fn valid_session_snapshot(session: &Value) -> bool {
+    session
+        .get("documents")
+        .and_then(Value::as_array)
+        .is_some_and(|documents| {
+            documents.iter().all(|document| {
+                ["id", "fileName", "content"]
+                    .iter()
+                    .all(|key| document.get(key).is_some_and(Value::is_string))
+            })
+        })
+        && session.get("tabs").is_some_and(|tabs| {
+            ["left", "right"].iter().all(|pane| {
+                tabs.get(pane)
+                    .and_then(Value::as_array)
+                    .is_some_and(|tabs| {
+                        tabs.iter().all(|tab| {
+                            ["id", "documentId"]
+                                .iter()
+                                .all(|key| tab.get(key).is_some_and(Value::is_string))
+                        })
+                    })
+            })
+        })
+        && session.get("activeTab").is_some_and(Value::is_object)
+        && session.get("split").is_some_and(Value::is_boolean)
+}
+
+fn read_session_snapshot(path: &Path) -> CommandResult<Option<Value>> {
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(AppError::io("session_read_failed", error)),
+    };
+    let session = serde_json::from_slice(&bytes).map_err(|error| {
         AppError::new(
             "session_invalid",
             "sessionRecovery",
             Some(error.to_string()),
         )
     })?;
-    atomic_write(&path, &bytes)
+    if !valid_session_snapshot(&session) {
+        return Err(AppError::new("session_invalid", "sessionRecovery", None));
+    }
+    Ok(Some(session))
+}
+
+fn write_session_snapshot(path: &Path, session: &Value) -> CommandResult<()> {
+    if !valid_session_snapshot(session) {
+        return Err(AppError::new("session_invalid", "sessionRecovery", None));
+    }
+    // Never replace the last good fallback with a damaged primary snapshot.
+    if let Ok(Some(previous)) = read_session_snapshot(path) {
+        let bytes = serde_json::to_vec(&previous).map_err(|error| {
+            AppError::new(
+                "session_invalid",
+                "sessionRecovery",
+                Some(error.to_string()),
+            )
+        })?;
+        atomic_write(&path.with_extension("previous.json"), &bytes)?;
+    }
+    let bytes = serde_json::to_vec(session).map_err(|error| {
+        AppError::new(
+            "session_invalid",
+            "sessionRecovery",
+            Some(error.to_string()),
+        )
+    })?;
+    atomic_write(path, &bytes)
+}
+
+fn load_session_snapshot(path: &Path) -> CommandResult<Option<Value>> {
+    let primary = read_session_snapshot(path);
+    if matches!(&primary, Ok(Some(_))) {
+        return primary;
+    }
+    let fallback = read_session_snapshot(&path.with_extension("previous.json"));
+    match fallback {
+        Ok(Some(session)) => Ok(Some(session)),
+        _ if primary.is_err() => primary,
+        other => other,
+    }
 }
 
 #[tauri::command(async)]
 fn load_session(app: AppHandle) -> CommandResult<Option<Value>> {
+    let _guard = SESSION_STORAGE_LOCK
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
     let path = app_data_file(&app, "session.json")?;
-    if !path.exists() {
-        return Ok(None);
-    }
-    let value = serde_json::from_slice(
-        &fs::read(path).map_err(|error| AppError::io("session_read_failed", error))?,
-    )
-    .map_err(|error| {
-        AppError::new(
-            "session_invalid",
-            "sessionRecovery",
-            Some(error.to_string()),
-        )
-    })?;
-    Ok(Some(value))
+    load_session_snapshot(&path)
 }
 
 #[tauri::command(async)]
@@ -2304,30 +2384,20 @@ fn find_recovery_path(app: &AppHandle, id: &str) -> CommandResult<PathBuf> {
 fn restore_recovery_document(app: &AppHandle, id: &str) -> CommandResult<OpenedDocument> {
     let path = find_recovery_path(app, id)?;
     let backup = read_backup(&path)?;
-    let original_path = backup.original_path.unwrap_or_default();
-    let original_exists = !original_path.is_empty() && Path::new(&original_path).exists();
-    let current_fingerprint = original_exists
-        .then(|| fingerprint(Path::new(&original_path)).ok())
-        .flatten();
-    let read_only = original_exists
-        && (current_fingerprint.is_none()
-            || fs::metadata(&original_path)
-                .map(|metadata| metadata.permissions().readonly())
-                .unwrap_or(true));
-    Ok(OpenedDocument {
-        path: if original_exists {
-            original_path
-        } else {
-            String::new()
-        },
+    Ok(recovered_document(backup))
+}
+
+fn recovered_document(backup: BackupFile) -> OpenedDocument {
+    OpenedDocument {
+        path: String::new(),
         name: backup.file_name,
         content: backup.content,
         encoding: backup.encoding,
         line_ending: backup.line_ending,
-        read_only,
-        fingerprint: current_fingerprint,
+        read_only: false,
+        fingerprint: None,
         recovered: true,
-    })
+    }
 }
 
 #[tauri::command(async)]
@@ -2430,6 +2500,66 @@ mod tests {
         let path = std::env::temp_dir().join(format!("plainmint-{label}-{}", Uuid::new_v4()));
         fs::create_dir_all(&path).unwrap();
         path
+    }
+
+    fn test_session(content: &str) -> Value {
+        json!({
+            "savedAt": now_millis(), "split": false,
+            "activeTab": { "left": "tab-1", "right": null },
+            "tabs": { "left": [{ "id": "tab-1", "documentId": "doc-1" }], "right": [] },
+            "documents": [{ "id": "doc-1", "fileName": "draft.txt", "content": content }]
+        })
+    }
+
+    #[test]
+    fn session_snapshots_fall_back_without_rotating_damaged_data() {
+        let directory = test_directory("session-fallback");
+        let path = directory.join("session.json");
+        let first = test_session("first draft");
+        let second = test_session("second draft");
+        write_session_snapshot(&path, &first).unwrap();
+        write_session_snapshot(&path, &second).unwrap();
+        assert_eq!(load_session_snapshot(&path).unwrap(), Some(second));
+        fs::write(&path, b"{truncated").unwrap();
+        assert_eq!(load_session_snapshot(&path).unwrap(), Some(first.clone()));
+        write_session_snapshot(&path, &test_session("third draft")).unwrap();
+        fs::write(&path, b"{}").unwrap();
+        assert_eq!(load_session_snapshot(&path).unwrap(), Some(first.clone()));
+        fs::remove_file(&path).unwrap();
+        assert_eq!(load_session_snapshot(&path).unwrap(), Some(first));
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn invalid_session_writes_leave_recoverable_content_intact() {
+        let directory = test_directory("session-validation");
+        let path = directory.join("session.json");
+        let session = test_session("do not lose this");
+        write_session_snapshot(&path, &session).unwrap();
+        assert!(write_session_snapshot(&path, &json!({ "documents": [] })).is_err());
+        assert_eq!(load_session_snapshot(&path).unwrap(), Some(session));
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn recovered_backups_do_not_target_the_original_file() {
+        let backup = BackupFile {
+            id: "backup-1".into(),
+            document_id: "doc-1".into(),
+            file_name: "notes.txt".into(),
+            original_path: Some(r"C:\notes.txt".into()),
+            created_at: 1,
+            content: "historical content".into(),
+            encoding: Encoding::Utf8,
+            line_ending: LineEnding::Lf,
+            reason: RecoveryReason::Automatic,
+        };
+        let restored = recovered_document(backup);
+        assert!(restored.path.is_empty());
+        assert!(restored.fingerprint.is_none());
+        assert!(restored.recovered);
+        assert!(!restored.read_only);
+        assert_eq!(restored.content, "historical content");
     }
 
     #[test]

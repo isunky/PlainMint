@@ -238,12 +238,19 @@ export async function persistSettings(settings: UserSettings) {
   await invoke("save_settings", { settings });
 }
 
-export async function persistSession(payload: unknown) {
-  if (!isTauri()) {
-    localStorage.setItem("plainmint.session", JSON.stringify(payload));
-    return;
-  }
-  await invoke("save_session", { session: payload });
+let sessionWriteQueue: Promise<void> = Promise.resolve();
+
+export function persistSession(payload: WorkspaceSession): Promise<void> {
+  // A final exit snapshot must never be overtaken by an older background write.
+  const task = sessionWriteQueue.catch(() => undefined).then(async () => {
+    if (!isTauri()) {
+      localStorage.setItem("plainmint.session", JSON.stringify(payload));
+      return;
+    }
+    await invoke("save_session", { session: payload });
+  });
+  sessionWriteQueue = task;
+  return task;
 }
 
 export async function beginAppSession(): Promise<StartupStatus> {
