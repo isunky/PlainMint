@@ -27,7 +27,7 @@ concurrency:
 
 jobs:
   version:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       value: ${{ steps.next.outputs.value }}
       release_body: ${{ steps.notes.outputs.body }}
@@ -70,7 +70,7 @@ jobs:
 
   prepare:
     needs: version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       sha: ${{ steps.commit.outputs.sha }}
     steps:
