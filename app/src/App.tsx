@@ -2698,14 +2698,21 @@ export function App() {
   }, [closeTargetsNow, saveDocumentById]);
 
   useEffect(() => {
+    const startupWindow = window;
+    let cancelled = false;
+    let recentFilesTimer: number | undefined;
+    let maintenanceTimer: number | undefined;
+    let maintenanceIdleCallback: number | undefined;
+
     void Promise.all([
       beginAppSession().catch(() => ({ previousExitWasUnclean: true })),
       loadSettings().catch(() => null),
       loadSession().catch(() => null),
     ]).then(([startupStatus, storedSettings, storedSession]) => {
+      if (cancelled) return;
       if (storedSettings) loadSettingsIntoStore(storedSettings);
       const effectiveSettings = useAppStore.getState().settings;
-      const explicitPreviewState = new URLSearchParams(window.location.search).has("state");
+      const explicitPreviewState = new URLSearchParams(startupWindow.location.search).has("state");
       const decision = decideStartupRecovery(
         effectiveSettings.sessionRecoveryMode,
         startupStatus,
@@ -2715,22 +2722,38 @@ export function App() {
       if (decision === "restore" && storedSession) restoreSessionIntoStore(storedSession);
       if (decision === "ask" && storedSession) setModal({ type: "startup-recovery", session: storedSession });
       if (decision !== "ask") setHydrated(true);
-      window.setTimeout(() => {
+      recentFilesTimer = startupWindow.setTimeout(() => {
+        if (cancelled) return;
         void loadRecentFiles().then((paths) => {
+          if (cancelled) return;
           setRecentFiles(paths);
           void refreshRecentFileStatus(paths);
         }).catch(() => undefined);
-        void loadRecentlyClosedTabs().then(loadRecentlyClosedTabsIntoStore).catch(() => undefined);
-        window.setTimeout(() => {
-          const prune = () => void pruneRecoveries(effectiveSettings).catch(() => undefined);
-          if (window.requestIdleCallback) {
-            window.requestIdleCallback(prune, { timeout: STARTUP_MAINTENANCE_DELAY_MS });
+        void loadRecentlyClosedTabs().then((records) => {
+          if (!cancelled) loadRecentlyClosedTabsIntoStore(records);
+        }).catch(() => undefined);
+        maintenanceTimer = startupWindow.setTimeout(() => {
+          if (cancelled) return;
+          const prune = () => {
+            if (!cancelled) void pruneRecoveries(effectiveSettings).catch(() => undefined);
+          };
+          if (startupWindow.requestIdleCallback) {
+            maintenanceIdleCallback = startupWindow.requestIdleCallback(prune, { timeout: STARTUP_MAINTENANCE_DELAY_MS });
           } else {
             prune();
           }
         }, STARTUP_MAINTENANCE_DELAY_MS);
       }, 0);
-    }).catch(() => setHydrated(true));
+    }).catch(() => {
+      if (!cancelled) setHydrated(true);
+    });
+
+    return () => {
+      cancelled = true;
+      if (recentFilesTimer !== undefined) startupWindow.clearTimeout(recentFilesTimer);
+      if (maintenanceTimer !== undefined) startupWindow.clearTimeout(maintenanceTimer);
+      if (maintenanceIdleCallback !== undefined) startupWindow.cancelIdleCallback?.(maintenanceIdleCallback);
+    };
   }, [loadRecentlyClosedTabsIntoStore, loadSettingsIntoStore, refreshRecentFileStatus, restoreSessionIntoStore]);
 
   useEffect(() => {

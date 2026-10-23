@@ -26,7 +26,7 @@ vi.mock("./services/runtime", async (importOriginal) => {
 });
 
 import { App } from "./App";
-import { closeWindow, listenForWindowClose, persistSession, writeRecovery } from "./services/runtime";
+import { closeWindow, listenForWindowClose, persistSession, pruneRecoveries, writeRecovery } from "./services/runtime";
 
 function savedDocument(id = "doc-1", revision = 1): DocumentRecord {
   return {
@@ -84,6 +84,33 @@ afterEach(() => {
 });
 
 describe("auto-save runtime triggers", () => {
+  it("cancels delayed startup maintenance when the app unmounts", async () => {
+    vi.mocked(pruneRecoveries).mockClear();
+    const setTimeoutSpy = vi.spyOn(window, "setTimeout");
+    const clearTimeoutSpy = vi.spyOn(window, "clearTimeout");
+    try {
+      const { unmount } = render(<App />);
+      await settle();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      const maintenanceTimerIndex = setTimeoutSpy.mock.calls.findIndex(([, delay]) => delay === 10_000);
+      expect(maintenanceTimerIndex).toBeGreaterThanOrEqual(0);
+      const maintenanceTimerId = setTimeoutSpy.mock.results[maintenanceTimerIndex].value as number;
+      const maintenanceCallback = setTimeoutSpy.mock.calls[maintenanceTimerIndex][0];
+
+      unmount();
+      expect(clearTimeoutSpy).toHaveBeenCalledWith(maintenanceTimerId);
+      if (typeof maintenanceCallback === "function") act(() => maintenanceCallback());
+
+      expect(pruneRecoveries).not.toHaveBeenCalled();
+    } finally {
+      setTimeoutSpy.mockRestore();
+      clearTimeoutSpy.mockRestore();
+    }
+  });
+
   it("saves the latest revision after an in-flight automatic save and waits for both before exit", async () => {
     let finishSave!: (value: unknown) => void;
     runtimeMocks.saveDocument.mockImplementationOnce(() => new Promise((resolve) => { finishSave = resolve; }));
