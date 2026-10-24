@@ -185,8 +185,9 @@ type DirectoryCheck = {
 type AvailableUpdate = Extract<UpdateCheckResult, { available: true }>;
 type UpdateDialogState = {
   update: AvailableUpdate;
-  status: "ready" | "downloading" | "installing" | "error";
+  status: "ready" | "preparing" | "downloading" | "installing" | "error";
   progress: number;
+  error?: "checkpoint" | "install";
 };
 
 const emptyDirectoryChecks: Record<DirectoryField, DirectoryCheck> = {
@@ -1661,13 +1662,15 @@ function UpdateModal({ state, onClose, onInstall }: {
   onInstall: () => void;
 }) {
   const { t } = useTranslation();
-  const busy = state.status === "downloading" || state.status === "installing";
-  const statusText = state.status === "downloading"
-    ? t("updateDownloading", { progress: state.progress })
+  const busy = state.status === "preparing" || state.status === "downloading" || state.status === "installing";
+  const statusText = state.status === "preparing"
+    ? t("updatePreparing")
+    : state.status === "downloading"
+      ? t("updateDownloading", { progress: state.progress })
     : state.status === "installing"
       ? t("updateInstalling")
       : state.status === "error"
-        ? t("updateInstallFailed")
+        ? t(state.error === "checkpoint" ? "updateCheckpointFailed" : "updateInstallFailed")
         : undefined;
   return (
     <div className="modal-backdrop update-modal-backdrop">
@@ -1684,8 +1687,8 @@ function UpdateModal({ state, onClose, onInstall }: {
           <p>{state.update.body?.trim() || t("updateNotesEmpty")}</p>
         </div>
         {busy && (
-          <div className="update-progress" aria-live="polite">
-            <div><span style={{ width: `${state.status === "installing" ? 100 : state.progress}%` }} /></div>
+          <div className={`update-progress ${state.status === "preparing" ? "is-indeterminate" : ""}`} aria-live="polite">
+            <div><span style={{ width: `${state.status === "preparing" ? 35 : state.status === "installing" ? 100 : state.progress}%` }} /></div>
             <p>{statusText}</p>
           </div>
         )}
@@ -2066,12 +2069,17 @@ export function App() {
   }, [flash, t]);
 
   const installAvailableUpdate = useCallback(async () => {
-    if (!updateDialog || updateDialog.status === "downloading" || updateDialog.status === "installing") return;
-    if (Object.values(documents).some((document) => document.dirty)) {
-      flash(t("updateSaveFirst"));
+    if (!updateDialog || updateDialog.status === "preparing" || updateDialog.status === "downloading" || updateDialog.status === "installing") return;
+    const update = updateDialog.update;
+    setUpdateDialog({ update, status: "preparing", progress: 0 });
+    try {
+      await persistSession(createWorkspaceSession(useAppStore.getState()));
+      setSessionSaveFailed(false);
+    } catch {
+      setSessionSaveFailed(true);
+      setUpdateDialog({ update, status: "error", progress: 0, error: "checkpoint" });
       return;
     }
-    const update = updateDialog.update;
     setUpdateDialog({ update, status: "downloading", progress: 0 });
     try {
       await update.install((progress: UpdateInstallProgress) => {
@@ -2085,9 +2093,9 @@ export function App() {
         setUpdateDialog({ update, status: "downloading", progress: percent });
       });
     } catch {
-      setUpdateDialog({ update, status: "error", progress: 0 });
+      setUpdateDialog({ update, status: "error", progress: 0, error: "install" });
     }
-  }, [documents, flash, t, updateDialog]);
+  }, [updateDialog]);
 
   const refreshRecentFileStatus = useCallback(async (paths: string[]) => {
     const results = await Promise.all(paths.map(async (path) => {

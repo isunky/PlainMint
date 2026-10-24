@@ -132,13 +132,17 @@ describe("application updates", () => {
     expect(runtimeMocks.install).toHaveBeenCalledOnce();
   });
 
-  it("does not install while a document has unsaved changes", async () => {
+  it("checkpoints unsaved documents before installing an update", async () => {
     const document = dirtyDocument();
+    let completeCheckpoint: (() => void) | undefined;
     useAppStore.setState({
       documents: { [document.id]: document },
       tabs: { left: [{ id: "dirty-tab", documentId: document.id, pane: "left", order: 0 }], right: [] },
       activeTab: { left: "dirty-tab", right: null },
     });
+    runtimeMocks.persistSession.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      completeCheckpoint = resolve;
+    }));
     render(<App />);
     await settle();
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
@@ -147,9 +151,44 @@ describe("application updates", () => {
     await settle();
 
     fireEvent.click(screen.getByRole("button", { name: /Download and install/ }));
+    await settle();
+
+    expect(runtimeMocks.persistSession).toHaveBeenCalledOnce();
+    expect(screen.getByText("Saving your workspace…")).toBeInTheDocument();
+    expect(runtimeMocks.install).not.toHaveBeenCalled();
+    await act(async () => { completeCheckpoint?.(); });
+    await settle();
+    expect(runtimeMocks.persistSession).toHaveBeenCalledWith(expect.objectContaining({
+      documents: expect.arrayContaining([expect.objectContaining({
+        id: document.id,
+        content: document.content,
+        dirty: true,
+      })]),
+    }));
+    expect(runtimeMocks.install).toHaveBeenCalledOnce();
+  });
+
+  it("does not install when saving the recovery snapshot fails and shows a retryable error", async () => {
+    const document = dirtyDocument();
+    useAppStore.setState({
+      documents: { [document.id]: document },
+      tabs: { left: [{ id: "dirty-tab", documentId: document.id, pane: "left", order: 0 }], right: [] },
+      activeTab: { left: "dirty-tab", right: null },
+    });
+    runtimeMocks.persistSession.mockRejectedValueOnce(new Error("disk unavailable"));
+    render(<App />);
+    await settle();
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "About" }));
+    fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
+    await settle();
+
+    fireEvent.click(screen.getByRole("button", { name: /Download and install/ }));
+    await settle();
 
     expect(runtimeMocks.install).not.toHaveBeenCalled();
-    expect(screen.getByRole("status")).toHaveTextContent("Save or discard unsaved changes");
+    expect(screen.getByText(/workspace could not be saved safely/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeEnabled();
   });
 
   it("shows a no-update result in the about page without a toast", async () => {

@@ -2880,6 +2880,21 @@ select:focus-visible {
   transition: width 160ms ease;
 }
 
+.update-progress.is-indeterminate > div > span {
+  animation: update-progress-indeterminate 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes update-progress-indeterminate {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(290%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .update-progress.is-indeterminate > div > span {
+    animation: none;
+  }
+}
+
 .update-progress p {
   margin: 8px 0 0;
   font-size: 13px;
