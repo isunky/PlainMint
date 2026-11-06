@@ -452,6 +452,31 @@ describe("tab and split interactions", () => {
     expect(revealFileInDirectory).toHaveBeenCalledWith("C:\\a.txt");
   });
 
+  it("focuses and reselects the find query, then returns to the editor on Escape", async () => {
+    const { container } = render(<App />);
+    await settle();
+    await waitFor(() => expect(container.querySelector(".cm-content")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "Find" }));
+    const query = screen.getByRole("textbox", { name: "Find" }) as HTMLInputElement;
+    expect(screen.getByText("Type to search")).toBeVisible();
+    await waitFor(() => expect(query).toHaveFocus());
+    fireEvent.change(query, { target: { value: "query" } });
+    (container.querySelector(".cm-content") as HTMLElement).focus();
+
+    fireEvent.keyDown(window, { key: "f", ctrlKey: true });
+    await waitFor(() => expect(query).toHaveFocus());
+    expect([query.selectionStart, query.selectionEnd]).toEqual([0, 5]);
+
+    fireEvent.keyDown(query, { key: "Escape" });
+    expect(screen.queryByRole("search")).not.toBeInTheDocument();
+    await waitFor(() => expect(container.querySelector(".cm-content")).toHaveFocus());
+
+    fireEvent.click(screen.getByRole("button", { name: "Replace" }));
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Replace with" }), { key: "Escape" });
+    expect(screen.queryByRole("search")).not.toBeInTheDocument();
+  });
+
   it("shows search options in find mode and applies them to matches", async () => {
     useAppStore.setState({ documents: { a: { ...doc("a"), content: "Cat cat catalog" }, b: doc("b") } });
     const { container } = render(<App />);
@@ -483,6 +508,7 @@ describe("tab and split interactions", () => {
 
     await waitFor(() => expect(screen.getByText("2 matches in 1 documents")).toBeVisible());
     expect(document.querySelector(".opened-search-group strong")).toHaveTextContent("b.txt");
+    expect(document.querySelector(".search-input-wrap")).not.toHaveClass("no-match");
     fireEvent.click(screen.getByRole("button", { name: /Line 1/ }));
     expect(useAppStore.getState().activeTab.left).toBe("tab-b");
 

@@ -227,6 +227,15 @@ export function SettingsModal({
   initialTemplateId,
 }: SettingsModalProps) {
   const { t, i18n } = useTranslation();
+  const dialogRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const initialFocus = dialogRef.current?.querySelector<HTMLButtonElement>(".close-settings:not(:disabled)") ?? dialogRef.current;
+    initialFocus?.focus({ preventScroll: true });
+    return () => {
+      if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
+    };
+  }, []);
   const [section, setSection] = useState<SettingsSection>("general");
   const [templateDraft, setTemplateDraft] = useState<DocumentTemplateCatalog>(() => cloneTemplateCatalog(templates));
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | undefined>(() => templates.templates[0]?.id);
@@ -308,7 +317,26 @@ export function SettingsModal({
 
   return (
     <div className="modal-backdrop" role="presentation">
-      <section className="settings-modal" role="dialog" aria-modal="true" aria-label={t("settings")}>
+      <section ref={dialogRef} className="settings-modal" role="dialog" aria-modal="true" aria-label={t("settings")} tabIndex={-1} onKeyDown={(event) => {
+        if (event.key === "Escape" && !event.nativeEvent.isComposing) {
+          event.preventDefault();
+          event.stopPropagation();
+          if (!applying) onCancel();
+          return;
+        }
+        if (event.key !== "Tab") return;
+        const items = [...event.currentTarget.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex='0']")]
+          .filter((item) => item.tabIndex >= 0 && !item.closest("[hidden], [inert]"));
+        const first = items[0];
+        const last = items.at(-1);
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last?.focus();
+        } else if (!event.shiftKey && (document.activeElement === last || document.activeElement === event.currentTarget)) {
+          event.preventDefault();
+          first?.focus();
+        }
+      }}>
         <aside className="settings-sidebar">
           <h2>{t("settings")}</h2>
           <nav>
@@ -317,6 +345,7 @@ export function SettingsModal({
                 type="button"
                 key={id}
                 className={section === id ? "active" : ""}
+                aria-current={section === id ? "page" : undefined}
                 onClick={() => setSection(id)}
               >
                 <Icon size={20} weight="regular" />

@@ -24,6 +24,42 @@ beforeEach(async () => {
 afterEach(cleanup);
 
 describe("settings runtime controls", () => {
+  it("contains keyboard focus, cancels on Escape, and restores the opener", () => {
+    const opener = document.createElement("button");
+    document.body.append(opener);
+    opener.focus();
+    try {
+      const props = {
+        settings: { ...defaultSettings },
+        directoryChecks: { defaultSaveFolder: { status: "idle" as const }, cloudSyncFolder: { status: "idle" as const } },
+        applying: false,
+        canApply: true,
+        ...handlers,
+      };
+      const { unmount, rerender } = render(<SettingsModal {...props} />);
+      const first = screen.getByRole("button", { name: "General" });
+      const last = screen.getByRole("button", { name: "Apply" });
+      expect(screen.getByRole("button", { name: "Close" })).toHaveFocus();
+      expect(first).toHaveAttribute("aria-current", "page");
+
+      last.focus();
+      fireEvent.keyDown(last, { key: "Tab" });
+      expect(first).toHaveFocus();
+      fireEvent.keyDown(first, { key: "Tab", shiftKey: true });
+      expect(last).toHaveFocus();
+      fireEvent.keyDown(last, { key: "Escape" });
+      expect(handlers.onCancel).toHaveBeenCalledOnce();
+
+      rerender(<SettingsModal {...props} applying />);
+      fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+      expect(handlers.onCancel).toHaveBeenCalledOnce();
+      unmount();
+      expect(opener).toHaveFocus();
+    } finally {
+      opener.remove();
+    }
+  });
+
   it("groups language settings with appearance", () => {
     render(<SettingsModal
       settings={{ ...defaultSettings, locale: "system" }}

@@ -1137,20 +1137,36 @@ function SearchBar({
   const setSearch = useAppStore((state) => state.setSearch);
   const openedScope = search.scope === "opened" && !search.replaceOpen;
   const hasMatches = searchValid && matches.length > 0;
+  const invalidQuery = Boolean(search.query && !(openedScope ? openedResult.valid : searchValid));
+  const noMatches = Boolean(search.query && !invalidQuery && !(openedScope && openedResult.searching)
+    && (openedScope ? openedResult.total === 0 : !hasMatches));
   const go = (direction: -1 | 1) => {
     if (!hasMatches) return;
     const next = (matchIndex + direction + matches.length) % matches.length;
     onMatchIndex(next);
     direction > 0 ? findNextInPane(pane) : findPreviousInPane(pane);
   };
-  const close = () => setSearch({ open: false, scope: "document" });
+  const close = () => {
+    setSearch({ open: false, scope: "document" });
+    window.requestAnimationFrame(() => focusEditor(pane));
+  };
   return (
-    <div className={`searchbar ${search.replaceOpen ? "replace-mode" : "find-mode"} ${openedScope ? "opened-documents-mode" : ""}`} role="search">
+    <div className={`searchbar ${search.replaceOpen ? "replace-mode" : "find-mode"} ${openedScope ? "opened-documents-mode" : ""}`} role="search" aria-label={t("find")} onKeyDown={(event) => {
+      if (event.key === "Escape" && !event.nativeEvent.isComposing) {
+        event.preventDefault();
+        event.stopPropagation();
+        close();
+      }
+    }}>
       <div className="searchbar-primary">
-        <div className={"search-input-wrap " + (search.query && !searchValid ? "invalid-query" : search.query && !hasMatches ? "no-match" : "")}>
+        <div className={"search-input-wrap " + (invalidQuery ? "invalid-query" : noMatches ? "no-match" : "")}>
           <MagnifyingGlass size={18} />
           <input
             autoFocus
+            className="search-query-input"
+            aria-label={t("find")}
+            aria-invalid={invalidQuery || undefined}
+            spellCheck={false}
             value={search.query}
             placeholder={t("find")}
             onChange={(event) => { setSearch({ query: event.target.value }); onMatchIndex(0); }}
@@ -1160,7 +1176,6 @@ function SearchBar({
                 const firstResult = document.querySelector<HTMLButtonElement>(".opened-search-result");
                 if (firstResult) { event.preventDefault(); firstResult.focus(); }
               }
-              if (event.key === "Escape") close();
             }}
           />
         </div>
@@ -1172,8 +1187,8 @@ function SearchBar({
           <option value="document">{t("searchCurrentDocument")}</option>
           <option value="opened">{t("searchOpenedDocuments")}</option>
         </select>
-        <span className="match-count" aria-live="polite">{openedScope
-          ? !search.query ? t("noMatches") : openedResult.searching ? t("searchingOpenedDocuments") : !openedResult.valid ? t("invalidRegularExpression") : openedResult.total ? t("openedSearchSummary", { matches: openedResult.total, documents: openedResult.documentCount }) : t("noMatches")
+        <span className={"match-count " + (invalidQuery ? "invalid-query" : noMatches ? "no-match" : "")} aria-live="polite">{!search.query ? t("searchPrompt") : openedScope
+          ? openedResult.searching ? t("searchingOpenedDocuments") : !openedResult.valid ? t("invalidRegularExpression") : openedResult.total ? t("openedSearchSummary", { matches: openedResult.total, documents: openedResult.documentCount }) : t("noMatches")
           : search.query && !searchValid ? t("invalidRegularExpression") : hasMatches ? t("matchCount", { current: Math.min(matchIndex + 1, matches.length), total: matches.length }) : t("noMatches")}</span>
         <div className="search-options">
           <label className="check-control" title={t("caseSensitive")}><input type="checkbox" aria-label={t("caseSensitive")} checked={search.caseSensitive} onChange={(event) => setSearch({ caseSensitive: event.target.checked })} /><span className="check-control-label">{t("caseSensitive")}</span><span className="check-control-compact" aria-hidden="true">Aa</span></label>
@@ -1183,7 +1198,7 @@ function SearchBar({
       </div>
       {search.replaceOpen && (
         <div className="searchbar-replace">
-          <input className="replace-input" value={search.replacement} placeholder={t("replaceWith")} onChange={(event) => setSearch({ replacement: event.target.value })} />
+          <input className="replace-input" aria-label={t("replaceWith")} value={search.replacement} placeholder={t("replaceWith")} onChange={(event) => setSearch({ replacement: event.target.value })} />
           <button type="button" className="button-secondary search-action" disabled={!hasMatches} onClick={() => {
             const match = matches[Math.min(matchIndex, matches.length - 1)];
             if (replaceCurrentSearchMatchInPane(pane, match)) onMatchIndex(0);
@@ -1206,7 +1221,6 @@ function SearchBar({
                 key={`${match.from}-${match.to}`}
                 onClick={() => onSelectOpenedMatch(group.documentId, match)}
                 onKeyDown={(event) => {
-                  if (event.key === "Escape") close();
                   if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
                   event.preventDefault();
                   const items = [...window.document.querySelectorAll<HTMLButtonElement>(".opened-search-result")];
@@ -2049,6 +2063,15 @@ export function App() {
     setToast(message);
     window.setTimeout(() => setToast(""), 2200);
   }, []);
+
+  const openSearch = useCallback((replaceOpen = false) => {
+    setSearch({ open: true, replaceOpen, ...(replaceOpen ? { scope: "document" as const } : {}) });
+    window.requestAnimationFrame(() => {
+      const input = document.querySelector<HTMLInputElement>(".search-query-input");
+      input?.focus();
+      input?.select();
+    });
+  }, [setSearch]);
 
   const requestUpdateCheck = useCallback(async () => {
     if (updateCheckInFlight.current) return;
@@ -3275,8 +3298,8 @@ export function App() {
       if (key === "p") { event.preventDefault(); beginPrint(); }
       if (key === "d" && event.shiftKey && canCompareSplitPanes) { event.preventDefault(); openComparison(); }
       if (key === "s") { event.preventDefault(); void saveActive(event.shiftKey); }
-      if (key === "f") { event.preventDefault(); setSearch({ open: true, replaceOpen: false }); }
-      if (key === "h") { event.preventDefault(); setSearch({ open: true, replaceOpen: true, scope: "document" }); }
+      if (key === "f") { event.preventDefault(); openSearch(); }
+      if (key === "h") { event.preventDefault(); openSearch(true); }
       if (key === "g" && !(event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement)) { event.preventDefault(); goToLineInPane(activePane); }
       if (key === "\\") { event.preventDefault(); toggleSplit(); }
       if (key === "=" || key === "+") { event.preventDefault(); applyQuickSettings({ fontSize: Math.min(28, settings.fontSize + 1) }); }
@@ -3286,7 +3309,7 @@ export function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [activePane, applyQuickSettings, beginPrint, canCompareSplitPanes, createDocument, modal.type, openComparison, openFiles, reopenClosedTab, requestCloseTab, saveActive, setActiveTab, setSearch, settings, toggleSplit]);
+  }, [activePane, applyQuickSettings, beginPrint, canCompareSplitPanes, createDocument, modal.type, openComparison, openFiles, openSearch, reopenClosedTab, requestCloseTab, saveActive, setActiveTab, settings, toggleSplit]);
 
   const contextTabs = tabContextMenu ? tabs[tabContextMenu.pane] : [];
   const contextTabIndex = tabContextMenu?.tabId ? contextTabs.findIndex((tab) => tab.id === tabContextMenu.tabId) : -1;
@@ -3319,8 +3342,8 @@ export function App() {
         onPrint={beginPrint}
         onUndo={() => activeDocument && undoDocument(activeDocument.id)}
         onRedo={() => activeDocument && redoDocument(activeDocument.id)}
-        onFind={() => { setSearch({ open: true, replaceOpen: false }); window.setTimeout(() => focusEditor(activePane), 0); }}
-        onReplace={() => { setSearch({ open: true, replaceOpen: true, scope: "document" }); window.setTimeout(() => focusEditor(activePane), 0); }}
+        onFind={() => openSearch()}
+        onReplace={() => openSearch(true)}
         onCleanup={runTextCleanup}
         onCompare={() => void openComparison()}
         onWrap={() => updateSettings({ wordWrapByDefault: !settings.wordWrapByDefault })}
@@ -3357,7 +3380,7 @@ export function App() {
       <div
         ref={workspaceRef}
         className={"workspace " + (split ? "split " : "") + (resizingSplit ? "resizing " : "")}
-        style={split ? { gridTemplateColumns: `minmax(320px, ${splitRatio}fr) 12px minmax(320px, ${1 - splitRatio}fr)` } : undefined}
+        style={split ? { gridTemplateColumns: `minmax(320px, ${splitRatio * 100}fr) 12px minmax(320px, ${(1 - splitRatio) * 100}fr)` } : undefined}
       >
         {tabs.left.length === 0 && tabs.right.length === 0 && !split ? (
           <Welcome
