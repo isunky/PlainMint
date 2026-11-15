@@ -81,7 +81,7 @@ Get the Windows installer or macOS DMG from [GitHub Releases](https://github.com
 
 <br>
 
-**环境要求 / Requirements：** Node.js 22、Rust stable 与 [Tauri 2 前置依赖 / prerequisites](https://v2.tauri.app/start/prerequisites/)。
+**环境要求 / Requirements：** Node.js 22.22.2+（22.x）、24.15+（24.x）或 26+、Rust stable 与 [Tauri 2 前置依赖 / prerequisites](https://v2.tauri.app/start/prerequisites/)。
 
 ```bash
 git clone https://github.com/isunky/PlainMint.git

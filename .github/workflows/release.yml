@@ -32,9 +32,12 @@ jobs:
       value: ${{ steps.next.outputs.value }}
       release_body: ${{ steps.notes.outputs.body }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.22.2
       - name: Calculate next version
         id: next
         shell: bash
@@ -74,9 +77,12 @@ jobs:
     outputs:
       sha: ${{ steps.commit.outputs.sha }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.22.2
       - name: Persist release version
         run: |
           node app/scripts/set-version.mjs ${{ needs.version.outputs.value }}
@@ -102,16 +108,16 @@ jobs:
         include:
           - os: windows-latest
             args: --bundles nsis
-          - os: macos-14
+          - os: macos-15
             args: --bundles dmg
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ needs.prepare.outputs.sha }}
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 22.22.2
           cache: npm
           cache-dependency-path: app/package-lock.json
       - uses: dtolnay/rust-toolchain@stable
@@ -121,7 +127,7 @@ jobs:
       - name: Install dependencies
         working-directory: app
         run: npm ci
-      - uses: tauri-apps/tauri-action@v0.6.2
+      - uses: tauri-apps/tauri-action@action-v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -134,8 +140,8 @@ jobs:
           releaseDraft: false
           prerelease: ${{ inputs.prerelease }}
           args: ${{ matrix.args }}
-          includeUpdaterJson: true
-          assetNamePattern: PlainMint_[version]_[platform]_[arch][_setup].[ext]
+          uploadUpdaterJson: true
+          releaseAssetNamePattern: PlainMint_[version]_[platform]_[arch][_setup].[ext]
       - name: Package Windows portable edition
         if: runner.os == 'Windows'
         shell: pwsh
