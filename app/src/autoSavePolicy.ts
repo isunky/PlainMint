@@ -5,6 +5,7 @@ export function isAutoSaveEligible(document: DocumentRecord | undefined): docume
     document
       && document.dirty
       && document.filePath
+      && document.cloudDraft?.importedRevision !== document.revision
       && !document.readOnly
       && !document.missing
       && !document.externalModified,

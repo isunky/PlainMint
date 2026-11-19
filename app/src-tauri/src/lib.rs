@@ -27,6 +27,8 @@ use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_opener::OpenerExt;
 use uuid::Uuid;
 
+mod cloud_workspace;
+
 const DIRECTORY_SPACE_RESERVE: u64 = 1024 * 1024;
 const PENDING_OPEN_FILES_EVENT: &str = "plainmint-open-files-pending";
 #[cfg(target_os = "windows")]
@@ -2458,6 +2460,11 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
+            cloud_workspace::load_cloud_journal,
+            cloud_workspace::save_cloud_journal,
+            cloud_workspace::read_cloud_workspace,
+            cloud_workspace::write_cloud_workspace,
+            cloud_workspace::open_cloud_document,
             inspect_file_metadata,
             sync_file_watches,
             validate_directory,

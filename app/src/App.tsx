@@ -49,6 +49,8 @@ import {
 } from "./documentTemplates";
 import { buildEditorFontFamily } from "./fontSettings";
 import { createWorkspaceSession, decideStartupRecovery } from "./recoveryPolicy";
+import { relativeCloudPath, scopeKey } from "./cloudWorkspace";
+import { useCloudWorkspace } from "./useCloudWorkspace";
 import { resolveInitialSaveFolder } from "./saveFolderPolicy";
 import { findSearchMatches } from "./searchMatcher";
 import { OPEN_DOCUMENT_RESULT_LIMIT, searchOpenedDocuments, type OpenedDocumentSearchResult } from "./openedDocumentSearch";
@@ -1931,6 +1933,8 @@ export function App() {
   const [recentFiles, setRecentFiles] = useState<string[]>([]);
   const [recentFileMissing, setRecentFileMissing] = useState<Record<string, boolean>>({});
   const [hydrated, setHydrated] = useState(false);
+  const [cloudRoot, setCloudRoot] = useState<string>();
+  const { status: cloudStatus, flushRef: flushCloudWorkspace } = useCloudWorkspace(cloudRoot, hydrated);
   const [directoryChecks, setDirectoryChecks] = useState<Record<DirectoryField, DirectoryCheck>>(emptyDirectoryChecks);
   const [settingsApplying, setSettingsApplying] = useState(false);
   const [templateCatalog, setTemplateCatalog] = useState<DocumentTemplateCatalog>(() => ({ templates: structuredClone(builtInDocumentTemplates), issues: [] }));
@@ -2663,7 +2667,21 @@ export function App() {
         const catalog = await applyDocumentTemplateChanges(builtInDocumentTemplates, templateChanges);
         setTemplateCatalog(catalog);
       }
+      const nextRoot = nextSettings.cloudWorkspaceEnabled ? nextSettings.cloudSyncFolder : undefined;
+      if (cloudRoot && (!nextRoot || scopeKey(cloudRoot) !== scopeKey(nextRoot))) {
+        const state = useAppStore.getState();
+        const scopedDrafts = Object.values(state.documents).filter((document) =>
+          !document.cloudDraft && !document.cloudDraftScope
+          && (document.filePath ? document.dirty && relativeCloudPath(cloudRoot, document.filePath) : document.content));
+        if (scopedDrafts.length) {
+          const documents = { ...state.documents };
+          for (const document of scopedDrafts) documents[document.id] = { ...document, cloudDraftScope: scopeKey(cloudRoot) };
+          useAppStore.setState({ documents });
+          await persistSession(createWorkspaceSession(useAppStore.getState()));
+        }
+      }
       await Promise.all([persistSettings(nextSettings), pruneRecoveries(nextSettings)]);
+      setCloudRoot(nextRoot);
       setModal({ type: "none" });
       flash(t("settingsSaved"));
     } catch {
@@ -2671,7 +2689,7 @@ export function App() {
     } finally {
       setSettingsApplying(false);
     }
-  }, [flash, settingsApplying, t, validateSettingsDirectory]);
+  }, [cloudRoot, flash, settingsApplying, t, validateSettingsDirectory]);
 
   const requestCloseTabs = useCallback(async (targets: TabCloseTarget[], bulk = false) => {
     const initial = useAppStore.getState();
@@ -2743,6 +2761,7 @@ export function App() {
       if (cancelled) return;
       if (storedSettings) loadSettingsIntoStore(storedSettings);
       const effectiveSettings = useAppStore.getState().settings;
+      setCloudRoot(effectiveSettings.cloudWorkspaceEnabled ? effectiveSettings.cloudSyncFolder : undefined);
       const explicitPreviewState = new URLSearchParams(startupWindow.location.search).has("state");
       const decision = decideStartupRecovery(
         effectiveSettings.sessionRecoveryMode,
@@ -3028,6 +3047,18 @@ export function App() {
         return;
       }
       await persistSession(createWorkspaceSession(useAppStore.getState(), discarded));
+      // The local recovery checkpoint is authoritative if OneDrive is unavailable.
+      if (cloudRoot) {
+        let timeout: number | undefined;
+        try {
+          await Promise.race([
+            flushCloudWorkspace.current(discarded).catch(() => undefined),
+            new Promise<void>((resolve) => { timeout = window.setTimeout(resolve, 2_000); }),
+          ]);
+        } finally {
+          window.clearTimeout(timeout);
+        }
+      }
     } catch {
       closingRef.current = false;
       setWindowClosing(false);
@@ -3040,7 +3071,7 @@ export function App() {
       closingRef.current = false;
       setWindowClosing(false);
     }
-  }, [flash, t]);
+  }, [cloudRoot, flash, flushCloudWorkspace, t]);
 
   const requestCloseWindow = useCallback(async () => {
     if (closingRef.current || closeRequestInFlight.current || !hydrated) return;
@@ -3376,6 +3407,11 @@ export function App() {
           <button type="button" className="button-secondary" onClick={() => void checkpointWorkspace()}>{t("retry")}</button>
         </div>
       )}
+      {cloudRoot && hydrated && (
+        <div className="cloud-workspace-status" role="status" title={cloudStatus.detail}>
+          {t(cloudStatus.key)}{cloudStatus.detail && ` — ${cloudStatus.detail}`}
+        </div>
+      )}
 
       <div
         ref={workspaceRef}
@@ -3476,7 +3512,9 @@ export function App() {
           onChooseDirectory={(field) => void chooseDirectory().then((path) => {
             if (!path) return;
             setDirectoryChecks((current) => ({ ...current, [field]: { status: "checking" } }));
-            updateSettings({ [field]: path });
+            updateSettings(field === "cloudSyncFolder" && path !== settings.cloudSyncFolder
+              ? { cloudSyncFolder: path, cloudWorkspaceEnabled: false }
+              : { [field]: path });
           })}
           onClearDirectory={(field) => updateSettings({ [field]: undefined })}
           onOpenRecovery={() => setModal({ type: "recovery" })}

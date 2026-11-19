@@ -47,7 +47,7 @@ function defaultsForSection(section: SettingsSection): Partial<UserSettings> {
     case "editor":
       return pickDefaults("fontFamily", "latinFontFamily", "cjkFontFamily", "fontSize", "lineHeight", "tabSize", "highlightCurrentLine", "spellCheckEnabled");
     case "files":
-      return pickDefaults("defaultSaveFolder", "cloudSyncFolder", "defaultEncoding", "defaultLineEnding", "recentFileLimit");
+      return pickDefaults("defaultSaveFolder", "cloudSyncFolder", "cloudWorkspaceEnabled", "defaultEncoding", "defaultLineEnding", "recentFileLimit");
     case "backup":
       return pickDefaults("backupDebounceSeconds", "backupRetentionDays", "maxBackupVersionsPerFile", "autoSaveMode", "sessionRecoveryMode");
     case "appearance":
@@ -481,6 +481,13 @@ export function SettingsModal({
                       )}
                     </div>
                   ))}
+                  <SettingToggle
+                    title={t("cloudWorkspaceEnabled")}
+                    description={t("cloudWorkspaceDescription")}
+                    checked={settings.cloudWorkspaceEnabled && Boolean(settings.cloudSyncFolder)}
+                    disabled={applying || !settings.cloudSyncFolder}
+                    onChange={(cloudWorkspaceEnabled) => onChange({ cloudWorkspaceEnabled })}
+                  />
                   <div className="field-grid">
                     <label className="field-label">
                       <span className="field-label-title">{t("encoding")}<HelpTip text={t("newFileDefaultsHint")} /></span>

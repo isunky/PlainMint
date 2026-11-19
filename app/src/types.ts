@@ -82,6 +82,14 @@ export interface DocumentRecord {
   fingerprint?: FileFingerprint;
   createdAt: number;
   lastSavedAt?: number;
+  /** Local-only ownership of an unsent draft when switching sync folders. */
+  cloudDraftScope?: string;
+  cloudDraft?: {
+    scope: string;
+    id: string;
+    clock: Record<string, number>;
+    importedRevision?: number;
+  };
   patch?: {
     sequence: number;
     origin: string;
@@ -153,6 +161,7 @@ export interface UserSettings {
   sessionRecoveryMode: "ask" | "auto" | "empty";
   defaultSaveFolder?: string;
   cloudSyncFolder?: string;
+  cloudWorkspaceEnabled: boolean;
   recentFileLimit: number;
 }
 

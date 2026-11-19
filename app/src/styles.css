@@ -3427,3 +3427,11 @@ select:focus-visible {
     animation-duration: 0.01ms !important;
   }
 }
+.cloud-workspace-status {
+  padding: 3px 12px;
+  color: var(--text-muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

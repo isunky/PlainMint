@@ -91,6 +91,7 @@ export const defaultSettings: UserSettings = {
   backupRetentionDays: 30,
   maxBackupVersionsPerFile: 20,
   autoSaveMode: "off",
+  cloudWorkspaceEnabled: false,
   defaultEncoding: "utf-8",
   defaultLineEnding: "lf",
   sessionRecoveryMode: "ask",
@@ -153,6 +154,7 @@ export function normalizeSettings(settings: Partial<UserSettings>): UserSettings
     defaultLineEnding: supportedLineEndings.includes(merged.defaultLineEnding) ? merged.defaultLineEnding : defaultSettings.defaultLineEnding,
     defaultSaveFolder: merged.defaultSaveFolder?.trim() || undefined,
     cloudSyncFolder: merged.cloudSyncFolder?.trim() || undefined,
+    cloudWorkspaceEnabled: merged.cloudWorkspaceEnabled === true && Boolean(merged.cloudSyncFolder?.trim()),
   };
 }
 

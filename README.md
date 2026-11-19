@@ -30,7 +30,7 @@
 
 ## 简体中文
 
-PlainMint 是一款面向 Windows 与 macOS 的轻量纯文本编辑器。无论是随手记录、整理长文本，还是同时处理多个文件，它都把常用功能放在顺手的位置，不让复杂界面打断思路。无需账户，文件始终留在你的设备上。
+PlainMint 是一款面向 Windows 与 macOS 的轻量纯文本编辑器。无需 PlainMint 账户，默认在本机编辑，也可以选择用 OneDrive 接续草稿。
 
 ### 核心功能
 
@@ -47,7 +47,9 @@ PlainMint 是一款面向 Windows 与 macOS 的轻量纯文本编辑器。无论
 
 前往 [GitHub Releases](https://github.com/isunky/PlainMint/releases)，下载 Windows 安装程序或 macOS DMG，打开就可以开始记录。
 
-> PlainMint 只在本机读写文件。当前安装包尚未进行商业代码签名，首次运行时系统可能显示安全提示。
+> 当前安装包尚未进行商业代码签名，首次运行时系统可能显示安全提示。
+
+**OneDrive 接续：** 在每台电脑的「设置 → 文件」选择同一个私人 OneDrive 文件夹，启用「同步草稿和打开的文件」并应用。草稿不会覆盖正式文件；上传由 OneDrive 客户端负责。建议将其下的 `PlainMint Workspace` 设为「始终保留在此设备上」。
 
 ---
 
@@ -55,7 +57,7 @@ PlainMint 是一款面向 Windows 与 macOS 的轻量纯文本编辑器。无论
 
 ## English
 
-PlainMint is a lightweight plain-text editor for Windows and macOS. Whether you are capturing a quick thought, cleaning up a long document, or working across several files, it keeps useful tools close without letting the interface get in your way. No account is required, and your files stay on your device.
+PlainMint is a lightweight plain-text editor for Windows and macOS. It works locally by default, requires no PlainMint account, and can optionally carry drafts across devices via OneDrive.
 
 ### Highlights
 
@@ -72,7 +74,9 @@ PlainMint is a lightweight plain-text editor for Windows and macOS. Whether you 
 
 Get the Windows installer or macOS DMG from [GitHub Releases](https://github.com/isunky/PlainMint/releases), then open PlainMint and start writing.
 
-> Your files stay on your device. Current builds are unsigned, so your system may show a security warning on first launch.
+> Current builds are unsigned, so your system may show a security warning on first launch.
+
+**Continue with OneDrive:** In Settings → Files, choose the same private OneDrive folder on each device, enable **Sync drafts and open files**, and apply. Drafts do not overwrite original files; the OneDrive client handles uploads. For offline access, mark the `PlainMint Workspace` subfolder as **Always keep on this device**.
 
 ---
 
