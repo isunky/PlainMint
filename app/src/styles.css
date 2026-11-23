@@ -888,6 +888,14 @@ select:focus-visible {
   background: var(--accent-primary);
 }
 
+.dirty-dot.cloud-draft-pending {
+  background: #d99729;
+}
+
+.dirty-dot.cloud-draft-written {
+  background: #319969;
+}
+
 .tab-close {
   width: 24px;
   height: 24px;
@@ -3427,11 +3435,29 @@ select:focus-visible {
     animation-duration: 0.01ms !important;
   }
 }
-.cloud-workspace-status {
-  padding: 3px 12px;
-  color: var(--text-muted);
+.status-cloud {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding-inline: 8px;
+  flex: 0 0 auto;
   font-size: 11px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+.status-cloud.cloudSyncWaiting svg { color: #d99729; }
+.status-cloud.cloudSyncWritten svg { color: #319969; }
+.status-cloud.cloudSyncError svg { color: var(--danger); }
+
+@container (max-width: 430px) {
+  .status-cloud {
+    padding-inline: 5px;
+  }
+
+  .status-cloud-text {
+    position: absolute;
+    clip-path: inset(50%);
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+  }
 }

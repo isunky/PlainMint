@@ -31,7 +31,7 @@ vi.mock("./services/runtime", async (importOriginal) => {
 
 import { App } from "./App";
 import { selectNextOccurrenceInPane } from "./components/TextEditor";
-import { closeWindow, inspectFileMetadata, loadRecentFiles, openDocumentPath, persistRecentFiles, persistSession, revealFileInDirectory, startDraggingWindow, toggleMaximizeWindow } from "./services/runtime";
+import { closeWindow, inspectFileMetadata, loadRecentFiles, loadSettings, openDocumentPath, persistRecentFiles, persistSession, revealFileInDirectory, startDraggingWindow, toggleMaximizeWindow } from "./services/runtime";
 
 function doc(id: string): DocumentRecord {
   return {
@@ -103,6 +103,21 @@ beforeEach(async () => {
 afterEach(cleanup);
 
 describe("tab and split interactions", () => {
+  it("shows OneDrive status in the status bar and describes the draft dot on the tab", async () => {
+    vi.mocked(loadSettings).mockResolvedValueOnce({ ...defaultSettings, cloudSyncFolder: "C:\\OneDrive", cloudWorkspaceEnabled: true });
+    const pending = { ...doc("pending"), filePath: undefined, content: "draft", dirty: true };
+    useAppStore.setState({
+      documents: { pending },
+      tabs: { left: [{ id: "pending-tab", documentId: pending.id, pane: "left", order: 0 }], right: [] },
+      activeTab: { left: "pending-tab", right: null },
+    });
+    render(<App />);
+    const status = await screen.findByText("OneDrive · Waiting");
+    expect(status.closest(".statusbar")).not.toBeNull();
+    expect(screen.getByRole("tab", { name: /unsaved changes, draft waiting to be written/i })
+      .querySelector(".cloud-draft-pending")).not.toBeNull();
+  });
+
   it("exits without a prompt while preserving an untitled draft in the workspace session", async () => {
     const draft: DocumentRecord = {
       ...doc("draft"),

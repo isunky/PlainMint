@@ -11,7 +11,8 @@ import { isTauri } from "./services/runtime";
 import { useAppStore } from "./store";
 import type { DocumentRecord, OpenedDocument } from "./types";
 
-type Status = { key: "cloudSyncReady" | "cloudSyncWaiting" | "cloudSyncWritten" | "cloudSyncError"; detail?: string };
+export type CloudWorkspaceStatus = { key: "cloudSyncReady" | "cloudSyncWaiting" | "cloudSyncWritten" | "cloudSyncError"; detail?: string };
+export type CloudDraftStatus = "pending" | "written";
 type Peer = { name: string; stamp: string; snapshot: unknown; unreadable: boolean };
 type Documents = Record<string, DocumentRecord>;
 const deviceKey = "plainmint.cloud-workspace.device";
@@ -25,7 +26,8 @@ function deviceId() {
 }
 
 export function useCloudWorkspace(root: string | undefined, hydrated: boolean) {
-  const [status, setStatus] = useState<Status>({ key: "cloudSyncWaiting" });
+  const [status, setStatus] = useState<CloudWorkspaceStatus>({ key: "cloudSyncWaiting" });
+  const [written, setWritten] = useState<{ root: string; entries: Journal["entries"] }>();
   const flushRef = useRef<(discarded?: ReadonlySet<string>) => Promise<void>>(async () => {});
   const formerScope = useRef<string | undefined>(undefined);
   const excluded = useRef(new Map<string, string>());
@@ -264,7 +266,7 @@ export function useCloudWorkspace(root: string | undefined, hydrated: boolean) {
           ...document, revision, dirty: true,
           externalModified: Boolean(opened && !detached
             && (!draft.body.fingerprint || opened.fingerprint?.hash !== draft.body.fingerprint.hash)),
-          cloudDraft: { scope, id: draft.id, clock: draft.clock, importedRevision: revision },
+          cloudDraft: { scope, id: draft.id, clock: draft.clock, importedRevision: revision, received: true },
         });
       }
 
@@ -299,6 +301,7 @@ export function useCloudWorkspace(root: string | undefined, hydrated: boolean) {
         if (value !== null && !isJournal(value)) throw new Error("Invalid local OneDrive journal");
         journal = value ?? emptyJournal();
         pendingWrite = journal.pending;
+        if (!pendingWrite) setWritten({ root, entries: { ...journal.entries } });
         if (!exiting) await restoreJournalDrafts(journal);
       }
       if (!active || exiting) return;
@@ -310,6 +313,7 @@ export function useCloudWorkspace(root: string | undefined, hydrated: boolean) {
           version: 1, files: journal.files, drafts: Object.values(journal.entries), resolved: journal.resolved,
         };
         await invoke("write_cloud_workspace", { root, device, snapshot });
+        if (active) setWritten({ root, entries: { ...journal.entries } });
         wrote = true;
         pendingWrite = false;
         needsJournal = true;
@@ -437,5 +441,18 @@ export function useCloudWorkspace(root: string | undefined, hydrated: boolean) {
     };
   }, [root, hydrated]);
 
-  return { status, flushRef };
+  const draftStatus = (document: DocumentRecord): CloudDraftStatus | undefined => {
+    if (!root || !hydrated || !document.dirty) return undefined;
+    const scope = scopeKey(root);
+    const excludedScope = excluded.current.get(document.id);
+    if ((excludedScope && excludedScope !== scope)
+      || (document.cloudDraftScope && document.cloudDraftScope !== scope)
+      || (document.cloudDraft && document.cloudDraft.scope !== scope)) return undefined;
+    const path = document.filePath ? relativeCloudPath(root, document.filePath) : undefined;
+    if (document.filePath ? !path : !document.content && !document.cloudDraft) return undefined;
+    if (document.cloudDraft?.received && document.cloudDraft.importedRevision === document.revision) return "written";
+    const entry = written?.root === root ? written.entries[document.id] : undefined;
+    return entry && entry.path === path && sameBody(entry.body, draftBody(document)) ? "written" : "pending";
+  };
+  return { status, flushRef, draftStatus };
 }

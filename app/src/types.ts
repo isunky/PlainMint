@@ -89,6 +89,7 @@ export interface DocumentRecord {
     id: string;
     clock: Record<string, number>;
     importedRevision?: number;
+    received?: true;
   };
   patch?: {
     sequence: number;

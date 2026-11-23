@@ -56,17 +56,23 @@ it("writes an untitled draft after idle, persists failed writes locally, and ret
   const id = useAppStore.getState().createDocument("left", { fileName: "草稿.txt", content: "还没有保存" });
   await tick(999);
   expect(journal).toBeNull();
+  expect(first.result.current.draftStatus(docs()[0])).toBe("pending");
   await tick(1);
   expect(writes).toEqual([]);
+  expect(first.result.current.draftStatus(docs()[0])).toBe("pending");
   expect(journal).toMatchObject({ pending: true, entries: { [id]: { body: { content: "还没有保存" } } } });
   first.unmount();
   useAppStore.setState({ documents: {}, tabs: { left: [], right: [] }, activeTab: { left: null, right: null } });
   offline = false;
-  renderHook(() => useCloudWorkspace(root, true));
+  const second = renderHook(() => useCloudWorkspace(root, true));
   await tick(0);
   expect(docs()).toEqual([expect.objectContaining({ id, content: "还没有保存", dirty: true })]);
   expect(writes).toEqual([expect.objectContaining({ files: [], drafts: [expect.objectContaining({ id: `draft:${id}` })] })]);
   expect(journal).toMatchObject({ pending: false });
+  expect(second.result.current.draftStatus(docs()[0])).toBe("written");
+  expect(second.result.current.draftStatus({ ...docs()[0], content: "继续输入" })).toBe("pending");
+  expect(second.result.current.draftStatus({ ...docs()[0], dirty: false })).toBeUndefined();
+  expect(second.result.current.draftStatus({ ...docs()[0], filePath: "C:\\local.txt" })).toBeUndefined();
 });
 
 it("heals a draft without stealing focus, preserves concurrent content, and deduplicates retries", async () => {

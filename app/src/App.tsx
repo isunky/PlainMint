@@ -11,6 +11,7 @@ import {
   CaretDown,
   CaretUp,
   ClockCounterClockwise,
+  Cloud,
   Columns,
   Copy,
   DotsThree,
@@ -50,7 +51,7 @@ import {
 import { buildEditorFontFamily } from "./fontSettings";
 import { createWorkspaceSession, decideStartupRecovery } from "./recoveryPolicy";
 import { relativeCloudPath, scopeKey } from "./cloudWorkspace";
-import { useCloudWorkspace } from "./useCloudWorkspace";
+import { useCloudWorkspace, type CloudDraftStatus, type CloudWorkspaceStatus } from "./useCloudWorkspace";
 import { resolveInitialSaveFolder } from "./saveFolderPolicy";
 import { findSearchMatches } from "./searchMatcher";
 import { OPEN_DOCUMENT_RESULT_LIMIT, searchOpenedDocuments, type OpenedDocumentSearchResult } from "./openedDocumentSearch";
@@ -1026,6 +1027,7 @@ function TabBar({
   onPointerDown,
   onContextMenu,
   drag,
+  draftStatus,
 }: {
   pane: PaneId;
   onClose: (pane: PaneId, tabId: string) => void;
@@ -1033,6 +1035,7 @@ function TabBar({
   onPointerDown: (pane: PaneId, tabId: string, event: React.PointerEvent<HTMLElement>) => void;
   onContextMenu: (menu: TabContextMenuState) => void;
   drag: TabDragView | null;
+  draftStatus: (document: DocumentRecord) => CloudDraftStatus | undefined;
 }) {
   const { t } = useTranslation();
   const tabs = useAppStore((state) => state.tabs[pane]);
@@ -1071,12 +1074,14 @@ function TabBar({
               : document.readOnly
                 ? Lock
                 : FileText;
+          const draft = draftStatus(document);
+          const draftLabel = draft ? t(draft === "written" ? "cloudTabWritten" : "cloudTabPending") : undefined;
           return (
             <div
               role="tab"
               tabIndex={activeTab === tab.id ? 0 : -1}
               aria-selected={activeTab === tab.id}
-              aria-label={[localizedDocumentName(document, t), document.dirty ? t("tabUnsaved") : "", statusLabel ?? ""].filter(Boolean).join(", ")}
+              aria-label={[localizedDocumentName(document, t), document.dirty ? t("tabUnsaved") : "", draftLabel, statusLabel].filter(Boolean).join(", ")}
               className={"tab " + (activeTab === tab.id ? "active " : "") + (drag?.dragging && drag.tabId === tab.id ? "dragging " : "") + (drag?.dragging && drag.targetPane === pane && drag.beforeTabId === tab.id ? "drop-before" : "")}
               key={tab.id}
               data-tab-id={tab.id}
@@ -1101,7 +1106,7 @@ function TabBar({
             >
               <span className="tab-status-icon" title={statusLabel}><StatusIcon size={18} /></span>
               <span className="tab-name">{localizedDocumentName(document, t)}</span>
-              {document.dirty && <span className="dirty-dot" aria-label={t("tabUnsaved")} />}
+              {document.dirty && <span className={draft ? `dirty-dot cloud-draft-${draft}` : "dirty-dot"} title={draftLabel ?? t("tabUnsaved")} aria-hidden="true" />}
               <button type="button" className="tab-close" aria-label={t("closeTab", { name: localizedDocumentName(document, t) })} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onClose(pane, tab.id); }}>
                 <X size={16} />
               </button>
@@ -1239,12 +1244,25 @@ function SearchBar({
   );
 }
 
-function StatusBar({ pane, document }: { pane: PaneId; document?: DocumentRecord }) {
+function CloudStatusIndicator({ status }: { status?: CloudWorkspaceStatus }) {
+  const { t } = useTranslation();
+  if (!status) return null;
+  const label = t(status.key);
+  const detail = status.detail ?? (status.key === "cloudSyncWritten" ? t("cloudWrittenHint") : undefined);
+  return (
+    <span className={`status-cloud ${status.key}`} role="status" title={detail ? `OneDrive · ${label} — ${detail}` : `OneDrive · ${label}`}>
+      <Cloud size={14} aria-hidden="true" />
+      <span className="status-cloud-text">OneDrive · {label}</span>
+    </span>
+  );
+}
+
+function StatusBar({ pane, document, cloudStatus }: { pane: PaneId; document?: DocumentRecord; cloudStatus?: CloudWorkspaceStatus }) {
   const { t } = useTranslation();
   const cursor = useAppStore((state) => state.cursor[pane]);
   const updateDocumentFormat = useAppStore((state) => state.updateDocumentFormat);
   const setDocumentLanguageMode = useAppStore((state) => state.setDocumentLanguageMode);
-  if (!document) return <div className="statusbar" />;
+  if (!document) return <div className="statusbar" aria-label={t("statusbar")}><CloudStatusIndicator status={cloudStatus} /></div>;
   const textStats = document.textStats ?? getTextStats(document.content);
   const characters = textStats.characters;
   const lines = textStats.lines;
@@ -1261,6 +1279,7 @@ function StatusBar({ pane, document }: { pane: PaneId; document?: DocumentRecord
         <span className="status-characters">{t("characters", { count: characters })}</span>
       </div>
       <span className="status-spacer" />
+      <CloudStatusIndicator status={cloudStatus} />
       <div className="statusbar-group statusbar-format">
         <span className="status-lines">{t("lines", { count: lines })}</span>
         <select className="status-format-select" aria-label={t("fileEncoding")} value={document.encoding} disabled={document.readOnly} onChange={(event) => updateDocumentFormat(document.id, { encoding: event.target.value as Encoding })}>
@@ -1315,7 +1334,7 @@ function EditorStartupPreview({ document, settings, onRequestEditorRuntime }: {
   );
 }
 
-function EditorPane({ pane, onCloseTab, onActivateTab, onTabPointerDown, onTabContextMenu, drag, editorRuntimeReady, onRequestEditorRuntime, revealTarget, onRevealHandled, fileDropTarget }: {
+function EditorPane({ pane, onCloseTab, onActivateTab, onTabPointerDown, onTabContextMenu, drag, editorRuntimeReady, onRequestEditorRuntime, revealTarget, onRevealHandled, fileDropTarget, cloudStatus, draftStatus }: {
   pane: PaneId;
   onCloseTab: (pane: PaneId, tabId: string) => void;
   onActivateTab: (pane: PaneId, tabId: string) => void;
@@ -1327,6 +1346,8 @@ function EditorPane({ pane, onCloseTab, onActivateTab, onTabPointerDown, onTabCo
   revealTarget: EditorRevealTarget | null;
   onRevealHandled: (id: string) => void;
   fileDropTarget?: boolean;
+  cloudStatus?: CloudWorkspaceStatus;
+  draftStatus: (document: DocumentRecord) => CloudDraftStatus | undefined;
 }) {
   const { t } = useTranslation();
   const tabs = useAppStore((state) => state.tabs[pane]);
@@ -1354,7 +1375,7 @@ function EditorPane({ pane, onCloseTab, onActivateTab, onTabPointerDown, onTabCo
   }, [completeUntitledLanguageDetection, document?.autoLanguageDetectionComplete, document?.content, document?.filePath, document?.id, document?.languageMode]);
   return (
     <section className={"editor-pane " + (fileDropTarget ? "file-drop-target" : "")} data-pane-drop={pane} onPointerDown={() => setActivePane(pane)}>
-      <TabBar pane={pane} onClose={onCloseTab} onActivate={onActivateTab} onPointerDown={onTabPointerDown} onContextMenu={onTabContextMenu} drag={drag} />
+      <TabBar pane={pane} onClose={onCloseTab} onActivate={onActivateTab} onPointerDown={onTabPointerDown} onContextMenu={onTabContextMenu} drag={drag} draftStatus={draftStatus} />
       {document ? <div className="editor-region">
         {editorRuntimeReady ? <Suspense fallback={<EditorStartupPreview document={document} settings={settings} onRequestEditorRuntime={() => onRequestEditorRuntime(pane)} />}>
           <TextEditor
@@ -1372,7 +1393,7 @@ function EditorPane({ pane, onCloseTab, onActivateTab, onTabPointerDown, onTabCo
           />
         </Suspense> : <EditorStartupPreview document={document} settings={settings} onRequestEditorRuntime={() => onRequestEditorRuntime(pane)} />}
       </div> : <div className="editor-empty"><span>{t("emptyPaneHint")}</span></div>}
-      <StatusBar pane={pane} document={document} />
+      <StatusBar pane={pane} document={document} cloudStatus={cloudStatus} />
     </section>
   );
 }
@@ -1934,7 +1955,8 @@ export function App() {
   const [recentFileMissing, setRecentFileMissing] = useState<Record<string, boolean>>({});
   const [hydrated, setHydrated] = useState(false);
   const [cloudRoot, setCloudRoot] = useState<string>();
-  const { status: cloudStatus, flushRef: flushCloudWorkspace } = useCloudWorkspace(cloudRoot, hydrated);
+  const { status: cloudStatus, flushRef: flushCloudWorkspace, draftStatus } = useCloudWorkspace(cloudRoot, hydrated);
+  const visibleCloudStatus = cloudRoot && hydrated ? cloudStatus : undefined;
   const [directoryChecks, setDirectoryChecks] = useState<Record<DirectoryField, DirectoryCheck>>(emptyDirectoryChecks);
   const [settingsApplying, setSettingsApplying] = useState(false);
   const [templateCatalog, setTemplateCatalog] = useState<DocumentTemplateCatalog>(() => ({ templates: structuredClone(builtInDocumentTemplates), issues: [] }));
@@ -3407,12 +3429,6 @@ export function App() {
           <button type="button" className="button-secondary" onClick={() => void checkpointWorkspace()}>{t("retry")}</button>
         </div>
       )}
-      {cloudRoot && hydrated && (
-        <div className="cloud-workspace-status" role="status" title={cloudStatus.detail}>
-          {t(cloudStatus.key)}{cloudStatus.detail && ` — ${cloudStatus.detail}`}
-        </div>
-      )}
-
       <div
         ref={workspaceRef}
         className={"workspace " + (split ? "split " : "") + (resizingSplit ? "resizing " : "")}
@@ -3431,7 +3447,7 @@ export function App() {
             onRecovery={() => setModal({ type: "recovery" })}
             onRestoreSession={() => void loadSession().then((session) => session && restoreSessionIntoStore(session)).catch(() => flash(t("recoveryLoadFailed")))}
           />
-        ) : <EditorPane pane="left" onCloseTab={requestCloseTab} onActivateTab={activateTab} onTabPointerDown={beginTabDrag} onTabContextMenu={setTabContextMenu} drag={tabDrag} editorRuntimeReady={editorRuntimeReady} onRequestEditorRuntime={requestEditorRuntime} revealTarget={revealTarget} onRevealHandled={(id) => setRevealTarget((target) => target?.id === id ? null : target)} fileDropTarget={fileDropPane === "left"} />}
+        ) : <EditorPane pane="left" onCloseTab={requestCloseTab} onActivateTab={activateTab} onTabPointerDown={beginTabDrag} onTabContextMenu={setTabContextMenu} drag={tabDrag} editorRuntimeReady={editorRuntimeReady} onRequestEditorRuntime={requestEditorRuntime} revealTarget={revealTarget} onRevealHandled={(id) => setRevealTarget((target) => target?.id === id ? null : target)} fileDropTarget={fileDropPane === "left"} cloudStatus={visibleCloudStatus} draftStatus={draftStatus} />}
         {split && (
           <>
             <div
@@ -3446,11 +3462,12 @@ export function App() {
               onPointerDown={onSplitPointerDown}
               onKeyDown={onSplitKeyDown}
             ><DotsThree size={20} weight="bold" /></div>
-            <EditorPane pane="right" onCloseTab={requestCloseTab} onActivateTab={activateTab} onTabPointerDown={beginTabDrag} onTabContextMenu={setTabContextMenu} drag={tabDrag} editorRuntimeReady={editorRuntimeReady} onRequestEditorRuntime={requestEditorRuntime} revealTarget={revealTarget} onRevealHandled={(id) => setRevealTarget((target) => target?.id === id ? null : target)} fileDropTarget={fileDropPane === "right"} />
+            <EditorPane pane="right" onCloseTab={requestCloseTab} onActivateTab={activateTab} onTabPointerDown={beginTabDrag} onTabContextMenu={setTabContextMenu} drag={tabDrag} editorRuntimeReady={editorRuntimeReady} onRequestEditorRuntime={requestEditorRuntime} revealTarget={revealTarget} onRevealHandled={(id) => setRevealTarget((target) => target?.id === id ? null : target)} fileDropTarget={fileDropPane === "right"} draftStatus={draftStatus} />
           </>
         )}
         {tabDrag?.dragging && tabDrag.rightEdge && <div className="split-drop-overlay" aria-hidden="true"><Columns size={28} /><span>{t("dropToSplit")}</span></div>}
       </div>
+      {visibleCloudStatus && !split && tabs.left.length === 0 && tabs.right.length === 0 && <StatusBar pane="left" cloudStatus={visibleCloudStatus} />}
 
       {tabDrag?.dragging && dragDocument && <div className="tab-drag-ghost" style={{ left: tabDrag.x + 12, top: tabDrag.y + 12 }}><FileText size={16} /><span>{localizedDocumentName(dragDocument, t)}</span></div>}
 
