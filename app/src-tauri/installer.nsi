@@ -93,7 +93,6 @@ Var AssocLog
 Var AssocConfig
 Var AssocStructured
 Var AssocData
-Var InstallCompleted
 
 !macro PlainMintRegisterExtension EXT PROGID DESCRIPTION ENABLED
   ${If} ${ENABLED} = ${BST_CHECKED}
@@ -458,8 +457,6 @@ Function PageFileAssociations
   ${NSD_SetState} $AssocStructuredCheckbox $AssocStructured
   ${NSD_CreateCheckbox} 0 128u 100% 12u "$(plainMintAssociationData)"
   Pop $AssocDataCheckbox
-  ${NSD_CreateLabel} 0 154u 100% 28u "$(plainMintAssociationsDefaultAppsHint)"
-  Pop $0
   nsDialogs::Show
 FunctionEnd
 
@@ -582,24 +579,22 @@ FunctionEnd
 
 LangString plainMintAssociationsTitle ${LANG_ENGLISH} "File associations"
 LangString plainMintAssociationsSubtitle ${LANG_ENGLISH} "Choose the text formats PlainMint can open"
-LangString plainMintAssociationsDescription ${LANG_ENGLISH} "PlainMint will be registered in Open with. Windows will ask you to confirm any default app changes."
+LangString plainMintAssociationsDescription ${LANG_ENGLISH} "Selected formats appear in Open with. To change defaults, open Windows Settings manually."
 LangString plainMintAssociationTxt ${LANG_ENGLISH} "Text files (.txt)"
 LangString plainMintAssociationMarkdown ${LANG_ENGLISH} "Markdown (.md)"
 LangString plainMintAssociationLog ${LANG_ENGLISH} "Log files (.log)"
 LangString plainMintAssociationConfig ${LANG_ENGLISH} "Configuration (.ini, .conf, .properties)"
 LangString plainMintAssociationStructured ${LANG_ENGLISH} "Structured data (.json, .xml, .yaml, .yml)"
 LangString plainMintAssociationData ${LANG_ENGLISH} "Data and queries (.csv, .sql)"
-LangString plainMintAssociationsDefaultAppsHint ${LANG_ENGLISH} "After setup closes, Windows Default Apps will open so you can confirm your choices."
 LangString plainMintAssociationsTitle ${LANG_SIMPCHINESE} "文件关联"
 LangString plainMintAssociationsSubtitle ${LANG_SIMPCHINESE} "选择 PlainMint 可以打开的文本格式"
-LangString plainMintAssociationsDescription ${LANG_SIMPCHINESE} "PlainMint 将注册到“打开方式”。默认应用的变更仍由 Windows 让您确认。"
+LangString plainMintAssociationsDescription ${LANG_SIMPCHINESE} "所选格式将注册到“打开方式”。如需更改默认应用，请手动打开 Windows 设置。"
 LangString plainMintAssociationTxt ${LANG_SIMPCHINESE} "文本文件（.txt）"
 LangString plainMintAssociationMarkdown ${LANG_SIMPCHINESE} "Markdown（.md）"
 LangString plainMintAssociationLog ${LANG_SIMPCHINESE} "日志文件（.log）"
 LangString plainMintAssociationConfig ${LANG_SIMPCHINESE} "配置文件（.ini、.conf、.properties）"
 LangString plainMintAssociationStructured ${LANG_SIMPCHINESE} "结构化数据（.json、.xml、.yaml、.yml）"
 LangString plainMintAssociationData ${LANG_SIMPCHINESE} "数据与查询（.csv、.sql）"
-LangString plainMintAssociationsDefaultAppsHint ${LANG_SIMPCHINESE} "安装完成并关闭后，将打开 Windows 默认应用设置供您确认。"
 
 Function .onInit
   ${GetOptions} $CMDLINE "/P" $PassiveMode
@@ -895,7 +890,6 @@ Section Install
 SectionEnd
 
 Function .onInstSuccess
-  StrCpy $InstallCompleted 1
   ; Check for `/R` flag only in silent and passive installers because
   ; GUI installer has a toggle for the user to (re)start the app
   ${If} $PassiveMode = 1
@@ -904,21 +898,6 @@ Function .onInstSuccess
     ${IfNot} ${Errors}
       ${GetOptions} $CMDLINE "/ARGS" $R0
       nsis_tauri_utils::RunAsUser "$INSTDIR\${MAINBINARYNAME}.exe" "$R0"
-    ${EndIf}
-  ${EndIf}
-FunctionEnd
-
-Function .onGUIEnd
-  ${If} $InstallCompleted = 1
-  ${AndIf} $PassiveMode <> 1
-  ${AndIfNot} ${Silent}
-    IntOp $0 $AssocTxt | $AssocMarkdown
-    IntOp $0 $0 | $AssocLog
-    IntOp $0 $0 | $AssocConfig
-    IntOp $0 $0 | $AssocStructured
-    IntOp $0 $0 | $AssocData
-    ${If} $0 <> 0
-      ExecShell "open" "ms-settings:defaultapps?registeredAppUser=${PRODUCTNAME}"
     ${EndIf}
   ${EndIf}
 FunctionEnd
