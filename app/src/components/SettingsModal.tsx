@@ -80,7 +80,7 @@ interface SettingsModalProps {
   onOpenRecovery: () => void;
   onCheckUpdates: () => void;
   onOpenSource: () => void;
-  onOpenAuthorWebsite: () => void;
+  onOpenAuthorProject: () => void;
   contextMenuStatus?: ContextMenuStatus;
   contextMenuBusy?: boolean;
   onContextMenuChange?: (enabled: boolean) => void;
@@ -215,7 +215,7 @@ export function SettingsModal({
   onOpenRecovery,
   onCheckUpdates,
   onOpenSource,
-  onOpenAuthorWebsite,
+  onOpenAuthorProject,
   contextMenuStatus = { supported: false, enabled: false },
   contextMenuBusy = false,
   onContextMenuChange,
@@ -647,7 +647,7 @@ export function SettingsModal({
                   <section className="about-meta-card" aria-label={t("author")}>
                     <span>{t("author")}</span>
                     <strong>Sunky</strong>
-                    <a href="http://www.sunky.net" onClick={(event) => { event.preventDefault(); onOpenAuthorWebsite(); }}>http://www.sunky.net</a>
+                    <a href="https://github.com/isunky/PlainMint" onClick={(event) => { event.preventDefault(); onOpenAuthorProject(); }}>https://github.com/isunky/PlainMint</a>
                   </section>
                 </div>
 

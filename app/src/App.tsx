@@ -110,7 +110,7 @@ import {
   startDraggingWindow,
   syncFileWatches,
   showSourceCode,
-  showAuthorWebsite,
+  showAuthorProject,
   toggleMaximizeWindow,
   validateDirectory,
   writeRecovery,
@@ -3537,7 +3537,7 @@ export function App() {
           onOpenRecovery={() => setModal({ type: "recovery" })}
           onCheckUpdates={() => void requestUpdateCheck()}
           onOpenSource={() => void showSourceCode()}
-          onOpenAuthorWebsite={() => void showAuthorWebsite()}
+          onOpenAuthorProject={() => void showAuthorProject()}
           contextMenuStatus={contextMenuStatus}
           contextMenuBusy={contextMenuBusy}
           onContextMenuChange={(enabled) => void changeContextMenu(enabled)}

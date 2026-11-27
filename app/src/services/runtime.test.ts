@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   listen: vi.fn(),
   unlisten: vi.fn(),
   startDragging: vi.fn(),
+  openUrl: vi.fn(),
 }));
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
@@ -22,14 +23,14 @@ vi.mock("@tauri-apps/api/app", () => ({ getVersion: mocks.getVersion }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen }));
 vi.mock("@tauri-apps/api/path", () => ({ documentDir: mocks.documentDir, join: mocks.join }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: mocks.open, save: mocks.save }));
-vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn(), revealItemInDir: mocks.revealItemInDir }));
+vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: mocks.openUrl, revealItemInDir: mocks.revealItemInDir }));
 vi.mock("@tauri-apps/plugin-process", () => ({ relaunch: mocks.relaunch }));
 vi.mock("@tauri-apps/plugin-updater", () => ({ check: mocks.check }));
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({ startDragging: mocks.startDragging }),
 }));
 
-import { checkForUpdates, encodedByteLength, getAppVersion, inspectFileMetadata, listenForFileWatchChanges, openDocumentTemplatesDirectory, persistSession, revealFileInDirectory, saveDocument, startDraggingWindow, syncFileWatches, writeSafetyRecovery } from "./runtime";
+import { checkForUpdates, encodedByteLength, getAppVersion, inspectFileMetadata, listenForFileWatchChanges, openDocumentTemplatesDirectory, persistSession, revealFileInDirectory, saveDocument, showAuthorProject, startDraggingWindow, syncFileWatches, writeSafetyRecovery } from "./runtime";
 
 function document(patch: Partial<DocumentRecord> = {}): DocumentRecord {
   return {
@@ -107,6 +108,14 @@ describe("file location runtime bridge", () => {
     expect(mocks.invoke).toHaveBeenCalledWith("open_document_templates_directory");
   });
 
+});
+
+describe("author project link", () => {
+  it("opens the PlainMint GitHub repository", async () => {
+    await showAuthorProject();
+
+    expect(mocks.openUrl).toHaveBeenCalledWith("https://github.com/isunky/PlainMint");
+  });
 });
 
 describe("save dialog defaults", () => {

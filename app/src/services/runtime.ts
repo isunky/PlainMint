@@ -430,8 +430,8 @@ export async function listenForPendingOpenFiles(handler: () => void): Promise<()
   return listen("plainmint-open-files-pending", handler);
 }
 
-export async function showAuthorWebsite() {
-  await openUrl("http://www.sunky.net");
+export async function showAuthorProject() {
+  await openUrl("https://github.com/isunky/PlainMint");
 }
 
 export async function minimizeWindow() {
