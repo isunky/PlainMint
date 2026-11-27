@@ -1253,7 +1253,7 @@ PlainMint 支持用户选择主色调。主色调仅用于强调交互状态，�
 - 产品名称。
 - 版本号。
 - 作者：Sunky。
-- 官网：`http://www.sunky.net`。
+- GitHub 项目页：`https://github.com/isunky/PlainMint`。
 - 开源许可。
 - 隐私说明。
 - 第三方组件许可。

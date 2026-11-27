@@ -13,7 +13,7 @@ const handlers = {
   onOpenRecovery: vi.fn(),
   onCheckUpdates: vi.fn(),
   onOpenSource: vi.fn(),
-  onOpenAuthorWebsite: vi.fn(),
+  onOpenAuthorProject: vi.fn(),
 };
 
 beforeEach(async () => {
@@ -170,10 +170,10 @@ describe("settings runtime controls", () => {
     expect(screen.queryByRole("heading", { name: "Keyboard shortcuts" })).not.toBeInTheDocument();
     expect(screen.getByLabelText("Current version")).toHaveTextContent("v0.1.0");
     expect(screen.getByLabelText("Author")).toHaveTextContent("Sunky");
-    const website = screen.getByRole("link", { name: "http://www.sunky.net" });
-    expect(website).toHaveAttribute("href", "http://www.sunky.net");
-    fireEvent.click(website);
-    expect(handlers.onOpenAuthorWebsite).toHaveBeenCalledOnce();
+    const project = screen.getByRole("link", { name: "https://github.com/isunky/PlainMint" });
+    expect(project).toHaveAttribute("href", "https://github.com/isunky/PlainMint");
+    fireEvent.click(project);
+    expect(handlers.onOpenAuthorProject).toHaveBeenCalledOnce();
   });
 
   it("stages a custom plain-text template until settings are applied", () => {
